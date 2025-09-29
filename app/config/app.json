@@ -1,0 +1,12 @@
+{
+  "playback": {
+    "idle_fps": 30,
+    "active_fps": 60
+  },
+  "auto_scroll": {
+    "flip": {
+      "threshold_percent": 75,
+      "page_offset_percent": 25
+    }
+  }
+}
