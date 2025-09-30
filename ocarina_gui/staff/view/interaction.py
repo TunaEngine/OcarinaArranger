@@ -40,6 +40,15 @@ class StaffViewInteractionMixin:
             "5",
         }
         if type_name in release_markers:
+            callback = getattr(self, "_cursor_drag_state_cb", None)
+            if callback:
+                try:
+                    callback(False)
+                except Exception:
+                    logger.exception(
+                        "StaffView cursor drag release callback failed",
+                        extra={"widget": repr(self)},
+                    )
             self._last_press_serial = None
             logger.debug(
                 "StaffView ignoring release event serial=%s",
@@ -63,6 +72,15 @@ class StaffViewInteractionMixin:
                 )
                 return "break"
             self._last_press_serial = serial
+            callback = getattr(self, "_cursor_drag_state_cb", None)
+            if callback:
+                try:
+                    callback(True)
+                except Exception:
+                    logger.exception(
+                        "StaffView cursor drag press callback failed",
+                        extra={"widget": repr(self)},
+                    )
         logger.debug(
             "StaffView cursor event layout=%s x=%s y=%s tick=%s type=%s",
             self._layout_mode,

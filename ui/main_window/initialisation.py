@@ -253,6 +253,10 @@ class MainWindowInitialisationMixin:
             "original": None,
             "arranged": None,
         }
+        self._preview_cursor_dragging: dict[str, bool] = {
+            "original": False,
+            "arranged": False,
+        }
         self._preview_initial_loading: set[str] = set()
         self._suppress_preview_error_dialogs = False
         self._bind_preview_render_observers()

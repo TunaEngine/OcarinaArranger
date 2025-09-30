@@ -45,6 +45,8 @@ class PianoRoll(
         self.vbar = ttk.Scrollbar(self, orient="vertical", command=self._yview_both)
         self._hover_cb: Optional[Callable[[Optional[int]], None]] = None
         self._cursor_cb: Optional[Callable[[int], None]] = None
+        self._cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
+        self._cursor_drag_active = False
         self._label_highlight: Optional[int] = None
         self._theme_unsubscribe: Optional[Callable[[], None]] = register_theme_listener(self._on_theme_changed)
 
@@ -87,6 +89,10 @@ class PianoRoll(
         self.labels.bind("<Leave>", lambda _event: self._hover_emit(None))
         self.canvas.bind("<Button-1>", self._on_cursor_event)
         self.canvas.bind("<B1-Motion>", self._on_cursor_event)
+        self.canvas.bind("<ButtonPress-1>", self._on_cursor_press, add="+")
+        self.canvas.bind("<ButtonRelease-1>", self._on_cursor_release, add="+")
+        self.labels.bind("<ButtonPress-1>", self._on_cursor_press, add="+")
+        self.labels.bind("<ButtonRelease-1>", self._on_cursor_release, add="+")
 
         self._renderer = PianoRollRenderer(self.canvas, self.labels, self._palette)
         self._cached: Optional[Tuple[Tuple[Event, ...], int]] = None
@@ -252,6 +258,9 @@ class PianoRoll(
     def set_cursor_callback(self, callback: Callable[[int], None]) -> None:
         self._cursor_cb = callback
 
+    def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
+        self._cursor_drag_state_cb = callback
+
     def set_auto_scroll_mode(self, mode: AutoScrollMode | str) -> None:
         normalized = normalize_auto_scroll_mode(mode)
         if self._auto_scroll_mode is normalized:
@@ -265,6 +274,19 @@ class PianoRoll(
         self.set_cursor(tick)
         if self._cursor_cb:
             self._cursor_cb(tick)
+
+    def _on_cursor_press(self, _event: tk.Event) -> None:
+        self._update_cursor_drag_state(True)
+
+    def _on_cursor_release(self, _event: tk.Event) -> None:
+        self._update_cursor_drag_state(False)
+
+    def _update_cursor_drag_state(self, dragging: bool) -> None:
+        if self._cursor_drag_active == dragging:
+            return
+        self._cursor_drag_active = dragging
+        if self._cursor_drag_state_cb:
+            self._cursor_drag_state_cb(dragging)
 
     def apply_palette(self, palette: PianoRollPalette) -> None:
         self._palette = palette

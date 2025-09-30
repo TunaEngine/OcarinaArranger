@@ -73,6 +73,7 @@ class StaffViewBase(ttk.Frame):
         self._cursor_controller = CursorController(self)
         self._renderer = StaffRenderer(self)
         self._cursor_cb: Optional[Callable[[int], None]] = None
+        self._cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
         self._scrollbars.configure_for_layout(self._layout_mode)
         for sequence in ("<Button-1>", "<ButtonPress-1>", "<ButtonRelease-1>", "<B1-Motion>"):
             self.canvas.bind(sequence, self._on_cursor_event)
@@ -114,6 +115,9 @@ class StaffViewBase(ttk.Frame):
 
     def set_cursor_callback(self, callback: Callable[[int], None]) -> None:
         self._cursor_cb = callback
+
+    def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
+        self._cursor_drag_state_cb = callback
 
     def set_time_zoom(self, multiplier: float) -> None:
         new_px = max(0.1, min(5.0, self.px_per_tick * multiplier))

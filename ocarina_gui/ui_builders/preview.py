@@ -105,8 +105,16 @@ def build_preview_side(app: "App", tab: ttk.Frame, side: str, side_width: int) -
 
     roll.set_fingering_cb(lambda midi, s=side: app._on_preview_roll_hover(s, midi))
     roll.set_cursor_callback(lambda tick, s=side: app._on_preview_cursor_seek(s, tick))
+    if hasattr(roll, "set_cursor_drag_state_cb"):
+        roll.set_cursor_drag_state_cb(
+            lambda dragging, s=side: app._on_preview_cursor_drag_state(s, dragging)
+        )
     if hasattr(staff, "set_cursor_callback"):
         staff.set_cursor_callback(lambda tick, s=side: app._on_preview_cursor_seek(s, tick))
+    if hasattr(staff, "set_cursor_drag_state_cb"):
+        staff.set_cursor_drag_state_cb(
+            lambda dragging, s=side: app._on_preview_cursor_drag_state(s, dragging)
+        )
 
     apply_layout = getattr(app, "_apply_preview_layout_mode_to_side", None)
     if callable(apply_layout):

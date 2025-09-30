@@ -267,11 +267,16 @@ class PreviewRenderingMixin:
         if view is None:
             return
         hover_midi = self._preview_hover_midi.get(side)
-        if hover_midi is not None:
+        playback = self._preview_playback.get(side)
+        is_playing = bool(playback and playback.state.is_playing)
+        is_dragging = self._preview_cursor_dragging.get(side, False)
+        if hover_midi is not None and not is_playing and not is_dragging:
             view.set_midi(hover_midi)
             return
-        playback = self._preview_playback.get(side)
-        if playback is None or not playback.state.is_playing:
+        if playback is None:
+            view.set_midi(None)
+            return
+        if not is_playing and not is_dragging:
             view.set_midi(None)
             return
         midi = self._current_playback_midi(side)
@@ -282,4 +287,8 @@ class PreviewRenderingMixin:
 
     def _on_preview_roll_hover(self, side: str, midi: Optional[int]) -> None:
         self._preview_hover_midi[side] = midi
+        self._update_preview_fingering(side)
+
+    def _on_preview_cursor_drag_state(self, side: str, dragging: bool) -> None:
+        self._preview_cursor_dragging[side] = dragging
         self._update_preview_fingering(side)

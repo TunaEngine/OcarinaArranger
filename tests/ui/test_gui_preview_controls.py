@@ -95,7 +95,7 @@ def test_preview_playback_shows_note_when_not_hovered(gui_app, tmp_path):
     assert current_midi() == second_event[2]
 
     gui_app._on_preview_roll_hover("original", 72)
-    assert current_midi() == 72
+    assert current_midi() == second_event[2]
 
     gui_app._on_preview_roll_hover("original", None)
     assert current_midi() == second_event[2]
@@ -104,8 +104,40 @@ def test_preview_playback_shows_note_when_not_hovered(gui_app, tmp_path):
     gui_app.update_idletasks()
     assert not playback.state.is_playing
 
+    gui_app._on_preview_roll_hover("original", 72)
+    assert current_midi() == 72
+
     gui_app._on_preview_roll_hover("original", None)
     assert current_midi() is None
+
+
+def test_preview_hover_ignored_while_dragging(gui_app, tmp_path):
+    tree, _ = make_linear_score()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    fingering = gui_app.side_fing_orig
+    assert fingering is not None
+
+    def current_midi():
+        if hasattr(fingering, "midi"):
+            return getattr(fingering, "midi")
+        return getattr(fingering, "_current_midi", None)
+
+    playback = gui_app._preview_playback["original"]
+    first_event = gui_app._preview_events["original"][0]
+    playback.state.position_tick = first_event[0]
+    gui_app._update_playback_visuals("original")
+
+    gui_app._on_preview_cursor_drag_state("original", True)
+    gui_app._on_preview_roll_hover("original", first_event[2] + 12)
+    assert current_midi() == first_event[2]
+
+    gui_app._on_preview_cursor_drag_state("original", False)
+    gui_app._on_preview_roll_hover("original", first_event[2] + 12)
+    assert current_midi() == first_event[2] + 12
 
 
 def test_transpose_cancel_restores_previous_value(gui_app, tmp_path, monkeypatch):

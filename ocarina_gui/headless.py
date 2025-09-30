@@ -168,6 +168,7 @@ class HeadlessPianoRoll:
     _cached: Optional[Tuple[Sequence[Event], int]] = None
     _fingering_cb: Optional[Callable[[Optional[int]], None]] = None
     _cursor_cb: Optional[Callable[[int], None]] = None
+    _cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
     _cursor_tick: int = 0
     loop_region: Optional[Tuple[int, int, bool]] = None
     auto_scroll_mode: str = "flip"
@@ -185,6 +186,9 @@ class HeadlessPianoRoll:
 
     def set_cursor_callback(self, callback: Callable[[int], None]) -> None:
         self._cursor_cb = callback
+
+    def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
+        self._cursor_drag_state_cb = callback
 
     def set_auto_scroll_mode(self, mode: object) -> None:
         if isinstance(mode, str):
@@ -219,6 +223,7 @@ class HeadlessStaffView:
     cursor_tick: int = 0
     secondary_cursor_tick: Optional[int] = None
     _cursor_cb: Optional[Callable[[int], None]] = None
+    _cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
     auto_scroll_mode: str = "flip"
     loop_region: Optional[Tuple[int, int, bool]] = None
     _layout_mode: str = "horizontal"
@@ -258,6 +263,9 @@ class HeadlessStaffView:
 
     def set_cursor_callback(self, callback: Callable[[int], None]) -> None:
         self._cursor_cb = callback
+
+    def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
+        self._cursor_drag_state_cb = callback
 
     def set_secondary_cursor(self, tick: Optional[int]) -> None:
         if tick is None:
