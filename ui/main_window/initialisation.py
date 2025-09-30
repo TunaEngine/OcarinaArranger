@@ -118,6 +118,7 @@ class MainWindowInitialisationMixin:
         self._fingering_edit_button: Optional[ttk.Button] = None
         self._fingering_cancel_button: Optional[ttk.Button] = None
         self._fingering_cancel_pad: tuple[int, int] | None = None
+        self._fingering_remove_button: Optional[ttk.Button] = None
         self._fingering_edit_controls: Optional[ttk.Frame] = None
         self._fingering_ignore_next_select: bool = False
         self._fingering_last_selected_note: Optional[str] = None

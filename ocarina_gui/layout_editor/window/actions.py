@@ -131,6 +131,23 @@ class _LayoutEditorActionsMixin:
             return
         self._refresh_state()
 
+    def _apply_candidate_range(self) -> None:
+        if self._updating:
+            return
+        minimum = self._candidate_min_var.get()
+        maximum = self._candidate_max_var.get()
+        if not minimum or not maximum:
+            # Allow users to tab between fields without triggering validation
+            # errors while they type in the remaining endpoint.
+            return
+        try:
+            self._viewmodel.set_candidate_range(minimum, maximum)
+        except ValueError as exc:
+            messagebox.showerror("Available range", str(exc), parent=self)
+            self._refresh_state()
+            return
+        self._refresh_state()
+
     def _apply_selection_position(self) -> None:
         if self._updating:
             return

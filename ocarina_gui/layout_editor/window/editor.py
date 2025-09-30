@@ -61,6 +61,8 @@ class InstrumentLayoutEditor(
         self._preview_visible = False
         self._preferred_min_combo: ttk.Combobox | None = None
         self._preferred_max_combo: ttk.Combobox | None = None
+        self._candidate_min_combo: ttk.Combobox | None = None
+        self._candidate_max_combo: ttk.Combobox | None = None
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
@@ -80,6 +82,8 @@ class InstrumentLayoutEditor(
         self._hole_identifier_var = tk.StringVar(master=self)
         self._preferred_min_var = tk.StringVar(master=self)
         self._preferred_max_var = tk.StringVar(master=self)
+        self._candidate_min_var = tk.StringVar(master=self)
+        self._candidate_max_var = tk.StringVar(master=self)
 
         self.canvas = InstrumentLayoutCanvas(
             self,

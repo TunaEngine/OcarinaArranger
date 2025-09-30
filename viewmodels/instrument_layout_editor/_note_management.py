@@ -24,34 +24,45 @@ class NoteManagementMixin:
         except ValueError:
             return None
 
+    def _generate_range_names(self, minimum: int, maximum: int) -> List[str]:
+        return [pitch_midi_to_name(midi, flats=False) for midi in range(minimum, maximum + 1)]
+
     def _candidate_note_names_for_state(
         self, state: InstrumentLayoutState
     ) -> List[str]:
-        midi_values: List[int] = []
-        source_names = list(
+        range_min = self._safe_parse(state.candidate_range_min)
+        range_max = self._safe_parse(state.candidate_range_max)
+
+        midi_min: Optional[int] = range_min
+        midi_max: Optional[int] = range_max
+
+        extra_sources = list(
             dict.fromkeys(list(state.candidate_notes) + list(state.note_map.keys()))
         )
-        for name in source_names:
+        invalid: List[str] = []
+        for name in extra_sources:
             midi = self._safe_parse(name)
             if midi is None:
+                invalid.append(name)
                 continue
-            midi_values.append(midi)
+            if midi_min is None or midi < midi_min:
+                midi_min = midi
+            if midi_max is None or midi > midi_max:
+                midi_max = midi
 
-        if not midi_values:
+        if midi_min is None or midi_max is None:
             return list(state.candidate_notes)
 
-        minimum = min(midi_values)
-        maximum = max(midi_values)
-
-        seen: set[str] = set()
-        candidates: List[str] = []
-        for midi in range(minimum, maximum + 1):
-            for prefer_flats in (True, False):
-                name = pitch_midi_to_name(midi, flats=prefer_flats)
-                if name not in seen:
-                    candidates.append(name)
-                    seen.add(name)
-
+        candidates = self._generate_range_names(midi_min, midi_max)
+        seen = set(candidates)
+        for name in extra_sources:
+            if name not in seen and name not in invalid:
+                candidates.append(name)
+                seen.add(name)
+        for name in invalid:
+            if name not in seen:
+                candidates.append(name)
+                seen.add(name)
         return candidates
 
     def _normalize_preferred_range(self, state: InstrumentLayoutState) -> None:
@@ -102,6 +113,87 @@ class NoteManagementMixin:
         state = self.state
         self._normalize_preferred_range(state)
         return self._candidate_note_names_for_state(state)
+
+    def set_candidate_range(self, minimum: str, maximum: str) -> None:
+        state = self.state
+        min_name = str(minimum).strip()
+        max_name = str(maximum).strip()
+        if not min_name or not max_name:
+            raise ValueError("Candidate range requires both minimum and maximum notes")
+
+        min_midi = self._safe_parse(min_name)
+        max_midi = self._safe_parse(max_name)
+        if min_midi is None or max_midi is None:
+            raise ValueError("Candidate range notes must be valid pitch names")
+        if min_midi > max_midi:
+            raise ValueError("Candidate range minimum must be lower than maximum")
+
+        canonical_min = pitch_midi_to_name(min_midi, flats=False)
+        canonical_max = pitch_midi_to_name(max_midi, flats=False)
+
+        invalid_names = [
+            name
+            for name in dict.fromkeys(
+                list(state.candidate_notes) + list(state.note_map.keys())
+            )
+            if self._safe_parse(name) is None
+        ]
+
+        changed = False
+        removed_notes: List[str] = []
+        for name in list(state.note_map.keys()):
+            midi = self._safe_parse(name)
+            if midi is None:
+                continue
+            if midi < min_midi or midi > max_midi:
+                del state.note_map[name]
+                removed_notes.append(name)
+                changed = True
+
+        if removed_notes:
+            filtered_order = [
+                note for note in state.note_order if note not in removed_notes
+            ]
+            if len(filtered_order) != len(state.note_order):
+                state.note_order = filtered_order
+                changed = True
+        generated = self._generate_range_names(min_midi, max_midi)
+        seen = set(generated)
+        for name in invalid_names:
+            if name not in seen:
+                generated.append(name)
+                seen.add(name)
+
+        hole_count = len(state.holes)
+        for name in generated:
+            if name not in state.note_map:
+                state.note_map[name] = [0] * hole_count
+                changed = True
+
+        added_notes = [name for name in generated if name not in state.note_order]
+        if added_notes:
+            state.note_order.extend(added_notes)
+            sort_note_order(state)
+            changed = True
+
+        if list(state.candidate_notes) != list(generated):
+            state.candidate_notes = generated
+            changed = True
+
+        if state.candidate_range_min != canonical_min:
+            state.candidate_range_min = canonical_min
+            changed = True
+        if state.candidate_range_max != canonical_max:
+            state.candidate_range_max = canonical_max
+            changed = True
+
+        if not state.has_explicit_candidate_range:
+            state.has_explicit_candidate_range = True
+            changed = True
+
+        if changed:
+            state.dirty = True
+            self._normalize_preferred_range(state)
 
     def set_preferred_range(self, minimum: str, maximum: str) -> None:
         state = self.state
@@ -182,6 +274,16 @@ class NoteManagementMixin:
         if not normalized_note:
             raise ValueError("Note name cannot be empty")
 
+        is_new_note = normalized_note not in state.note_map
+        midi_value = self._safe_parse(normalized_note)
+        if is_new_note and midi_value is not None:
+            min_midi = self._safe_parse(state.candidate_range_min)
+            max_midi = self._safe_parse(state.candidate_range_max)
+            if min_midi is not None and midi_value < min_midi:
+                raise ValueError("Note is below the instrument's available range")
+            if max_midi is not None and midi_value > max_midi:
+                raise ValueError("Note is above the instrument's available range")
+
         normalized_pattern = normalize_pattern(pattern, len(state.holes))
         current = state.note_map.get(normalized_note)
         if current == normalized_pattern:
@@ -191,34 +293,6 @@ class NoteManagementMixin:
         ensure_candidate_name(state, normalized_note)
         if normalized_note not in state.note_order:
             state.note_order.append(normalized_note)
-        sort_note_order(state)
-        self._normalize_preferred_range(state)
-        state.dirty = True
-
-    def rename_note(self, note: str, new_name: str) -> None:
-        state = self.state
-        normalized_note = str(note).strip()
-        if not normalized_note:
-            raise ValueError("Note name cannot be empty")
-
-        if normalized_note not in state.note_map:
-            raise ValueError(f"Note '{normalized_note}' does not exist")
-
-        normalized_new = str(new_name).strip()
-        if not normalized_new:
-            raise ValueError("New note name cannot be empty")
-        if normalized_new == normalized_note:
-            return
-        if normalized_new in state.note_map:
-            raise ValueError(f"Note '{normalized_new}' already exists")
-
-        pattern = state.note_map.pop(normalized_note)
-        state.note_map[normalized_new] = pattern
-
-        state.note_order = [
-            normalized_new if entry == normalized_note else entry for entry in state.note_order
-        ]
-        ensure_candidate_name(state, normalized_new)
         sort_note_order(state)
         self._normalize_preferred_range(state)
         state.dirty = True

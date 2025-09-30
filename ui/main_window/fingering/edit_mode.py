@@ -73,6 +73,7 @@ class FingeringEditModeMixin:
             self._fingering_edit_controls.grid()
 
         self._populate_fingering_table(current_selection)
+        self._update_fingering_note_actions_state()
 
     def _exit_fingering_edit_mode(self) -> None:
         current_selection = self._selected_fingering_note()
@@ -92,6 +93,7 @@ class FingeringEditModeMixin:
             self._fingering_edit_controls.grid_remove()
 
         self._populate_fingering_table(current_selection)
+        self._update_fingering_note_actions_state()
 
     def cancel_fingering_edits(self) -> None:
         if not self._fingering_edit_mode:
@@ -151,3 +153,4 @@ class FingeringEditModeMixin:
                 table.selection_set(focus_note)
                 table.focus(focus_note)
                 self._on_fingering_table_select()
+        self._update_fingering_note_actions_state()

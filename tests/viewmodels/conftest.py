@@ -76,6 +76,7 @@ def layout_editor_specs() -> List[InstrumentSpec]:
                 "E5": [0, 0],
             },
             "preferred_range": {"min": "C5", "max": "E5"},
+            "candidate_range": {"min": "A#4", "max": "G6"},
         }
     )
 
@@ -107,6 +108,7 @@ def layout_editor_specs() -> List[InstrumentSpec]:
                 "Bb4": [0, 0, 0],
             },
             "preferred_range": {"min": "F4", "max": "Bb4"},
+            "candidate_range": {"min": "E4", "max": "D6"},
         }
     )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Optional, Tuple
 
-from ocarina_tools.pitch import parse_note_name
+from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name, parse_note_name
 
 from .models import InstrumentLayoutState
 
@@ -73,6 +73,33 @@ def ensure_candidate_name(state: InstrumentLayoutState, note: str) -> None:
         return
     if normalized not in state.candidate_notes:
         state.candidate_notes.append(normalized)
+
+    try:
+        midi = parse_note_name(normalized)
+    except ValueError:
+        return
+
+    changed = False
+    try:
+        current_min = parse_note_name(state.candidate_range_min)
+    except ValueError:
+        current_min = None
+    try:
+        current_max = parse_note_name(state.candidate_range_max)
+    except ValueError:
+        current_max = None
+
+    if current_min is None or midi < current_min:
+        state.candidate_range_min = pitch_midi_to_name(midi, flats=False)
+        current_min = midi
+        changed = True
+    if current_max is None or midi > current_max:
+        state.candidate_range_max = pitch_midi_to_name(midi, flats=False)
+        changed = True
+
+    if changed:
+        state.has_explicit_candidate_range = True
+        state.dirty = True
 
 
 __all__ = [

@@ -22,7 +22,7 @@ def test_preferred_note_window_defaults_to_full_range() -> None:
     )
     low, high = preferred_note_window(spec)
     notes = collect_instrument_note_names(spec)
-    assert notes == ["C5", "D5", "E5"]
+    assert notes == ["C5", "C#5", "D5", "D#5", "E5"]
     assert low == "C5"
     assert high == "E5"
 

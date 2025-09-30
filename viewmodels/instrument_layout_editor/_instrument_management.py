@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Dict, List, Mapping, Optional, Sequence
 
-from ocarina_gui.fingering import InstrumentSpec
+from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name
+
+from ocarina_gui.fingering import InstrumentSpec, parse_note_name_safe
 
 from .models import InstrumentLayoutState, clone_state, state_from_spec, state_to_dict
 from .note_patterns import sort_note_order
@@ -46,6 +48,7 @@ class InstrumentManagementMixin:
             name,
             template=template,
             title=title,
+            copy_fingerings=False,
         )
         sort_note_order(state)
         self._normalize_preferred_range(state)
@@ -194,10 +197,39 @@ class InstrumentManagementMixin:
                         combined = list(
                             dict.fromkeys(existing_candidates + list(fallback_candidates))
                         )
-                        if len(combined) > len(existing_candidates):
-                            data["candidate_notes"] = combined
+                        data["candidate_notes"] = combined
                     else:
                         data["candidate_notes"] = list(fallback_candidates)
+
+                if fallback_state:
+                    fallback_min = parse_note_name_safe(fallback_state.candidate_range_min)
+                    fallback_max = parse_note_name_safe(fallback_state.candidate_range_max)
+                else:
+                    fallback_min = None
+                    fallback_max = None
+
+                range_data = data.get("candidate_range") or {}
+                current_min_name = str(range_data.get("min", "")).strip()
+                current_max_name = str(range_data.get("max", "")).strip()
+                current_min = (
+                    parse_note_name_safe(current_min_name) if current_min_name else None
+                )
+                current_max = (
+                    parse_note_name_safe(current_max_name) if current_max_name else None
+                )
+
+                combined_min = current_min
+                combined_max = current_max
+                if fallback_min is not None and (combined_min is None or fallback_min < combined_min):
+                    combined_min = fallback_min
+                if fallback_max is not None and (combined_max is None or fallback_max > combined_max):
+                    combined_max = fallback_max
+
+                if combined_min is not None and combined_max is not None:
+                    data["candidate_range"] = {
+                        "min": pitch_midi_to_name(combined_min, flats=False),
+                        "max": pitch_midi_to_name(combined_max, flats=False),
+                    }
 
                 spec = InstrumentSpec.from_dict(data)
             except Exception as exc:  # pragma: no cover - delegated validation

@@ -36,6 +36,7 @@ _BASE_INSTRUMENT_ENTRY: dict[str, object] = {
         "E5": [2, 1, 0],
     },
     "candidate_notes": ["B4", "C5", "D5", "E5"],
+    "candidate_range": {"min": "B4", "max": "F6"},
 }
 
 
@@ -142,12 +143,27 @@ def test_instrument_spec_preserves_explicit_candidate_notes():
     assert rebuilt.get("candidate_notes") == sample["candidate_notes"]
 
 
+def test_instrument_spec_preserves_candidate_range():
+    sample = _instrument_entry(
+        id="with_range",
+        candidate_range={"min": "A4", "max": "G6"},
+    )
+
+    spec = fingering.InstrumentSpec.from_dict(sample)
+
+    assert spec.candidate_range_min == "A4"
+    assert spec.candidate_range_max == "G6"
+    rebuilt = spec.to_dict()
+    assert rebuilt.get("candidate_range") == sample["candidate_range"]
+
+
 def test_instrument_specs_use_fallback_candidates_when_missing():
     source = _instrument_entry()
     fallback_spec = fingering.InstrumentSpec.from_dict(copy.deepcopy(source))
 
     trimmed = copy.deepcopy(source)
     trimmed.pop("candidate_notes", None)
+    trimmed.pop("candidate_range", None)
     retained_note = fallback_spec.note_order[0]
     trimmed["note_order"] = [retained_note]
     trimmed["note_map"] = {retained_note: fallback_spec.note_map[retained_note]}
@@ -158,6 +174,8 @@ def test_instrument_specs_use_fallback_candidates_when_missing():
     )
 
     assert rebuilt[0].candidate_notes == fallback_spec.candidate_notes
+    assert rebuilt[0].candidate_range_min == fallback_spec.candidate_range_min
+    assert rebuilt[0].candidate_range_max == fallback_spec.candidate_range_max
 
 
 def test_instrument_specs_merge_fallback_candidates_when_partial():
@@ -168,6 +186,7 @@ def test_instrument_specs_merge_fallback_candidates_when_partial():
     retained_note = fallback_spec.note_order[0]
     trimmed_candidates = [retained_note]
     trimmed["candidate_notes"] = trimmed_candidates
+    trimmed["candidate_range"] = {"min": retained_note, "max": retained_note}
     trimmed["note_order"] = [retained_note]
     trimmed["note_map"] = {retained_note: fallback_spec.note_map[retained_note]}
 
@@ -178,6 +197,8 @@ def test_instrument_specs_merge_fallback_candidates_when_partial():
 
     assert list(rebuilt[0].candidate_notes[: len(trimmed_candidates)]) == trimmed_candidates
     assert set(rebuilt[0].candidate_notes) == set(fallback_spec.candidate_notes)
+    assert rebuilt[0].candidate_range_min == fallback_spec.candidate_range_min
+    assert rebuilt[0].candidate_range_max == fallback_spec.candidate_range_max
 
 
 def test_update_library_from_config_replaces_instruments(sample_library):

@@ -24,6 +24,7 @@ def build_instrument(**overrides):
             "E4": [0, 0],
             "Invalid": [0, 0],
         },
+        "candidate_range": {"min": "A#3", "max": "E4"},
     }
     spec.update(overrides)
     return InstrumentSpec.from_dict(spec)
@@ -32,7 +33,10 @@ def build_instrument(**overrides):
 def test_collect_instrument_note_names_sorted_unique():
     instrument = build_instrument()
     names = collect_instrument_note_names(instrument)
-    assert names == ["Bb3", "C4", "Db4", "D4", "E4", "Invalid"]
+    assert names[:4] == ["A#3", "Bb3", "B3", "C4"]
+    assert "D#4" in names
+    assert "C#4" in names
+    assert names[-1] == "Invalid"
 
 
 def test_parse_note_name_safe_handles_invalid_entries():

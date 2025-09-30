@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import logging
-from tkinter import simpledialog
 
 logger = logging.getLogger(__name__)
 
@@ -74,39 +73,6 @@ class FingeringNoteActionsMixin:
 
         self._apply_fingering_editor_changes(normalized)
 
-    def rename_fingering_note(self) -> None:
-        if not self._fingering_edit_mode:
-            return
-        viewmodel = self._fingering_edit_vm
-        if viewmodel is None:
-            return
-
-        note = self._selected_fingering_note()
-        if not note:
-            _messagebox().showinfo("Rename fingering", "Select a note to rename first.", parent=self)
-            return
-
-        new_value = simpledialog.askstring(
-            "Rename fingering",
-            "Enter the new note name:",
-            initialvalue=note,
-            parent=self,
-        )
-        if new_value is None:
-            return
-        normalized = new_value.strip()
-        if not normalized:
-            _messagebox().showerror("Rename fingering", "New note name cannot be empty.", parent=self)
-            return
-
-        try:
-            viewmodel.rename_note(note, normalized)
-        except ValueError as exc:
-            _messagebox().showerror("Rename fingering", str(exc), parent=self)
-            return
-
-        self._apply_fingering_editor_changes(normalized)
-
     def remove_fingering_note(self) -> None:
         if not self._fingering_edit_mode:
             return
@@ -129,6 +95,25 @@ class FingeringNoteActionsMixin:
             return
 
         self._apply_fingering_editor_changes()
+        table = self.fingering_table
+        if table is not None:
+            table.selection_remove(table.selection())
+        self._on_fingering_table_select()
+
+    def _update_fingering_note_actions_state(self) -> None:
+        button = self.__dict__.get("_fingering_remove_button")
+        if button is None:
+            return
+        if not self._fingering_edit_mode:
+            button.state(["disabled"])
+            return
+
+        note = self._selected_fingering_note()
+        viewmodel = self._fingering_edit_vm
+        if viewmodel is None or not note or note not in viewmodel.state.note_map:
+            button.state(["disabled"])
+        else:
+            button.state(["!disabled"])
 
 
 def _messagebox():

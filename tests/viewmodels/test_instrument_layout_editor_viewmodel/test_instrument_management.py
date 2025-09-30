@@ -19,6 +19,9 @@ def test_add_instrument_clones_current_layout(layout_editor_specs) -> None:
     assert new_state.canvas_width == original.canvas_width
     assert new_state.canvas_height == original.canvas_height
     assert new_state.dirty is True
+    assert not new_state.note_map
+    assert not new_state.note_order
+    assert not new_state.candidate_notes
 
     if original.holes:
         assert new_state.holes is not original.holes

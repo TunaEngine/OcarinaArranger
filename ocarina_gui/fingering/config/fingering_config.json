@@ -173,6 +173,10 @@
           [170.0, 17.0]
         ],
         "closed": true
+      },
+      "candidate_range": {
+        "min": "A4",
+        "max": "F6"
       }
     },
     {
@@ -312,6 +316,10 @@
           [125.0, 9.0]
         ],
         "closed": true
+      },
+      "candidate_range": {
+        "min": "A4",
+        "max": "F6"
       }
     }
   ]

@@ -7,7 +7,6 @@ from tkinter import font as tkfont
 from tkinter import ttk
 from typing import Dict, List, Optional, Sequence
 
-from ocarina_gui.constants import natural_of
 from ocarina_gui.fingering import (
     collect_instrument_note_names,
     get_current_instrument,
@@ -48,6 +47,7 @@ class FingeringTableMixin:
                     "ignore_next_select": False,
                 },
             )
+            self._update_fingering_note_actions_state()
             return
 
         note_name = selection[0]
@@ -58,6 +58,7 @@ class FingeringTableMixin:
             self._fingering_last_selected_note = None
             self._fingering_click_guard_note = None
             logger.debug("Fingering placeholder row selected")
+            self._update_fingering_note_actions_state()
             return
 
         try:
@@ -97,13 +98,14 @@ class FingeringTableMixin:
                 instrument = get_current_instrument()
             except Exception:
                 self.fingering_preview.clear()
-                return
-            mapping = instrument.note_map.get(note_name)
-            if mapping is None:
-                self.fingering_preview.clear()
-                return
-            midi = self._fingering_note_to_midi.get(note_name)
-            self.fingering_preview.show_fingering(note_name, midi)
+            else:
+                mapping = instrument.note_map.get(note_name)
+                if mapping is None:
+                    self.fingering_preview.clear()
+                else:
+                    midi = self._fingering_note_to_midi.get(note_name)
+                    self.fingering_preview.show_fingering(note_name, midi)
+        self._update_fingering_note_actions_state()
 
     def _wrap_table_heading(self, heading: str, *, width: int = 10) -> str:
         if "\n" in heading:
@@ -132,7 +134,24 @@ class FingeringTableMixin:
         instrument = get_current_instrument()
         holes = list(instrument.holes)
 
-        note_names = collect_instrument_note_names(instrument)
+        raw_note_names = collect_instrument_note_names(instrument)
+        note_names: List[str] = []
+        seen: set[str] = set()
+
+        for name in instrument.note_order:
+            if name in instrument.note_map and name not in seen:
+                note_names.append(name)
+                seen.add(name)
+
+        for name in raw_note_names:
+            if name in instrument.note_map and name not in seen:
+                note_names.append(name)
+                seen.add(name)
+
+        for name in instrument.note_map.keys():
+            if name not in seen:
+                note_names.append(name)
+                seen.add(name)
 
         columns: List[str] = ["note"]
         headings: Dict[str, str] = {"note": "Note"}
@@ -261,10 +280,7 @@ class FingeringTableMixin:
             except Exception:
                 midi = None
 
-            fallback_name = natural_of(midi) if midi is not None else note_name
             mapping = instrument.note_map.get(note_name)
-            if mapping is None and fallback_name != note_name:
-                mapping = instrument.note_map.get(fallback_name)
 
             if mapping is None:
                 pattern_display = ["–"] * len(holes)

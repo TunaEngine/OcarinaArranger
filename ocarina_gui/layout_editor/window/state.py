@@ -49,10 +49,16 @@ class _LayoutEditorStateMixin:
             self._canvas_height_var.set(state.canvas_height)
             self.instrument_var.set(state.name)
             note_choices = self._viewmodel.candidate_note_names()
+            if self._candidate_min_combo is not None:
+                self._candidate_min_combo.configure(values=note_choices)
+            if self._candidate_max_combo is not None:
+                self._candidate_max_combo.configure(values=note_choices)
             if self._preferred_min_combo is not None:
                 self._preferred_min_combo.configure(values=note_choices)
             if self._preferred_max_combo is not None:
                 self._preferred_max_combo.configure(values=note_choices)
+            self._candidate_min_var.set(state.candidate_range_min)
+            self._candidate_max_var.set(state.candidate_range_max)
             self._preferred_min_var.set(state.preferred_range_min)
             self._preferred_max_var.set(state.preferred_range_max)
             if state.selection is None:

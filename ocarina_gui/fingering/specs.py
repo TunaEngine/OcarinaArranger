@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from ocarina_tools.pitch import parse_note_name
+from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name, parse_note_name
 
 
 __all__ = [
@@ -119,9 +119,12 @@ class InstrumentSpec:
     note_order: Sequence[str]
     note_map: Dict[str, List[int]]
     candidate_notes: Sequence[str] = ()
+    candidate_range_min: str = ""
+    candidate_range_max: str = ""
     preferred_range_min: str = ""
     preferred_range_max: str = ""
     _has_explicit_candidates: bool = field(default=False, repr=False)
+    _has_explicit_candidate_range: bool = field(default=False, repr=False)
     _has_explicit_range: bool = field(default=False, repr=False)
 
     @classmethod
@@ -164,6 +167,21 @@ class InstrumentSpec:
             dict.fromkeys(candidate_source + list(note_order) + list(note_map.keys()))
         )
 
+        candidate_range_data = data.get("candidate_range") or {}
+        candidate_range_min = str(candidate_range_data.get("min", "")).strip()
+        candidate_range_max = str(candidate_range_data.get("max", "")).strip()
+        explicit_candidate_range = bool(candidate_range_min and candidate_range_max)
+        if candidate_range_data and not explicit_candidate_range:
+            raise ValueError("Candidate range must define both minimum and maximum notes")
+
+        range_min_midi = parse_note_name_safe(candidate_range_min) if candidate_range_min else None
+        range_max_midi = parse_note_name_safe(candidate_range_max) if candidate_range_max else None
+        if candidate_range_data:
+            if range_min_midi is None or range_max_midi is None:
+                raise ValueError("Candidate range notes must be valid pitch names")
+            if range_min_midi > range_max_midi:
+                raise ValueError("Candidate range minimum must be lower than maximum")
+
         preferred_range_data = data.get("preferred_range") or {}
         preferred_min = str(preferred_range_data.get("min", "")).strip()
         preferred_max = str(preferred_range_data.get("max", "")).strip()
@@ -176,7 +194,30 @@ class InstrumentSpec:
             midi_pairs.append((midi, candidate))
         midi_pairs.sort(key=lambda pair: (pair[0], pair[1]))
 
-        if midi_pairs:
+        if range_min_midi is None or range_max_midi is None:
+            if midi_pairs:
+                range_min_midi = midi_pairs[0][0]
+                range_max_midi = midi_pairs[-1][0]
+                candidate_range_min = midi_pairs[0][1]
+                candidate_range_max = midi_pairs[-1][1]
+            elif combined_candidates:
+                candidate_range_min = combined_candidates[0]
+                candidate_range_max = combined_candidates[-1]
+                range_min_midi = parse_note_name_safe(candidate_range_min)
+                range_max_midi = parse_note_name_safe(candidate_range_max)
+            else:
+                candidate_range_min = ""
+                candidate_range_max = ""
+
+        if candidate_range_min and range_min_midi is not None:
+            candidate_range_min = pitch_midi_to_name(range_min_midi, flats=False)
+        if candidate_range_max and range_max_midi is not None:
+            candidate_range_max = pitch_midi_to_name(range_max_midi, flats=False)
+
+        if candidate_range_min and candidate_range_max:
+            default_min = candidate_range_min
+            default_max = candidate_range_max
+        elif midi_pairs:
             default_min = midi_pairs[0][1]
             default_max = midi_pairs[-1][1]
         elif combined_candidates:
@@ -214,7 +255,10 @@ class InstrumentSpec:
             note_order=note_order,
             note_map=note_map,
             candidate_notes=tuple(combined_candidates),
+            candidate_range_min=candidate_range_min,
+            candidate_range_max=candidate_range_max,
             _has_explicit_candidates=has_explicit_candidates,
+            _has_explicit_candidate_range=explicit_candidate_range,
             preferred_range_min=preferred_min,
             preferred_range_max=preferred_max,
             _has_explicit_range=bool(preferred_range_data),
@@ -244,6 +288,14 @@ class InstrumentSpec:
         }
         if self._has_explicit_candidates:
             data["candidate_notes"] = list(self.candidate_notes)
+        if (
+            self._has_explicit_candidate_range
+            and (self.candidate_range_min or self.candidate_range_max)
+        ):
+            data["candidate_range"] = {
+                "min": self.candidate_range_min,
+                "max": self.candidate_range_max,
+            }
         if self._has_explicit_range and (self.preferred_range_min or self.preferred_range_max):
             data["preferred_range"] = {
                 "min": self.preferred_range_min,
@@ -265,23 +317,41 @@ class InstrumentChoice:
 def collect_instrument_note_names(instrument: InstrumentSpec) -> List[str]:
     """Return the instrument's configured note names in pitch order."""
 
-    combined = list(
+    range_min = parse_note_name_safe(getattr(instrument, "candidate_range_min", ""))
+    range_max = parse_note_name_safe(getattr(instrument, "candidate_range_max", ""))
+
+    names: List[str] = []
+    seen: set[str] = set()
+
+    if range_min is not None and range_max is not None and range_min <= range_max:
+        for midi in range(range_min, range_max + 1):
+            name = pitch_midi_to_name(midi, flats=False)
+            if name not in seen:
+                names.append(name)
+                seen.add(name)
+
+    extra_sources = list(
         dict.fromkeys(
             list(getattr(instrument, "candidate_notes", ()))
             + list(instrument.note_order)
             + list(instrument.note_map.keys())
         )
     )
+    for name in extra_sources:
+        if name not in seen:
+            names.append(name)
+            seen.add(name)
 
-    def _sort_key(note_name: str) -> tuple[float, str]:
-        try:
-            midi = float(parse_note_name(note_name))
-        except Exception:
-            return (float("inf"), note_name)
-        return (midi, note_name)
+    def _sort_key(note_name: str) -> tuple[float, int, str]:
+        midi = parse_note_name_safe(note_name)
+        if midi is None:
+            return (float("inf"), 0, note_name)
+        sharp_name = pitch_midi_to_name(midi, flats=False)
+        preference = 0 if note_name == sharp_name else 1
+        return (float(midi), preference, note_name)
 
-    combined.sort(key=_sort_key)
-    return combined
+    names.sort(key=_sort_key)
+    return names
 
 
 def preferred_note_window(instrument: InstrumentSpec) -> Tuple[str, str]:

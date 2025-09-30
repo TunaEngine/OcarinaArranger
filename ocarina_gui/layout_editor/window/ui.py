@@ -15,6 +15,8 @@ class _LayoutEditorUIMixin:
     _remove_button: ttk.Button | None
     _preferred_min_combo: ttk.Combobox | None
     _preferred_max_combo: ttk.Combobox | None
+    _candidate_min_combo: ttk.Combobox | None
+    _candidate_max_combo: ttk.Combobox | None
     _add_hole_button: ttk.Button | None
     _remove_hole_button: ttk.Button | None
     _hole_entry: ttk.Entry | None
@@ -93,9 +95,28 @@ class _LayoutEditorUIMixin:
         height_spin.bind("<FocusOut>", lambda _e: self._apply_canvas_size())
         height_spin.bind("<Return>", lambda _e: self._apply_canvas_size())
 
-        ttk.Label(general, text="Preferred range:").grid(row=5, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(general, text="Available range:").grid(row=5, column=0, sticky="w", padx=4, pady=4)
+        candidate_frame = ttk.Frame(general)
+        candidate_frame.grid(row=5, column=1, sticky="ew", padx=4, pady=4)
+        candidate_frame.columnconfigure(0, weight=1)
+        candidate_frame.columnconfigure(2, weight=1)
+        candidate_min = ttk.Combobox(candidate_frame, textvariable=self._candidate_min_var, width=10)
+        candidate_min.grid(row=0, column=0, sticky="w")
+        candidate_min.bind("<<ComboboxSelected>>", lambda _e: self._apply_candidate_range())
+        candidate_min.bind("<FocusOut>", lambda _e: self._apply_candidate_range())
+        candidate_min.bind("<Return>", lambda _e: self._apply_candidate_range())
+        ttk.Label(candidate_frame, text="to").grid(row=0, column=1, padx=4)
+        candidate_max = ttk.Combobox(candidate_frame, textvariable=self._candidate_max_var, width=10)
+        candidate_max.grid(row=0, column=2, sticky="w")
+        candidate_max.bind("<<ComboboxSelected>>", lambda _e: self._apply_candidate_range())
+        candidate_max.bind("<FocusOut>", lambda _e: self._apply_candidate_range())
+        candidate_max.bind("<Return>", lambda _e: self._apply_candidate_range())
+        self._candidate_min_combo = candidate_min
+        self._candidate_max_combo = candidate_max
+
+        ttk.Label(general, text="Preferred range:").grid(row=6, column=0, sticky="w", padx=4, pady=4)
         range_frame = ttk.Frame(general)
-        range_frame.grid(row=5, column=1, sticky="ew", padx=4, pady=4)
+        range_frame.grid(row=6, column=1, sticky="ew", padx=4, pady=4)
         range_frame.columnconfigure(0, weight=1)
         range_frame.columnconfigure(2, weight=1)
         min_combo = ttk.Combobox(range_frame, textvariable=self._preferred_min_var, width=10, state="readonly")

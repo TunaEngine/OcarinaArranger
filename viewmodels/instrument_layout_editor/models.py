@@ -90,8 +90,11 @@ class InstrumentLayoutState:
     note_order: List[str] = field(default_factory=list)
     note_map: Dict[str, List[int]] = field(default_factory=dict)
     candidate_notes: List[str] = field(default_factory=list)
+    candidate_range_min: str = ""
+    candidate_range_max: str = ""
     preferred_range_min: str = ""
     preferred_range_max: str = ""
+    has_explicit_candidate_range: bool = False
     dirty: bool = False
     selection: Optional[Selection] = None
 
@@ -133,8 +136,13 @@ def state_from_spec(instrument: InstrumentSpec) -> InstrumentLayoutState:
         note_order=list(instrument.note_order),
         note_map=note_map,
         candidate_notes=candidate_notes,
+        candidate_range_min=str(getattr(instrument, "candidate_range_min", "")),
+        candidate_range_max=str(getattr(instrument, "candidate_range_max", "")),
         preferred_range_min=str(getattr(instrument, "preferred_range_min", "")),
         preferred_range_max=str(getattr(instrument, "preferred_range_max", "")),
+        has_explicit_candidate_range=bool(
+            getattr(instrument, "_has_explicit_candidate_range", False)
+        ),
     )
 
 
@@ -144,6 +152,7 @@ def clone_state(
     *,
     template: Optional[InstrumentLayoutState] = None,
     title: Optional[str] = None,
+    copy_fingerings: bool = True,
 ) -> InstrumentLayoutState:
     """Create a new state, optionally copying from a template state."""
 
@@ -157,6 +166,9 @@ def clone_state(
         note_order: List[str] = []
         note_map: Dict[str, List[int]] = {}
         candidate_notes: List[str] = []
+        candidate_range_min = ""
+        candidate_range_max = ""
+        has_explicit_candidate_range = False
         preferred_range_min = ""
         preferred_range_max = ""
     else:
@@ -181,11 +193,24 @@ def clone_state(
             hole_outline_color=template.style.hole_outline_color,
             covered_fill_color=template.style.covered_fill_color,
         )
-        note_order = list(template.note_order)
-        note_map = {note: list(pattern) for note, pattern in template.note_map.items()}
-        candidate_notes = list(template.candidate_notes)
-        preferred_range_min = template.preferred_range_min
-        preferred_range_max = template.preferred_range_max
+        if copy_fingerings:
+            note_order = list(template.note_order)
+            note_map = {note: list(pattern) for note, pattern in template.note_map.items()}
+            candidate_notes = list(template.candidate_notes)
+            candidate_range_min = template.candidate_range_min
+            candidate_range_max = template.candidate_range_max
+            has_explicit_candidate_range = template.has_explicit_candidate_range
+            preferred_range_min = template.preferred_range_min
+            preferred_range_max = template.preferred_range_max
+        else:
+            note_order = []
+            note_map = {}
+            candidate_notes = []
+            candidate_range_min = ""
+            candidate_range_max = ""
+            has_explicit_candidate_range = False
+            preferred_range_min = ""
+            preferred_range_max = ""
 
     return InstrumentLayoutState(
         instrument_id=instrument_id,
@@ -200,8 +225,11 @@ def clone_state(
         note_order=note_order,
         note_map=note_map,
         candidate_notes=candidate_notes,
+        candidate_range_min=candidate_range_min,
+        candidate_range_max=candidate_range_max,
         preferred_range_min=preferred_range_min,
         preferred_range_max=preferred_range_max,
+        has_explicit_candidate_range=has_explicit_candidate_range,
         dirty=True,
         selection=None,
     )
@@ -229,6 +257,13 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
         "note_map": {note: list(pattern) for note, pattern in state.note_map.items()},
         "candidate_notes": list(state.candidate_notes),
     }
+    if state.has_explicit_candidate_range and (
+        state.candidate_range_min or state.candidate_range_max
+    ):
+        data["candidate_range"] = {
+            "min": state.candidate_range_min,
+            "max": state.candidate_range_max,
+        }
     if state.preferred_range_min or state.preferred_range_max:
         data["preferred_range"] = {
             "min": state.preferred_range_min,

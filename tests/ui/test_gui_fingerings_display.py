@@ -27,7 +27,7 @@ def test_fingering_table_populated_from_config(gui_app):
     values = table.item(first_row, "values")
     assert values[0] == instrument.note_order[0]
     assert len(values) == len(columns)
-    assert set(values[1:]).issubset({"●", "○", "–", "◐"})
+    assert set(values[1:]).issubset({"●", "○", "◐"})
 
     table.selection_set(first_row)
     gui_app._on_fingering_table_select()
@@ -73,6 +73,54 @@ def test_add_note_uses_selection_dialog(gui_app, monkeypatch):
     assert isinstance(choices, tuple)
     assert any(choice not in existing for choice in choices)
     assert existing.issubset(disabled)
+
+
+def test_remove_flat_note_disables_button(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False) or gui_app.fingering_table is None:
+        pytest.skip("Fingerings table requires Tk widgets")
+
+    gui_app.toggle_fingering_editing()
+    try:
+        viewmodel = gui_app._fingering_edit_vm
+        if viewmodel is None:
+            pytest.skip("Fingering editor view-model unavailable")
+
+        state = viewmodel.state
+        if not state.candidate_range_min or not state.candidate_range_max:
+            pytest.skip("Instrument lacks an explicit available range")
+
+        viewmodel.set_candidate_range(state.candidate_range_min, state.candidate_range_max)
+        gui_app._apply_fingering_editor_changes()
+
+        table = gui_app.fingering_table
+        assert table is not None
+
+        flat_note = next(
+            (row for row in table.get_children() if len(row) > 2 and row[1].lower() == "b"),
+            None,
+        )
+        if flat_note is None:
+            pytest.skip("No flat notes available for removal test")
+
+        table.selection_set(flat_note)
+        gui_app._on_fingering_table_select()
+
+        remove_button = gui_app._fingering_remove_button
+        assert remove_button is not None
+        assert not remove_button.instate(["disabled"])
+
+        monkeypatch.setattr("ui.main_window.messagebox.askyesno", lambda *args, **kwargs: True)
+        monkeypatch.setattr("ui.main_window.messagebox.showerror", lambda *args, **kwargs: None)
+
+        gui_app.remove_fingering_note()
+        gui_app.update_idletasks()
+
+        assert not table.exists(flat_note)
+        assert not table.selection()
+        assert remove_button.instate(["disabled"])
+    finally:
+        if gui_app._fingering_edit_mode:
+            gui_app.cancel_fingering_edits()
 
 
 def test_fingering_table_columns_size_to_content(gui_app):

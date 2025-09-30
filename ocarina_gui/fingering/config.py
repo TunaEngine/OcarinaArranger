@@ -9,7 +9,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from .specs import InstrumentSpec
+from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name
+
+from .specs import InstrumentSpec, parse_note_name_safe
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,31 @@ def _instrument_specs_from_config(
                     },
                 )
                 data["candidate_notes"] = list(fallback_candidates)
+
+        if fallback:
+            fallback_min_name = getattr(fallback, "candidate_range_min", "")
+            fallback_max_name = getattr(fallback, "candidate_range_max", "")
+            fallback_min = parse_note_name_safe(fallback_min_name)
+            fallback_max = parse_note_name_safe(fallback_max_name)
+
+            range_data = data.get("candidate_range") or {}
+            current_min_name = str(range_data.get("min", "")).strip()
+            current_max_name = str(range_data.get("max", "")).strip()
+            current_min = parse_note_name_safe(current_min_name) if current_min_name else None
+            current_max = parse_note_name_safe(current_max_name) if current_max_name else None
+
+            combined_min = current_min
+            combined_max = current_max
+            if fallback_min is not None and (combined_min is None or fallback_min < combined_min):
+                combined_min = fallback_min
+            if fallback_max is not None and (combined_max is None or fallback_max > combined_max):
+                combined_max = fallback_max
+
+            if combined_min is not None and combined_max is not None:
+                data["candidate_range"] = {
+                    "min": pitch_midi_to_name(combined_min, flats=False),
+                    "max": pitch_midi_to_name(combined_max, flats=False),
+                }
 
         instruments.append(InstrumentSpec.from_dict(data))
 

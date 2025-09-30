@@ -137,5 +137,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     buttons.grid(row=0, column=0, sticky="w", pady=(pad // 2, 0))
 
     ttk.Button(buttons, text="Add note", command=app.add_fingering_note).pack(side="left", padx=(0, pad))
-    ttk.Button(buttons, text="Rename", command=app.rename_fingering_note).pack(side="left", padx=(0, pad))
-    ttk.Button(buttons, text="Remove", command=app.remove_fingering_note).pack(side="left", padx=(0, pad))
+    remove_button = ttk.Button(buttons, text="Remove", command=app.remove_fingering_note)
+    remove_button.state(["disabled"])
+    remove_button.pack(side="left", padx=(0, pad))
+    app._fingering_remove_button = remove_button
