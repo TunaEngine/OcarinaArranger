@@ -129,3 +129,18 @@ class MenuBuilderMixin:
             label="Instrument Layout Editor...",
             command=self.open_instrument_layout_editor,
         )
+
+        help_menu = tk.Menu(menubar, tearoff=False)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(
+            label="Send Feedback...",
+            command=self._send_feedback_command,
+        )
+        help_menu.add_command(
+            label="Report a Problem...",
+            command=self._report_problem_command,
+        )
+        help_menu.add_command(
+            label="Suggest a Feature...",
+            command=self._suggest_feature_command,
+        )
