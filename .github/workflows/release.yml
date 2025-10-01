@@ -116,9 +116,9 @@ jobs:
           body="${body}${commits}"
 
           {
-            echo "body<<'EOF'"
-            echo "$body"
-            echo "EOF"
+            printf 'body<<EOF\n'
+            printf '%s\n' "$body"
+            printf 'EOF\n'
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
