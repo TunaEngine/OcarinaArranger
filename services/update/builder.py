@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.version import get_app_version
-from services.update.constants import LOCAL_RELEASE_ENV
+from services.update.constants import LOCAL_RELEASE_ENV, UPDATE_CHANNEL_STABLE
 from services.update.installers import Installer, WindowsInstaller
 from services.update.models import ReleaseInfo, UpdateError
 from services.update.providers import GitHubReleaseProvider, LocalFolderReleaseProvider, ReleaseProvider
@@ -20,7 +20,7 @@ from services.update.service import UpdateService
 _LOGGER = logging.getLogger(__name__)
 
 
-def _build_provider_from_env() -> ReleaseProvider | None:
+def _build_provider_from_env(channel: str) -> ReleaseProvider | None:
     local_dir = os.environ.get(LOCAL_RELEASE_ENV)
     if local_dir:
         folder = Path(local_dir)
@@ -28,17 +28,21 @@ def _build_provider_from_env() -> ReleaseProvider | None:
             _LOGGER.info("Using local update source at %s", folder)
             return LocalFolderReleaseProvider(folder)
         _LOGGER.warning("Configured local update directory does not exist: %s", folder)
-    return GitHubReleaseProvider()
+    return GitHubReleaseProvider(channel=channel)
 
 
-def build_update_service(installer: Installer | None = None) -> UpdateService | None:
+def build_update_service(
+    installer: Installer | None = None,
+    *,
+    channel: str = UPDATE_CHANNEL_STABLE,
+) -> UpdateService | None:
     """Construct an :class:`UpdateService` for the current environment."""
 
     if not sys.platform.startswith("win"):
         _LOGGER.debug("Skipping update service build on non-Windows platform: %s", sys.platform)
         return None
 
-    provider = _build_provider_from_env()
+    provider = _build_provider_from_env(channel)
     if provider is None:
         _LOGGER.debug("No release provider configured")
         return None
@@ -94,6 +98,7 @@ def schedule_startup_update_check(
     installer: Installer | None = None,
     *,
     enabled: bool = True,
+    channel: str = UPDATE_CHANNEL_STABLE,
     on_release_available: Callable[[UpdateService, ReleaseInfo], None] | None = None,
     on_complete: Callable[[], None] | None = None,
 ) -> None:
@@ -103,7 +108,7 @@ def schedule_startup_update_check(
         _LOGGER.debug("Automatic updates disabled by user preference")
         return
 
-    service = build_update_service(installer=installer)
+    service = build_update_service(installer=installer, channel=channel)
     if service is None:
         return
 

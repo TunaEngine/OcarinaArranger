@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from .scrolling import normalize_auto_scroll_mode
+from services.update.constants import UPDATE_CHANNELS, UPDATE_CHANNEL_STABLE
 
 _ENV_PREFERENCES_PATH = "OCARINA_GUI_PREFERENCES_PATH"
 
@@ -30,6 +31,7 @@ class Preferences:
     auto_scroll_mode: str | None = None
     preview_layout_mode: str | None = None
     auto_update_enabled: bool | None = None
+    update_channel: str | None = UPDATE_CHANNEL_STABLE
 
 
 def _default_preferences_path() -> Path:
@@ -101,6 +103,13 @@ def load_preferences(path: Path | None = None) -> Preferences:
     else:
         auto_update_enabled = None
 
+    raw_update_channel = data.get("update_channel")
+    if isinstance(raw_update_channel, str):
+        lowered_channel = raw_update_channel.strip().lower()
+        update_channel = lowered_channel if lowered_channel in UPDATE_CHANNELS else UPDATE_CHANNEL_STABLE
+    else:
+        update_channel = UPDATE_CHANNEL_STABLE
+
     return Preferences(
         theme_id=theme_id,
         log_verbosity=log_verbosity,
@@ -108,6 +117,7 @@ def load_preferences(path: Path | None = None) -> Preferences:
         auto_scroll_mode=auto_scroll_mode,
         preview_layout_mode=preview_layout_mode,
         auto_update_enabled=auto_update_enabled,
+        update_channel=update_channel,
     )
 
 
@@ -129,6 +139,8 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
         data["preview_layout_mode"] = preferences.preview_layout_mode
     if isinstance(preferences.auto_update_enabled, bool):
         data["auto_update_enabled"] = preferences.auto_update_enabled
+    if isinstance(preferences.update_channel, str) and preferences.update_channel in UPDATE_CHANNELS:
+        data["update_channel"] = preferences.update_channel
 
     try:
         location.parent.mkdir(parents=True, exist_ok=True)

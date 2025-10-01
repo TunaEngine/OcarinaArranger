@@ -4,6 +4,11 @@ from __future__ import annotations
 
 GITHUB_REPO = "TunaEngine/OcarinaArranger"
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+API_RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+
+UPDATE_CHANNEL_STABLE = "stable"
+UPDATE_CHANNEL_BETA = "beta"
+UPDATE_CHANNELS = (UPDATE_CHANNEL_STABLE, UPDATE_CHANNEL_BETA)
 
 WINDOWS_ARCHIVE_EXTENSIONS = (".zip",)
 WINDOWS_EXECUTABLE_EXTENSIONS = (".exe",)

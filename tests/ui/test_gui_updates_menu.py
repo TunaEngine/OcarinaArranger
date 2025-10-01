@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import pytest
 
 from ocarina_gui.preferences import Preferences
 from services.update import ReleaseInfo
+from services.update.constants import UPDATE_CHANNEL_BETA, UPDATE_CHANNEL_STABLE
 
 
 @dataclass
@@ -111,6 +114,37 @@ def test_auto_update_toggle_updates_preferences(gui_app, monkeypatch):
     assert saved_states[-1] is False
 
 
+def test_update_channel_toggle_updates_preferences(gui_app, monkeypatch):
+    saved_channels: list[str | None] = []
+
+    def fake_save(preferences, path=None):  # type: ignore[unused-argument]
+        saved_channels.append(preferences.update_channel)
+
+    monkeypatch.setattr(
+        "ui.main_window.menus.update_menu.save_preferences",
+        fake_save,
+    )
+
+    var = getattr(gui_app, "_update_channel_var", None)
+    assert var is not None
+    assert var.get() == UPDATE_CHANNEL_STABLE
+    assert gui_app.update_channel == UPDATE_CHANNEL_STABLE
+
+    var.set(UPDATE_CHANNEL_BETA)
+    gui_app._on_update_channel_changed()
+
+    assert gui_app.update_channel == UPDATE_CHANNEL_BETA
+    assert gui_app._preferences.update_channel == UPDATE_CHANNEL_BETA
+    assert saved_channels[-1] == UPDATE_CHANNEL_BETA
+
+    var.set(UPDATE_CHANNEL_STABLE)
+    gui_app._on_update_channel_changed()
+
+    assert gui_app.update_channel == UPDATE_CHANNEL_STABLE
+    assert gui_app._preferences.update_channel == UPDATE_CHANNEL_STABLE
+    assert saved_channels[-1] == UPDATE_CHANNEL_STABLE
+
+
 def test_manual_update_check_prompts_before_install(gui_app, monkeypatch):
     _install_thread_stub(monkeypatch)
     monkeypatch.setattr(sys, "platform", "win32", raising=False)
@@ -123,9 +157,11 @@ def test_manual_update_check_prompts_before_install(gui_app, monkeypatch):
     installs: list[ReleaseInfo] = []
     service = _FakeUpdateService(release, installs)
 
+    requested_channels: list[str] = []
+
     monkeypatch.setattr(
         "ui.main_window.menus.update_menu.build_update_service",
-        lambda installer=None: service,
+        lambda installer=None, channel=UPDATE_CHANNEL_STABLE: requested_channels.append(channel) or service,
     )
 
     prompts: list[tuple[str, str]] = []
@@ -149,6 +185,7 @@ def test_manual_update_check_prompts_before_install(gui_app, monkeypatch):
     assert installs == []
     assert infos == []
     assert getattr(gui_app, "_update_check_in_progress", False) is False
+    assert requested_channels == [UPDATE_CHANNEL_STABLE]
 
 
 def test_manual_update_check_installs_when_confirmed(gui_app, monkeypatch):
@@ -163,9 +200,11 @@ def test_manual_update_check_installs_when_confirmed(gui_app, monkeypatch):
     installs: list[ReleaseInfo] = []
     service = _FakeUpdateService(release, installs)
 
+    requested_channels: list[str] = []
+
     monkeypatch.setattr(
         "ui.main_window.menus.update_menu.build_update_service",
-        lambda installer=None: service,
+        lambda installer=None, channel=UPDATE_CHANNEL_STABLE: requested_channels.append(channel) or service,
     )
 
     prompts: list[tuple[str, str]] = []
@@ -193,6 +232,38 @@ def test_manual_update_check_installs_when_confirmed(gui_app, monkeypatch):
     assert "release notes" in prompt_message.lower()
     assert "first line" in prompt_message.lower()
     assert any("Downloading" in message for _, message in infos)
+    assert requested_channels == [UPDATE_CHANNEL_STABLE]
+
+
+def test_manual_update_check_uses_selected_channel(gui_app, monkeypatch):
+    _install_thread_stub(monkeypatch)
+    monkeypatch.setattr(sys, "platform", "win32", raising=False)
+
+    var = getattr(gui_app, "_update_channel_var", None)
+    assert var is not None
+    var.set(UPDATE_CHANNEL_BETA)
+
+    installs: list[ReleaseInfo] = []
+    service = _FakeUpdateService(None, installs)
+
+    requested_channels: list[str] = []
+
+    monkeypatch.setattr(
+        "ui.main_window.menus.update_menu.build_update_service",
+        lambda installer=None, channel=UPDATE_CHANNEL_STABLE: requested_channels.append(channel) or service,
+    )
+
+    infos: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "ui.main_window.menus.update_menu.messagebox.showinfo",
+        lambda title, message, parent=None: infos.append((title, message)),
+    )
+
+    gui_app._check_for_updates_command()
+
+    assert installs == []
+    assert requested_channels == [UPDATE_CHANNEL_BETA]
+    assert infos  # should notify no updates available
 
 
 def test_manual_update_check_reports_latest_when_no_release(gui_app, monkeypatch):
@@ -204,7 +275,7 @@ def test_manual_update_check_reports_latest_when_no_release(gui_app, monkeypatch
 
     monkeypatch.setattr(
         "ui.main_window.menus.update_menu.build_update_service",
-        lambda installer=None: service,
+        lambda installer=None, channel=UPDATE_CHANNEL_STABLE: service,
     )
 
     infos: list[tuple[str, str]] = []
@@ -292,7 +363,7 @@ def test_start_automatic_update_check_prompts(gui_app, monkeypatch):
 
     monkeypatch.setattr(
         "ui.main_window.menus.update_menu.build_update_service",
-        lambda installer=None: service,
+        lambda installer=None, channel=UPDATE_CHANNEL_STABLE: service,
     )
 
     prompts: list[str] = []

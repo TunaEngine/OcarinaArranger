@@ -122,6 +122,21 @@ class MenuBuilderMixin:
             )
             update_entries_added = True
 
+        channel_var = getattr(self, "_update_channel_var", None)
+        channel_changed = getattr(self, "_on_update_channel_changed", None)
+        choices = getattr(self, "_update_channel_choices", [])
+        if isinstance(channel_var, tk.StringVar) and callable(channel_changed) and choices:
+            if update_entries_added:
+                tools_menu.add_separator()
+            for label, value in choices:
+                tools_menu.add_radiobutton(
+                    label=label,
+                    variable=channel_var,
+                    value=value,
+                    command=channel_changed,
+                )
+            update_entries_added = True
+
         if update_entries_added:
             tools_menu.add_separator()
 

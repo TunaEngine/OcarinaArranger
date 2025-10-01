@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import io
 import json
 import logging
 from dataclasses import dataclass
@@ -12,12 +13,18 @@ import pytest
 
 from services.update import (
     INSTALL_ROOT_ENV,
+    GitHubReleaseProvider,
     build_update_service,
     LocalFolderReleaseProvider,
     ReleaseInfo,
     UpdateError,
     UpdateService,
     schedule_startup_update_check,
+)
+from services.update.constants import (
+    UPDATE_CHANNEL_BETA,
+    UPDATE_CHANNEL_STABLE,
+    API_URL,
 )
 from services.update.models import InstallationPlan
 
@@ -293,6 +300,27 @@ def test_update_service_raises_on_hash_mismatch(tmp_path: Path) -> None:
     assert installer.installed == []
 
 
+def test_update_service_errors_when_hash_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    archive_path = _build_update_archive(tmp_path)
+    release = ReleaseInfo(
+        version="1.3.0",
+        asset_name="OcarinaArranger-windows.zip",
+        source_path=archive_path,
+    )
+    provider = StaticReleaseProvider(release)
+    installer = RecordingInstaller()
+    service = UpdateService(provider, installer, current_version="1.2.0")
+
+    _configure_install_root(monkeypatch, tmp_path)
+
+    with pytest.raises(UpdateError, match="missing security hash"):
+        service.check_for_updates()
+
+    assert installer.installed == []
+
+
 def test_local_release_provider_reads_metadata(tmp_path: Path) -> None:
     archive_path = _build_update_archive(tmp_path)
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
@@ -315,6 +343,143 @@ def test_local_release_provider_reads_metadata(tmp_path: Path) -> None:
     assert info.hash_value == digest
     assert info.release_notes == "Lots of improvements."
     assert info.entry_point == "OcarinaArranger/OcarinaArranger.exe"
+
+
+def test_github_provider_prefers_windows_asset(monkeypatch: pytest.MonkeyPatch) -> None:
+    latest_payload = {
+        "url": "https://api.github.com/repos/TunaEngine/OcarinaArranger/releases/251525990",
+        "tag_name": "v1.2.1",
+        "body": "1.2.1 Fixed GH release action\n\n- 1.2.1 Fixed GH release action\n- Added support links\n- Added auto-update feature (Windows-only)\n- Add windway editing support for multi-chamber instruments\n- Expand fingering note range support\n- Adjust preview hover behaviour for playback and cursor drag",
+        "assets": [
+            {
+                "name": "OcarinaArranger-linux.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v1.2.1/OcarinaArranger-linux.zip",
+            },
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v1.2.1/OcarinaArranger-windows.zip",
+            },
+        ],
+    }
+
+    detail_payload = {
+        **latest_payload,
+        "assets": [
+            {
+                "name": "OcarinaArranger-linux.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v1.2.1/OcarinaArranger-linux.zip",
+                "digest": "sha256:23312fa9e67350e7809e58ffd9a8c2e220fe857180d087407145ec3cf29612a0",
+            },
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v1.2.1/OcarinaArranger-windows.zip",
+                "digest": "sha256:1a90f7d53827d01d76a5292a24f4a4ca0a3a561e0e889eb157c1c046e5780ff6",
+            },
+        ],
+    }
+
+    responses = {
+        "https://example.invalid/api": json.dumps(latest_payload).encode("utf-8"),
+        latest_payload["url"]: json.dumps(detail_payload).encode("utf-8"),
+    }
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            self.close()
+
+    requested_urls: list[str] = []
+
+    def fake_urlopen(url: str):  # type: ignore[override]
+        requested_urls.append(url)
+        payload = responses.get(url)
+        if payload is None:
+            raise AssertionError(f"Unexpected URL requested: {url}")
+        return FakeResponse(payload)
+
+    monkeypatch.setattr("services.update.providers.urlopen", fake_urlopen)
+
+    provider = GitHubReleaseProvider(api_url="https://example.invalid/api")
+    info = provider.fetch_latest()
+
+    assert info is not None
+    assert info.version == "1.2.1"
+    assert info.asset_name == "OcarinaArranger-windows.zip"
+    assert (
+        info.download_url
+        == "https://github.com/TunaEngine/OcarinaArranger/releases/download/v1.2.1/OcarinaArranger-windows.zip"
+    )
+    assert info.hash_value == "1a90f7d53827d01d76a5292a24f4a4ca0a3a561e0e889eb157c1c046e5780ff6"
+    assert info.hash_url is None
+    assert info.release_notes is not None
+    assert info.release_notes.startswith("1.2.1 Fixed GH release action")
+    assert requested_urls == ["https://example.invalid/api", latest_payload["url"]]
+
+
+def test_github_provider_falls_back_to_companion_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    latest_payload = {
+        "url": "https://api.github.com/repos/TunaEngine/OcarinaArranger/releases/2718281828",
+        "tag_name": "v2.0.0",
+        "body": "v2.0.0 release notes",
+        "assets": [
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v2.0.0/OcarinaArranger-windows.zip",
+            },
+        ],
+    }
+
+    detail_payload = {
+        **latest_payload,
+        "assets": [
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v2.0.0/OcarinaArranger-windows.zip",
+            },
+            {
+                "name": "OcarinaArranger-windows.zip.sha256",
+                "browser_download_url": "https://github.com/TunaEngine/OcarinaArranger/releases/download/v2.0.0/OcarinaArranger-windows.zip.sha256",
+            },
+        ],
+    }
+
+    responses = {
+        "https://example.invalid/api": json.dumps(latest_payload).encode("utf-8"),
+        latest_payload["url"]: json.dumps(detail_payload).encode("utf-8"),
+    }
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            self.close()
+
+    def fake_urlopen(url: str):  # type: ignore[override]
+        payload = responses.get(url)
+        if payload is None:
+            raise AssertionError(f"Unexpected URL requested: {url}")
+        return FakeResponse(payload)
+
+    monkeypatch.setattr("services.update.providers.urlopen", fake_urlopen)
+
+    provider = GitHubReleaseProvider(api_url="https://example.invalid/api")
+    info = provider.fetch_latest()
+
+    assert info is not None
+    assert info.version == "2.0.0"
+    assert info.asset_name == "OcarinaArranger-windows.zip"
+    assert (
+        info.download_url
+        == "https://github.com/TunaEngine/OcarinaArranger/releases/download/v2.0.0/OcarinaArranger-windows.zip"
+    )
+    assert info.hash_value is None
+    assert (
+        info.hash_url
+        == "https://github.com/TunaEngine/OcarinaArranger/releases/download/v2.0.0/OcarinaArranger-windows.zip.sha256"
+    )
 
 
 def test_schedule_startup_update_check_noop_on_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -446,7 +611,7 @@ def test_get_available_release_returns_none_when_current_is_newer(tmp_path: Path
 def test_build_update_service_returns_none_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "linux", raising=False)
 
-    service = build_update_service()
+    service = build_update_service(channel=UPDATE_CHANNEL_STABLE)
 
     assert service is None
 
@@ -455,10 +620,86 @@ def test_build_update_service_creates_service_on_windows(monkeypatch: pytest.Mon
     monkeypatch.setattr("sys.platform", "win32", raising=False)
     monkeypatch.setattr(
         "services.update.builder._build_provider_from_env",
-        lambda: StaticReleaseProvider(None),
+        lambda channel: StaticReleaseProvider(None),
     )
     monkeypatch.setattr("services.update.builder.get_app_version", lambda: "1.0.0")
 
-    service = build_update_service(installer=RecordingInstaller())
+    service = build_update_service(installer=RecordingInstaller(), channel=UPDATE_CHANNEL_STABLE)
 
     assert isinstance(service, UpdateService)
+
+
+def test_github_provider_prefers_beta_releases_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing_payload = [
+        {
+            "url": "https://api.github.com/repos/TunaEngine/OcarinaArranger/releases/2",
+            "tag_name": "v1.2.4.dev",
+            "prerelease": True,
+        },
+        {
+            "url": "https://api.github.com/repos/TunaEngine/OcarinaArranger/releases/1",
+            "tag_name": "v1.2.3",
+            "prerelease": False,
+        },
+    ]
+
+    dev_detail = {
+        "tag_name": "v1.2.4.dev",
+        "prerelease": True,
+        "assets": [
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://example.invalid/dev.zip",
+                "digest": "sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            }
+        ],
+    }
+    stable_detail = {
+        "tag_name": "v1.2.3",
+        "prerelease": False,
+        "assets": [
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://example.invalid/stable.zip",
+                "digest": "sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            }
+        ],
+    }
+
+    responses = {
+        "https://example.invalid/releases": json.dumps(listing_payload).encode("utf-8"),
+        listing_payload[0]["url"]: json.dumps(dev_detail).encode("utf-8"),
+        listing_payload[1]["url"]: json.dumps(stable_detail).encode("utf-8"),
+    }
+
+    class FakeResponse(io.BytesIO):
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            self.close()
+
+    requested_urls: list[str] = []
+
+    def fake_urlopen(url: str):  # type: ignore[override]
+        requested_urls.append(url)
+        payload = responses.get(url)
+        if payload is None:
+            raise AssertionError(f"Unexpected URL requested: {url}")
+        return FakeResponse(payload)
+
+    monkeypatch.setattr("services.update.providers.urlopen", fake_urlopen)
+
+    provider = GitHubReleaseProvider(
+        api_url=API_URL,
+        releases_url="https://example.invalid/releases",
+        channel=UPDATE_CHANNEL_BETA,
+    )
+
+    info = provider.fetch_latest()
+
+    assert info is not None
+    assert info.version == "1.2.4.dev"
+    assert info.download_url == "https://example.invalid/dev.zip"
+    assert info.hash_value == "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+    assert requested_urls == ["https://example.invalid/releases", listing_payload[0]["url"]]

@@ -100,7 +100,12 @@ jobs:
           fi
 
           if git rev-parse --verify "$tag^" >/dev/null 2>&1; then
-            previous_tag=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
+            if [[ "$tag" == *".dev"* ]]; then
+              previous_tag=$(git tag --merged "$tag^" --sort=-creatordate 'v*' | grep '\.dev' | head -n1 || true)
+            else
+              # Exclude .dev tags so stable releases diff against the prior stable version.
+              previous_tag=$(git tag --merged "$tag^" --sort=-creatordate 'v*' | grep -v '\.dev' | head -n1 || true)
+            fi
           else
             previous_tag=""
           fi

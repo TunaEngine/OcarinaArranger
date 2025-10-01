@@ -72,8 +72,8 @@ class UpdateService:
             raise UpdateError(
                 f"Installer hash mismatch: expected {expected_hash} but received {actual_hash}"
             )
-
         _LOGGER.info("Verified installer for version %s", release.version)
+
         plan = self._build_installation_plan(download_path, release)
         _LOGGER.debug("Installation plan command: %s", plan.command)
         self._installer.install(plan, release.version)
@@ -155,9 +155,7 @@ class UpdateService:
 
     def _resolve_expected_hash(self, release: ReleaseInfo) -> str:
         if release.hash_value:
-            _LOGGER.debug(
-                "Using inline hash for version %s", release.version
-            )
+            _LOGGER.debug("Using inline hash for version %s", release.version)
             return release.hash_value.strip()
         if release.hash_path is not None:
             try:

@@ -5,11 +5,17 @@ from __future__ import annotations
 import sys
 import threading
 import tkinter as tk
-from tkinter import messagebox
+from contextlib import suppress
+from tkinter import messagebox, ttk
 from typing import Callable
 
 from ocarina_gui.preferences import Preferences, save_preferences
 from services.update import ReleaseInfo, UpdateError, UpdateService, build_update_service
+from services.update.constants import (
+    UPDATE_CHANNEL_BETA,
+    UPDATE_CHANNELS,
+    UPDATE_CHANNEL_STABLE,
+)
 from services.update.recovery import consume_update_failure_notice
 
 from ._logger import logger
@@ -30,9 +36,61 @@ def _summarise_release_notes(notes: str, *, max_chars: int = 800, max_lines: int
     return normalised
 
 
+class _UpdateDownloadDialog(tk.Toplevel):
+    """Modal progress indicator shown while updates download."""
+
+    def __init__(self, master: tk.Misc) -> None:
+        super().__init__(master=master)
+        self.title("Downloading Update")
+        self.resizable(False, False)
+        with suppress(tk.TclError):
+            self.transient(master)
+        with suppress(tk.TclError):
+            self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._disable_close)
+
+        message = tk.Label(self, text="Downloading the latest update…", anchor="w")
+        message.pack(fill="x", padx=20, pady=(20, 10))
+
+        self._progress = ttk.Progressbar(self, mode="indeterminate", length=260)
+        self._progress.pack(fill="x", padx=20, pady=(0, 20))
+        with suppress(tk.TclError):
+            self._progress.start(12)
+
+        self._center_over_master(master)
+
+    def _center_over_master(self, master: tk.Misc) -> None:
+        try:
+            self.update_idletasks()
+            master.update_idletasks()
+            master_x = master.winfo_rootx()
+            master_y = master.winfo_rooty()
+            master_width = master.winfo_width()
+            master_height = master.winfo_height()
+            width = self.winfo_width()
+            height = self.winfo_height()
+            x = master_x + (master_width - width) // 2
+            y = master_y + (master_height - height) // 2
+            self.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            logger.debug("Unable to centre update progress dialog", exc_info=True)
+
+    def _disable_close(self) -> None:
+        pass
+
+    def close(self) -> None:
+        with suppress(tk.TclError):
+            self._progress.stop()
+        with suppress(tk.TclError):
+            self.grab_release()
+        self.destroy()
+
+
 class UpdateMenuMixin:
     _preferences: Preferences | None
     _auto_update_enabled_var: tk.BooleanVar | None
+    _update_channel_var: tk.StringVar | None
+    _update_channel_choices: list[tuple[str, str]]
     _update_check_in_progress: bool
 
     def _setup_auto_update_menu(self, preferences: object) -> None:
@@ -52,6 +110,23 @@ class UpdateMenuMixin:
             # Headless initialisation paths can fail to construct Tk variables; fall back to None.
             logger.debug("Auto-update toggle unavailable in headless mode", exc_info=True)
             self._auto_update_enabled_var = None
+
+        channel_value = UPDATE_CHANNEL_STABLE
+        if isinstance(preferences, Preferences):
+            stored_channel = getattr(preferences, "update_channel", None)
+            if isinstance(stored_channel, str) and stored_channel in UPDATE_CHANNELS:
+                channel_value = stored_channel
+
+        try:
+            self._update_channel_var = tk.StringVar(master=self, value=channel_value)
+        except tk.TclError:
+            logger.debug("Update channel selector unavailable in headless mode", exc_info=True)
+            self._update_channel_var = None
+
+        self._update_channel_choices = [
+            ("Stable Releases", UPDATE_CHANNEL_STABLE),
+            ("Beta Releases", UPDATE_CHANNEL_BETA),
+        ]
 
         self._update_check_in_progress = False
         self._notify_update_failure_if_present()
@@ -87,6 +162,39 @@ class UpdateMenuMixin:
                 return True
         return False
 
+    @property
+    def update_channel(self) -> str:
+        """Return the selected update channel."""
+
+        var = getattr(self, "_update_channel_var", None)
+        if isinstance(var, tk.Variable):
+            try:
+                raw_value = var.get()
+            except Exception:
+                logger.debug("Unable to read update channel state", exc_info=True)
+            else:
+                if isinstance(raw_value, str):
+                    lowered = raw_value.strip().lower()
+                    if lowered in UPDATE_CHANNELS:
+                        return lowered
+
+        preferences = getattr(self, "_preferences", None)
+        if isinstance(preferences, Preferences):
+            stored_channel = getattr(preferences, "update_channel", None)
+            if isinstance(stored_channel, str) and stored_channel in UPDATE_CHANNELS:
+                return stored_channel
+
+        return UPDATE_CHANNEL_STABLE
+
+    def _on_update_channel_changed(self) -> None:
+        channel = self.update_channel
+        if hasattr(self, "_preferences") and isinstance(self._preferences, Preferences):
+            self._preferences.update_channel = channel
+            try:
+                save_preferences(self._preferences)
+            except Exception:
+                logger.debug("Failed to persist update channel preference", exc_info=True)
+
     def _check_for_updates_command(self) -> None:
         """Trigger a manual update check from the Tools menu."""
 
@@ -101,7 +209,7 @@ class UpdateMenuMixin:
             self._show_update_info("Check for Updates", "An update check is already running.")
             return
 
-        service = build_update_service()
+        service = build_update_service(channel=self.update_channel)
         if service is None:
             self._show_update_error(
                 "Check for Updates",
@@ -129,7 +237,7 @@ class UpdateMenuMixin:
         if getattr(self, "_update_check_in_progress", False):
             return
 
-        service = build_update_service()
+        service = build_update_service(channel=self.update_channel)
         if service is None:
             return
 
@@ -217,19 +325,43 @@ class UpdateMenuMixin:
         self._invoke_on_ui_thread(_prompt)
 
     def _start_update_install(self, service: UpdateService, release: ReleaseInfo) -> None:
+        progress_dialog: dict[str, _UpdateDownloadDialog | None] = {"dialog": None}
+
+        def _open_progress_dialog() -> None:
+            try:
+                dialog = _UpdateDownloadDialog(self)
+            except Exception:
+                logger.debug("Unable to display update progress dialog", exc_info=True)
+            else:
+                progress_dialog["dialog"] = dialog
+
+        self._invoke_on_ui_thread(_open_progress_dialog)
+
+        def _close_progress_dialog() -> None:
+            dialog = progress_dialog.pop("dialog", None)
+            if dialog is None:
+                return
+            try:
+                dialog.close()
+            except Exception:
+                logger.debug("Unable to close update progress dialog", exc_info=True)
+
         def _install() -> None:
             try:
                 service.download_and_install(release)
             except UpdateError as exc:
+                self._invoke_on_ui_thread(_close_progress_dialog)
                 self._schedule_update_dialog("Update Failed", str(exc), error=True)
             except Exception:  # pragma: no cover - defensive guard
                 logger.exception("Manual update installation failed")
+                self._invoke_on_ui_thread(_close_progress_dialog)
                 self._schedule_update_dialog(
                     "Update Failed",
                     "An unexpected error occurred while installing the update.",
                     error=True,
                 )
             else:
+                self._invoke_on_ui_thread(_close_progress_dialog)
                 self._mark_update_check_complete()
 
         thread = threading.Thread(
