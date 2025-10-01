@@ -104,6 +104,25 @@ class InstrumentLayoutCanvas(tk.Canvas):
             self._item_lookup[item] = (SelectionKind.HOLE, index)
             self._tooltip_texts[item] = friendly_label(hole.identifier, f"Hole {index + 1}")
 
+        for index, windway in enumerate(state.windways):
+            center_x = windway.x + self._margin
+            center_y = windway.y + self._margin
+            half_width = windway.width / 2.0
+            half_height = windway.height / 2.0
+            item = self.create_rectangle(
+                center_x - half_width,
+                center_y - half_height,
+                center_x + half_width,
+                center_y + half_height,
+                outline=state.style.hole_outline_color,
+                width=1,
+                fill=state.style.background_color,
+            )
+            self._item_lookup[item] = (SelectionKind.WINDWAY, index)
+            self._tooltip_texts[item] = friendly_label(
+                windway.identifier, f"Windway {index + 1}"
+            )
+
         self._draw_selection_indicator()
         self._tooltip.hide()
 
@@ -137,6 +156,21 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 y - radius,
                 x + radius,
                 y + radius,
+                outline="#ff8800",
+                width=2,
+                dash=(4, 2),
+            )
+        elif selection.kind == SelectionKind.WINDWAY:
+            windway = state.windways[selection.index]
+            x = windway.x + margin
+            y = windway.y + margin
+            half_width = windway.width / 2.0 + 4
+            half_height = windway.height / 2.0 + 4
+            self._selection_indicator = self.create_rectangle(
+                x - half_width,
+                y - half_height,
+                x + half_width,
+                y + half_height,
                 outline="#ff8800",
                 width=2,
                 dash=(4, 2),
@@ -176,6 +210,10 @@ class InstrumentLayoutCanvas(tk.Canvas):
         margin = self._margin
         if kind == SelectionKind.HOLE:
             element = state.holes[index]
+            center_x = element.x + margin
+            center_y = element.y + margin
+        elif kind == SelectionKind.WINDWAY:
+            element = state.windways[index]
             center_x = element.x + margin
             center_y = element.y + margin
         elif kind == SelectionKind.OUTLINE:

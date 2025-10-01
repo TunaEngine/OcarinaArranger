@@ -165,9 +165,11 @@ class NoteManagementMixin:
                 seen.add(name)
 
         hole_count = len(state.holes)
+        windway_count = len(state.windways)
+        total_count = hole_count + windway_count
         for name in generated:
             if name not in state.note_map:
-                state.note_map[name] = [0] * hole_count
+                state.note_map[name] = [0] * total_count
                 changed = True
 
         added_notes = [name for name in generated if name not in state.note_order]
@@ -228,21 +230,23 @@ class NoteManagementMixin:
 
         state = self.state
         hole_count = len(state.holes)
+        windway_count = len(state.windways)
+        total_count = hole_count + windway_count
         normalized_note = str(note).strip()
         if not normalized_note:
-            return [0] * hole_count
+            return [0] * total_count
 
         try:
             target_midi = parse_note_name(normalized_note)
         except ValueError:
-            return [0] * hole_count
+            return [0] * total_count
 
         best_higher: Optional[Tuple[int, List[int]]] = None
         best_lower: Optional[Tuple[int, List[int]]] = None
         exact_match: Optional[List[int]] = None
 
         for existing, pattern in state.note_map.items():
-            candidate = normalize_pattern(pattern, hole_count)
+            candidate = normalize_pattern(pattern, hole_count, windway_count)
             try:
                 midi = parse_note_name(existing)
             except ValueError:
@@ -266,7 +270,7 @@ class NoteManagementMixin:
             return list(best_lower[1])
         if exact_match is not None:
             return list(exact_match)
-        return [0] * hole_count
+        return [0] * total_count
 
     def set_note_pattern(self, note: str, pattern: Iterable[int]) -> None:
         state = self.state
@@ -284,7 +288,11 @@ class NoteManagementMixin:
             if max_midi is not None and midi_value > max_midi:
                 raise ValueError("Note is above the instrument's available range")
 
-        normalized_pattern = normalize_pattern(pattern, len(state.holes))
+        normalized_pattern = normalize_pattern(
+            pattern,
+            len(state.holes),
+            len(state.windways),
+        )
         current = state.note_map.get(normalized_note)
         if current == normalized_pattern:
             return

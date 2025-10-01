@@ -18,6 +18,15 @@ class EditableHole:
 
 
 @dataclass
+class EditableWindway:
+    identifier: str
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass
 class OutlinePoint:
     x: float
     y: float
@@ -67,6 +76,7 @@ class EditableStyle:
 class SelectionKind(str, Enum):
     NONE = "none"
     HOLE = "hole"
+    WINDWAY = "windway"
     OUTLINE = "outline"
 
 
@@ -84,6 +94,7 @@ class InstrumentLayoutState:
     canvas_width: int
     canvas_height: int
     holes: List[EditableHole] = field(default_factory=list)
+    windways: List[EditableWindway] = field(default_factory=list)
     outline_points: List[OutlinePoint] = field(default_factory=list)
     outline_closed: bool = False
     style: EditableStyle = field(default_factory=lambda: EditableStyle.from_spec(StyleSpec()))
@@ -106,6 +117,17 @@ def state_from_spec(instrument: InstrumentSpec) -> InstrumentLayoutState:
         EditableHole(identifier=hole.identifier, x=hole.x, y=hole.y, radius=hole.radius)
         for hole in instrument.holes
     ]
+    windways = [
+        EditableWindway(
+            identifier=windway.identifier,
+            x=windway.x,
+            y=windway.y,
+            width=windway.width,
+            height=windway.height,
+        )
+        for windway in getattr(instrument, "windways", [])
+    ]
+
     if instrument.outline is not None:
         outline_points = [OutlinePoint(x=point[0], y=point[1]) for point in instrument.outline.points]
         outline_closed = instrument.outline.closed
@@ -130,6 +152,7 @@ def state_from_spec(instrument: InstrumentSpec) -> InstrumentLayoutState:
         canvas_width=int(instrument.canvas_size[0]),
         canvas_height=int(instrument.canvas_size[1]),
         holes=holes,
+        windways=windways,
         outline_points=outline_points,
         outline_closed=outline_closed,
         style=EditableStyle.from_spec(instrument.style),
@@ -161,6 +184,7 @@ def clone_state(
         canvas_height = 160
         holes: List[EditableHole] = []
         outline_points: List[OutlinePoint] = []
+        windways = []
         outline_closed = False
         style = EditableStyle.from_spec(StyleSpec())
         note_order: List[str] = []
@@ -182,6 +206,16 @@ def clone_state(
                 radius=hole.radius,
             )
             for hole in template.holes
+        ]
+        windways = [
+            EditableWindway(
+                identifier=windway.identifier,
+                x=windway.x,
+                y=windway.y,
+                width=windway.width,
+                height=windway.height,
+            )
+            for windway in template.windways
         ]
         outline_points = [OutlinePoint(x=point.x, y=point.y) for point in template.outline_points]
         outline_closed = template.outline_closed
@@ -219,6 +253,7 @@ def clone_state(
         canvas_width=canvas_width,
         canvas_height=canvas_height,
         holes=holes,
+        windways=windways,
         outline_points=outline_points,
         outline_closed=outline_closed,
         style=style,
@@ -253,6 +288,16 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
             }
             for hole in state.holes
         ],
+        "windways": [
+            {
+                "id": windway.identifier,
+                "x": windway.x,
+                "y": windway.y,
+                "width": windway.width,
+                "height": windway.height,
+            }
+            for windway in state.windways
+        ],
         "note_order": list(state.note_order),
         "note_map": {note: list(pattern) for note, pattern in state.note_map.items()},
         "candidate_notes": list(state.candidate_notes),
@@ -279,6 +324,7 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
 
 __all__ = [
     "EditableHole",
+    "EditableWindway",
     "EditableStyle",
     "InstrumentLayoutState",
     "OutlinePoint",

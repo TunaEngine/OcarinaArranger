@@ -58,6 +58,9 @@ class FingeringSetupMixin:
         setter = getattr(preview, "set_hole_click_handler", None)
         if callable(setter):
             setter(self._on_fingering_preview_hole_click)
+        windway_setter = getattr(preview, "set_windway_click_handler", None)
+        if callable(windway_setter):
+            windway_setter(self._on_fingering_preview_windway_click)
 
     def _refresh_fingering_after_layout_save(self, preferred_id: str) -> None:
         try:

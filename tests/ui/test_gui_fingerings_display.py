@@ -18,7 +18,7 @@ def test_fingering_table_populated_from_config(gui_app):
     instrument = get_current_instrument()
     columns = table["columns"]
     assert columns[0] == "note"
-    assert len(columns) == len(instrument.holes) + 1
+    assert len(columns) == len(instrument.holes) + len(instrument.windways) + 1
 
     rows = table.get_children()
     assert rows
@@ -27,7 +27,7 @@ def test_fingering_table_populated_from_config(gui_app):
     values = table.item(first_row, "values")
     assert values[0] == instrument.note_order[0]
     assert len(values) == len(columns)
-    assert set(values[1:]).issubset({"●", "○", "◐"})
+    assert set(values[1:]).issubset({"●", "○", "◐", "–"})
 
     table.selection_set(first_row)
     gui_app._on_fingering_table_select()

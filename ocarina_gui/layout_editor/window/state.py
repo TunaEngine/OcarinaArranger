@@ -65,6 +65,8 @@ class _LayoutEditorStateMixin:
                 self._selection_x_var.set(0.0)
                 self._selection_y_var.set(0.0)
                 self._selection_radius_var.set(0.0)
+                self._selection_width_var.set(0.0)
+                self._selection_height_var.set(0.0)
                 self._selection_info_var.set("No element selected")
                 self._hole_identifier_var.set("")
             else:
@@ -77,8 +79,8 @@ class _LayoutEditorStateMixin:
         self.canvas.render(state)
         self._update_dirty_indicator()
         self._refresh_json_preview()
-        self._update_radius_entry_state()
-        self._update_hole_controls()
+        self._update_size_entry_state()
+        self._update_element_controls()
 
     def _update_selection_vars(self, state: InstrumentLayoutState) -> None:
         selection = state.selection
@@ -89,33 +91,59 @@ class _LayoutEditorStateMixin:
             self._selection_x_var.set(hole.x)
             self._selection_y_var.set(hole.y)
             self._selection_radius_var.set(hole.radius)
+            self._selection_width_var.set(0.0)
+            self._selection_height_var.set(0.0)
             self._hole_identifier_var.set(hole.identifier)
+        elif selection.kind == SelectionKind.WINDWAY:
+            windway = state.windways[selection.index]
+            self._selection_x_var.set(windway.x)
+            self._selection_y_var.set(windway.y)
+            self._selection_radius_var.set(0.0)
+            self._selection_width_var.set(windway.width)
+            self._selection_height_var.set(windway.height)
+            self._hole_identifier_var.set(windway.identifier)
         elif selection.kind == SelectionKind.OUTLINE:
             point = state.outline_points[selection.index]
             self._selection_x_var.set(point.x)
             self._selection_y_var.set(point.y)
             self._selection_radius_var.set(0.0)
+            self._selection_width_var.set(0.0)
+            self._selection_height_var.set(0.0)
             self._hole_identifier_var.set("")
         self._selection_info_var.set(self._describe_selection(state))
 
-    def _update_radius_entry_state(self) -> None:
+    def _update_size_entry_state(self) -> None:
         state = self._viewmodel.state
         selection = state.selection
-        if selection is None or selection.kind == SelectionKind.OUTLINE:
-            self._radius_entry.configure(state="disabled")
-        else:
-            self._radius_entry.configure(state="normal")
+        radius_state = "disabled"
+        width_state = "disabled"
+        height_state = "disabled"
+        if selection is not None:
+            if selection.kind == SelectionKind.HOLE:
+                radius_state = "normal"
+            elif selection.kind == SelectionKind.WINDWAY:
+                width_state = "normal"
+                height_state = "normal"
 
-    def _update_hole_controls(self) -> None:
+        self._radius_entry.configure(state=radius_state)
+        if self._width_entry is not None:
+            self._width_entry.configure(state=width_state)
+        if self._height_entry is not None:
+            self._height_entry.configure(state=height_state)
+
+    def _update_element_controls(self) -> None:
         state = self._viewmodel.state
         entry = self._hole_entry
-        remove_button = self._remove_hole_button
+        remove_button = self._remove_element_button
         add_button = self._add_hole_button
+        add_windway = self._add_windway_button
         if add_button is not None:
             add_button.state(["!disabled"])
+        if add_windway is not None:
+            add_windway.state(["!disabled"])
 
         selection = state.selection
-        if selection is not None and selection.kind == SelectionKind.HOLE:
+        if selection is not None and selection.kind in (SelectionKind.HOLE, SelectionKind.WINDWAY):
             if entry is not None:
                 entry.configure(state="normal")
             if remove_button is not None:
@@ -125,7 +153,10 @@ class _LayoutEditorStateMixin:
                 entry.configure(state="disabled")
             if remove_button is not None:
                 remove_button.state(["disabled"])
-            if selection is None or selection.kind != SelectionKind.HOLE:
+            if selection is None or selection.kind not in (
+                SelectionKind.HOLE,
+                SelectionKind.WINDWAY,
+            ):
                 self._hole_identifier_var.set("")
 
     @staticmethod
@@ -161,6 +192,13 @@ class _LayoutEditorStateMixin:
             label = getattr(hole, "identifier", "") or f"Hole #{selection.index + 1}"
             return (
                 f"{label} (x={fmt(hole.x)}, y={fmt(hole.y)}, radius={fmt(hole.radius)})"
+            )
+        if selection.kind == SelectionKind.WINDWAY:
+            windway = state.windways[selection.index]
+            label = getattr(windway, "identifier", "") or f"Windway #{selection.index + 1}"
+            return (
+                f"{label} (x={fmt(windway.x)}, y={fmt(windway.y)}, "
+                f"width={fmt(windway.width)}, height={fmt(windway.height)})"
             )
         if selection.kind == SelectionKind.OUTLINE:
             point = state.outline_points[selection.index]

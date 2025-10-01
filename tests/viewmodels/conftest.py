@@ -68,12 +68,15 @@ def layout_editor_specs() -> List[InstrumentSpec]:
                 {"id": "LH1", "x": 60.0, "y": 60.0, "radius": 7.0},
                 {"id": "LH2", "x": 100.0, "y": 55.0, "radius": 7.5},
             ],
+            "windways": [
+                {"id": "Chamber A", "x": 40.0, "y": 28.0, "width": 18.0, "height": 10.0}
+            ],
             "note_order": ["C5", "Db5", "D5", "E5"],
             "note_map": {
-                "C5": [1, 1],
-                "Db5": [1, 1],
-                "D5": [1, 0],
-                "E5": [0, 0],
+                "C5": [1, 1, 2],
+                "Db5": [1, 1, 2],
+                "D5": [1, 0, 2],
+                "E5": [0, 0, 2],
             },
             "preferred_range": {"min": "C5", "max": "E5"},
             "candidate_range": {"min": "A#4", "max": "G6"},
@@ -100,12 +103,15 @@ def layout_editor_specs() -> List[InstrumentSpec]:
                 {"id": "RH2", "x": 110.0, "y": 80.0, "radius": 8.5},
                 {"id": "RH3", "x": 150.0, "y": 78.0, "radius": 8.0},
             ],
+            "windways": [
+                {"id": "Chamber B", "x": 60.0, "y": 32.0, "width": 20.0, "height": 12.0}
+            ],
             "note_order": ["F4", "G4", "A4", "Bb4"],
             "note_map": {
-                "F4": [1, 1, 1],
-                "G4": [1, 1, 0],
-                "A4": [1, 0, 0],
-                "Bb4": [0, 0, 0],
+                "F4": [1, 1, 1, 2],
+                "G4": [1, 1, 0, 2],
+                "A4": [1, 0, 0, 2],
+                "Bb4": [0, 0, 0, 2],
             },
             "preferred_range": {"min": "F4", "max": "Bb4"},
             "candidate_range": {"min": "E4", "max": "D6"},

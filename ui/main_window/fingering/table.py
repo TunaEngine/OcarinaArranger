@@ -133,6 +133,7 @@ class FingeringTableMixin:
 
         instrument = get_current_instrument()
         holes = list(instrument.holes)
+        windways = list(instrument.windways)
 
         raw_note_names = collect_instrument_note_names(instrument)
         note_names: List[str] = []
@@ -171,6 +172,21 @@ class FingeringTableMixin:
                 heading = f"Hole {index + 1}"
             headings[column_id] = heading
 
+        for index, windway in enumerate(windways):
+            base = windway.identifier or f"windway_{index + 1}"
+            column_id = base
+            suffix = 1
+            while column_id in seen:
+                suffix += 1
+                column_id = f"{base}_{suffix}"
+            seen.add(column_id)
+            columns.append(column_id)
+            if windway.identifier:
+                heading = windway.identifier.replace("_", " ").title()
+            else:
+                heading = f"Windway {index + 1}"
+            headings[column_id] = heading
+
         wrapped_headings = {column_id: self._wrap_table_heading(text) for column_id, text in headings.items()}
 
         display_columns: List[str]
@@ -194,7 +210,7 @@ class FingeringTableMixin:
 
         table.configure(columns=columns, displaycolumns=display_columns)
         self._fingering_display_columns = tuple(display_columns)
-        self._fingering_column_hole_index = {
+        self._fingering_column_index = {
             column_id: index for index, column_id in enumerate(columns[1:])
         }
 
@@ -282,17 +298,26 @@ class FingeringTableMixin:
 
             mapping = instrument.note_map.get(note_name)
 
+            total_elements = len(holes) + len(windways)
             if mapping is None:
-                pattern_display = ["–"] * len(holes)
+                hole_display = ["–"] * len(holes)
+                windway_display = ["–"] * len(windways)
             else:
                 sequence = list(mapping)
-                if len(sequence) < len(holes):
-                    sequence.extend([0] * (len(holes) - len(sequence)))
-                elif len(sequence) > len(holes):
-                    sequence = sequence[: len(holes)]
-                pattern_display = [self._symbol_for_fingering_state(value) for value in sequence]
+                if len(sequence) < total_elements:
+                    sequence.extend([0] * (total_elements - len(sequence)))
+                elif len(sequence) > total_elements:
+                    sequence = sequence[:total_elements]
+                hole_display = [
+                    self._symbol_for_fingering_state(value)
+                    for value in sequence[: len(holes)]
+                ]
+                windway_display = [
+                    self._symbol_for_fingering_state(value)
+                    for value in sequence[len(holes) : len(holes) + len(windways)]
+                ]
 
-            values = [note_name] + pattern_display
+            values = [note_name] + hole_display + windway_display
             tags = ("even",) if row_index % 2 == 0 else ("odd",)
             table.insert("", "end", iid=note_name, values=values, tags=tags)
             self._fingering_note_to_midi[note_name] = midi

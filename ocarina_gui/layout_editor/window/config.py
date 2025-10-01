@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from typing import Callable, Dict, Optional
 
 import tkinter as tk
@@ -16,6 +17,28 @@ from ...fingering import (
     get_instrument,
     update_library_from_config,
 )
+
+
+def _resolve_instrument_entry(
+    config: Mapping[str, object], instrument_id: str
+) -> Dict[str, object] | None:
+    """Return a defensive copy of the matching instrument entry, if present."""
+
+    instruments = config.get("instruments")
+    if isinstance(instruments, Mapping):
+        entry = instruments.get(instrument_id)
+        if isinstance(entry, Mapping):
+            return dict(entry)
+
+    if isinstance(instruments, Sequence) and not isinstance(instruments, (str, bytes)):
+        for item in instruments:
+            if not isinstance(item, Mapping):
+                continue
+            entry_id = str(item.get("id", ""))
+            if entry_id == instrument_id:
+                return dict(item)
+
+    return None
 
 
 class _LayoutEditorConfigMixin:
@@ -106,14 +129,14 @@ class _LayoutEditorConfigMixin:
         state = self._viewmodel.state
         config = self._viewmodel.build_config()
         instrument_id = state.instrument_id
-        if instrument_id not in config.get("instruments", {}):
+        instrument = _resolve_instrument_entry(config, instrument_id)
+        if instrument is None:
             messagebox.showerror(
                 "Export failed",
                 "Current instrument configuration is missing from the data set.",
                 parent=self,
             )
             return
-        instrument = config["instruments"][instrument_id]
         text = json.dumps(instrument, indent=2)
         initial = Path(__file__).parent / "config" / f"{instrument_id}.json"
         path = filedialog.asksaveasfilename(

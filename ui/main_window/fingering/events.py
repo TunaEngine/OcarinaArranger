@@ -10,38 +10,55 @@ logger = logging.getLogger(__name__)
 class FingeringEventMixin:
     """Event handlers for fingering editor interactions."""
 
-    def _cycle_fingering_state(self, note: str, hole_index: int) -> None:
+    def _cycle_fingering_state(self, note: str, element_index: int) -> None:
         viewmodel = self._fingering_edit_vm
         if viewmodel is None:
             return
 
         state = viewmodel.state
         hole_count = len(state.holes)
-        if hole_index < 0 or hole_index >= hole_count:
+        windway_count = len(state.windways)
+        total_count = hole_count + windway_count
+        if element_index < 0 or element_index >= total_count:
             logger.debug(
-                "Ignoring hole toggle outside range",
+                "Ignoring fingering toggle outside range",
                 extra={
                     "fingering_note": note,
-                    "hole_index": hole_index,
+                    "element_index": element_index,
                     "hole_count": hole_count,
+                    "windway_count": windway_count,
                 },
             )
             return
 
-        pattern = list(state.note_map.get(note, [0] * hole_count))
-        current = int(pattern[hole_index]) if hole_index < len(pattern) else 0
-        next_value = (current + 1) % 3
-        if hole_index >= len(pattern):
-            pattern.extend([0] * (hole_index - len(pattern) + 1))
-        pattern[hole_index] = next_value
+        original_pattern = list(state.note_map.get(note, [0] * total_count))
+        if len(original_pattern) < total_count:
+            original_pattern = original_pattern + [0] * (total_count - len(original_pattern))
+        elif len(original_pattern) > total_count:
+            original_pattern = original_pattern[:total_count]
+
+        pattern = list(original_pattern)
+
+        current = int(pattern[element_index]) if element_index < len(pattern) else 0
+        if element_index < hole_count:
+            next_value = (current + 1) % 3
+            element_kind = "hole"
+            element_offset = element_index
+        else:
+            next_value = 0 if current >= 2 else 2
+            element_kind = "windway"
+            element_offset = element_index - hole_count
+        pattern[element_index] = next_value
         logger.debug(
-            "Cycling fingering hole",
+            "Cycling fingering element",
             extra={
                 "fingering_note": note,
-                "hole_index": hole_index,
+                "element_kind": element_kind,
+                "element_index": element_offset,
+                "absolute_index": element_index,
                 "previous_state": current,
                 "next_state": next_value,
-                "pattern_before": state.note_map.get(note, [0] * hole_count),
+                "pattern_before": original_pattern,
             },
         )
         try:
@@ -69,6 +86,27 @@ class FingeringEventMixin:
         )
         self._cycle_fingering_state(note, hole_index)
 
+    def _on_fingering_preview_windway_click(self, windway_index: int) -> None:
+        if not self._fingering_edit_mode:
+            return
+
+        note = self._fingering_last_selected_note
+        if not note:
+            return
+
+        viewmodel = self._fingering_edit_vm
+        hole_count = len(viewmodel.state.holes) if viewmodel is not None else 0
+
+        logger.debug(
+            "Fingering preview windway click",
+            extra={
+                "clicked_note": note,
+                "windway_index": windway_index,
+                "hole_count": hole_count,
+            },
+        )
+        self._cycle_fingering_state(note, hole_count + windway_index)
+
     def _on_fingering_cell_click(self, event: tk.Event) -> None:
         if not self._fingering_edit_mode:
             return
@@ -88,8 +126,8 @@ class FingeringEventMixin:
         if column_id is None or column_id == "note":
             return
 
-        hole_index = self._fingering_column_hole_index.get(column_id)
-        if hole_index is None:
+        element_index = self._fingering_column_index.get(column_id)
+        if element_index is None:
             return
 
         note = table.identify_row(event.y)
@@ -166,10 +204,10 @@ class FingeringEventMixin:
             extra={
                 "clicked_note": note,
                 "column_index": self._display_column_index(table, column_id),
-                "hole_index": hole_index,
+                "element_index": element_index,
             },
         )
-        self._cycle_fingering_state(note, hole_index)
+        self._cycle_fingering_state(note, element_index)
 
     def _on_fingering_table_button_press(self, event: tk.Event) -> None:
         if not self._fingering_edit_mode:
@@ -234,9 +272,11 @@ class FingeringEventMixin:
             for column in display_columns:
                 if column == "note":
                     continue
-                hole_index = self._fingering_column_hole_index.get(column)
-                if hole_index is not None:
-                    hole_order.append(hole_index)
+                element_index = self._fingering_column_index.get(column)
+                if element_index is None:
+                    continue
+                if element_index < len(viewmodel.state.holes):
+                    hole_order.append(element_index)
             if hole_order:
                 focus_note = self._selected_fingering_note()
                 try:

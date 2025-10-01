@@ -106,6 +106,7 @@ class HeadlessFingeringView:
         self.note_name: Optional[str] = None
         self.status: str = ""
         self._hole_click_handler: Optional[Callable[[int], None]] = None
+        self._windway_click_handler: Optional[Callable[[int], None]] = None
 
     def set_midi(self, midi: Optional[int]) -> None:
         if midi is None:
@@ -158,6 +159,13 @@ class HeadlessFingeringView:
     def trigger_hole_click(self, hole_index: int) -> None:
         if self._hole_click_handler:
             self._hole_click_handler(hole_index)
+
+    def set_windway_click_handler(self, handler: Optional[Callable[[int], None]]) -> None:
+        self._windway_click_handler = handler
+
+    def trigger_windway_click(self, windway_index: int) -> None:
+        if self._windway_click_handler:
+            self._windway_click_handler(windway_index)
 
 
 @dataclass

@@ -23,6 +23,8 @@ class HoleManagementMixin:
         radius: Optional[float] = None,
     ) -> EditableHole:
         state = self.state
+        previous_holes = len(state.holes)
+        windway_count = len(state.windways)
         hole_id = self._normalize_hole_identifier(identifier, state)
         hole_radius = float(radius) if radius is not None else 8.0
         hole_x = float(x) if x is not None else state.canvas_width / 2.0
@@ -30,7 +32,11 @@ class HoleManagementMixin:
 
         new_hole = EditableHole(identifier=hole_id, x=hole_x, y=hole_y, radius=hole_radius)
         state.holes.append(new_hole)
-        sync_note_map_length(state)
+        sync_note_map_length(
+            state,
+            previous_hole_count=previous_holes,
+            previous_windway_count=windway_count,
+        )
         state.selection = Selection(kind=SelectionKind.HOLE, index=len(state.holes) - 1)
         state.dirty = True
         return new_hole
@@ -40,8 +46,14 @@ class HoleManagementMixin:
         if not (0 <= index < len(state.holes)):
             raise IndexError(f"Hole index {index} is out of range")
 
+        previous_holes = len(state.holes)
         state.holes.pop(index)
-        sync_note_map_length(state, removed_index=index)
+        sync_note_map_length(
+            state,
+            removed_offset=index,
+            previous_hole_count=previous_holes,
+            previous_windway_count=len(state.windways),
+        )
         state.dirty = True
 
         selection = state.selection
@@ -93,9 +105,12 @@ class HoleManagementMixin:
             else:
                 state.selection = None
 
+        windway_count = len(state.windways)
         for note, pattern in list(state.note_map.items()):
-            normalized_pattern = normalize_pattern(pattern, hole_count)
-            state.note_map[note] = [normalized_pattern[index] for index in normalized]
+            normalized_pattern = normalize_pattern(pattern, hole_count, windway_count)
+            hole_values = [normalized_pattern[index] for index in normalized]
+            windway_values = normalized_pattern[hole_count : hole_count + windway_count]
+            state.note_map[note] = hole_values + windway_values
 
         state.dirty = True
 

@@ -77,11 +77,12 @@ def test_candidate_note_range_survives_round_trip(layout_editor_specs) -> None:
 
     original_candidates = set(viewmodel.candidate_note_names())
     hole_count = len(viewmodel.state.holes)
+    windway_count = len(viewmodel.state.windways)
 
     for note in list(viewmodel.state.note_order):
         viewmodel.remove_note(note)
 
-    viewmodel.set_note_pattern("A4", [0] * hole_count)
+    viewmodel.set_note_pattern("A4", [0] * (hole_count + windway_count))
 
     config = viewmodel.build_config()
     round_tripped_specs = [
@@ -124,11 +125,12 @@ def test_set_candidate_range_populates_missing_patterns(layout_editor_specs) -> 
     viewmodel.set_candidate_range(new_min, new_max)
 
     hole_count = len(state.holes)
+    windway_count = len(state.windways)
     candidates = viewmodel.candidate_note_names()
     assert candidates
     for note in candidates:
         assert note in state.note_map
-        assert state.note_map[note] == [0] * hole_count
+        assert state.note_map[note] == [0] * (hole_count + windway_count)
 
 
 def test_set_candidate_range_trims_existing_out_of_range_fingerings(
@@ -173,7 +175,8 @@ def test_setting_note_outside_range_rejected(layout_editor_specs) -> None:
     assert state.candidate_range_max
 
     with pytest.raises(ValueError):
-        viewmodel.set_note_pattern(high_note, [0] * len(state.holes))
+        total = len(state.holes) + len(state.windways)
+        viewmodel.set_note_pattern(high_note, [0] * total)
 
 
 def test_remove_note_clears_accidental_mapping(layout_editor_specs) -> None:

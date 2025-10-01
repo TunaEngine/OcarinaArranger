@@ -27,42 +27,84 @@ def sort_note_order(state: InstrumentLayoutState) -> None:
     state.note_order = combined
 
 
-def normalize_pattern(pattern: Iterable[int], hole_count: int) -> List[int]:
-    """Clamp and pad a note pattern to match the hole count."""
+def normalize_pattern(
+    pattern: Iterable[int], hole_count: int, windway_count: int
+) -> List[int]:
+    """Clamp and pad a note pattern to match the hole and windway counts."""
 
+    total = hole_count + windway_count
     normalized: List[int] = []
     for value in pattern:
+        if len(normalized) >= total:
+            break
         if isinstance(value, bool):
             number = 2 if value else 0
         else:
             number = int(value)
-        if number < 0:
-            number = 0
-        elif number > 2:
-            number = 2
+        position = len(normalized)
+        if position < hole_count:
+            if number < 0:
+                number = 0
+            elif number > 2:
+                number = 2
+        else:
+            number = 0 if number <= 0 else 2
         normalized.append(number)
 
-    if len(normalized) > hole_count:
-        normalized = normalized[:hole_count]
-    elif len(normalized) < hole_count:
-        normalized.extend([0] * (hole_count - len(normalized)))
+    if len(normalized) < total:
+        normalized.extend([0] * (total - len(normalized)))
     return normalized
 
 
 def sync_note_map_length(
     state: InstrumentLayoutState,
     *,
-    removed_index: Optional[int] = None,
+    removed_offset: Optional[int] = None,
+    previous_hole_count: Optional[int] = None,
+    previous_windway_count: Optional[int] = None,
 ) -> None:
     """Ensure each stored pattern matches the current hole count."""
 
     hole_count = len(state.holes)
+    windway_count = len(state.windways)
+    prev_holes = previous_hole_count if previous_hole_count is not None else hole_count
+    prev_windways = (
+        previous_windway_count if previous_windway_count is not None else windway_count
+    )
+    prev_total = prev_holes + prev_windways
     for note, pattern in state.note_map.items():
         values = list(pattern)
-        if removed_index is not None and removed_index < len(values):
-            del values[removed_index]
-        adjusted = normalize_pattern(values, hole_count)
-        state.note_map[note] = adjusted
+        if prev_total:
+            if len(values) < prev_total:
+                values.extend([0] * (prev_total - len(values)))
+            elif len(values) > prev_total:
+                values = values[:prev_total]
+
+        hole_values = list(values[:prev_holes])
+        windway_values = list(values[prev_holes: prev_holes + prev_windways])
+
+        if removed_offset is not None:
+            if removed_offset < prev_holes:
+                if removed_offset < len(hole_values):
+                    del hole_values[removed_offset]
+            else:
+                adjusted_index = removed_offset - prev_holes
+                if adjusted_index < len(windway_values):
+                    del windway_values[adjusted_index]
+
+        if len(hole_values) > hole_count:
+            hole_values = hole_values[:hole_count]
+        elif len(hole_values) < hole_count:
+            hole_values.extend([0] * (hole_count - len(hole_values)))
+
+        if len(windway_values) > windway_count:
+            windway_values = windway_values[:windway_count]
+        elif len(windway_values) < windway_count:
+            windway_values.extend([0] * (windway_count - len(windway_values)))
+
+        normalized_holes = normalize_pattern(hole_values, hole_count, 0)
+        normalized_windways = normalize_pattern(windway_values, 0, windway_count)
+        state.note_map[note] = normalized_holes + normalized_windways
 
 
 def ensure_candidate_name(state: InstrumentLayoutState, note: str) -> None:

@@ -123,7 +123,7 @@ class MainWindowInitialisationMixin:
         self._fingering_ignore_next_select: bool = False
         self._fingering_last_selected_note: Optional[str] = None
         self._fingering_click_guard_note: Optional[str] = None
-        self._fingering_column_hole_index: Dict[str, int] = {}
+        self._fingering_column_index: Dict[str, int] = {}
         self._fingering_display_columns_override: list[str] | None = None
         self._fingering_display_columns: tuple[str, ...] = ()
         self._fingering_column_drag_source: str | None = None

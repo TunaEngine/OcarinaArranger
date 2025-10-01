@@ -22,6 +22,9 @@ class SelectionMixin:
         if kind == SelectionKind.HOLE:
             if not (0 <= index < len(state.holes)):
                 return
+        elif kind == SelectionKind.WINDWAY:
+            if not (0 <= index < len(state.windways)):
+                return
         elif kind == SelectionKind.OUTLINE:
             if not (0 <= index < len(state.outline_points)):
                 return
@@ -50,6 +53,8 @@ class SelectionMixin:
         moved = False
         if selection.kind == SelectionKind.HOLE:
             moved = self._update_position(state.holes[selection.index], x, y)
+        elif selection.kind == SelectionKind.WINDWAY:
+            moved = self._update_position(state.windways[selection.index], x, y)
         elif selection.kind == SelectionKind.OUTLINE:
             moved = self._update_position(state.outline_points[selection.index], x, y)
         if moved:
@@ -65,6 +70,8 @@ class SelectionMixin:
         target = None
         if selection.kind == SelectionKind.HOLE:
             target = state.holes[selection.index]
+        elif selection.kind == SelectionKind.WINDWAY:
+            return
 
         if target is None:
             return
@@ -73,4 +80,20 @@ class SelectionMixin:
         if new_radius == target.radius:
             return
         target.radius = new_radius
+        state.dirty = True
+
+    # ------------------------------------------------------------------
+    def set_selected_size(self, width: float, height: float) -> None:
+        state = self.state
+        selection = state.selection
+        if selection is None or selection.kind != SelectionKind.WINDWAY:
+            return
+
+        windway = state.windways[selection.index]
+        new_width = max(1.0, float(width))
+        new_height = max(1.0, float(height))
+        if windway.width == new_width and windway.height == new_height:
+            return
+        windway.width = new_width
+        windway.height = new_height
         state.dirty = True

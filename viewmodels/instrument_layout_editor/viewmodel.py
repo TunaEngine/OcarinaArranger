@@ -11,12 +11,14 @@ from ._hole_management import HoleManagementMixin
 from ._instrument_management import InstrumentManagementMixin
 from ._note_management import NoteManagementMixin
 from ._selection import SelectionMixin
+from ._windway_management import WindwayManagementMixin
 from .models import InstrumentLayoutState
 
 
 class InstrumentLayoutEditorViewModel(
     NoteManagementMixin,
     HoleManagementMixin,
+    WindwayManagementMixin,
     SelectionMixin,
     LayoutAppearanceMixin,
     InstrumentManagementMixin,

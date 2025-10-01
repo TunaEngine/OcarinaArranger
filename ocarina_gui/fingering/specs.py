@@ -10,6 +10,7 @@ from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name, parse_note_n
 
 __all__ = [
     "HoleSpec",
+    "WindwaySpec",
     "OutlineSpec",
     "StyleSpec",
     "InstrumentSpec",
@@ -44,6 +45,36 @@ class HoleSpec:
             "x": self.x,
             "y": self.y,
             "radius": self.radius,
+        }
+
+
+@dataclass(frozen=True)
+class WindwaySpec:
+    """Specification for an instrument windway."""
+
+    identifier: str
+    x: float
+    y: float
+    width: float
+    height: float
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WindwaySpec":
+        return cls(
+            identifier=str(data.get("id", "")),
+            x=float(data["x"]),
+            y=float(data["y"]),
+            width=float(data.get("width", 14.0)),
+            height=float(data.get("height", 10.0)),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.identifier,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
         }
 
 
@@ -116,6 +147,7 @@ class InstrumentSpec:
     style: StyleSpec
     outline: Optional[OutlineSpec]
     holes: List[HoleSpec]
+    windways: List[WindwaySpec]
     note_order: Sequence[str]
     note_map: Dict[str, List[int]]
     candidate_notes: Sequence[str] = ()
@@ -138,9 +170,12 @@ class InstrumentSpec:
         style = StyleSpec.from_dict(data.get("style"))
         outline = OutlineSpec.from_dict(data.get("outline"))
         holes = [HoleSpec.from_dict(entry) for entry in data.get("holes", [])]
+        windways = [WindwaySpec.from_dict(entry) for entry in data.get("windways", [])]
         note_order = tuple(str(note) for note in data.get("note_order", ()))
         note_map_raw: Dict[str, Iterable[int]] = data.get("note_map", {})
         hole_count = len(holes)
+        windway_count = len(windways)
+        total_elements = hole_count + windway_count
         note_map: Dict[str, List[int]] = {}
         for note, pattern in note_map_raw.items():
             sequence = []
@@ -149,16 +184,20 @@ class InstrumentSpec:
                     number = 2 if value else 0
                 else:
                     number = int(value)
-                if number < 0:
-                    number = 0
-                elif number > 2:
-                    number = 2
+                position = len(sequence)
+                if position < hole_count:
+                    if number < 0:
+                        number = 0
+                    elif number > 2:
+                        number = 2
+                else:
+                    number = 0 if number <= 0 else 2
                 sequence.append(number)
-            if hole_count:
-                if len(sequence) < hole_count:
-                    sequence.extend([0] * (hole_count - len(sequence)))
-                elif len(sequence) > hole_count:
-                    sequence = sequence[:hole_count]
+            if total_elements:
+                if len(sequence) < total_elements:
+                    sequence.extend([0] * (total_elements - len(sequence)))
+                elif len(sequence) > total_elements:
+                    sequence = sequence[:total_elements]
             note_map[str(note)] = sequence
 
         has_explicit_candidates = "candidate_notes" in data
@@ -257,6 +296,7 @@ class InstrumentSpec:
             candidate_notes=tuple(combined_candidates),
             candidate_range_min=candidate_range_min,
             candidate_range_max=candidate_range_max,
+            windways=windways,
             _has_explicit_candidates=has_explicit_candidates,
             _has_explicit_candidate_range=explicit_candidate_range,
             preferred_range_min=preferred_min,
@@ -268,9 +308,15 @@ class InstrumentSpec:
         """Return the fingering pattern for ``note_name`` or ``fallback_name``."""
 
         pattern = self.note_map.get(note_name) or self.note_map.get(fallback_name)
+        total = len(self.holes) + len(self.windways)
         if pattern is None:
-            return [0] * len(self.holes)
-        return list(pattern)
+            return [0] * total
+        sequence = list(pattern)
+        if len(sequence) < total:
+            sequence.extend([0] * (total - len(sequence)))
+        elif len(sequence) > total:
+            sequence = sequence[:total]
+        return sequence
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
@@ -286,6 +332,8 @@ class InstrumentSpec:
             "note_order": list(self.note_order),
             "note_map": {note: list(pattern) for note, pattern in self.note_map.items()},
         }
+        if self.windways:
+            data["windways"] = [windway.to_dict() for windway in self.windways]
         if self._has_explicit_candidates:
             data["candidate_notes"] = list(self.candidate_notes)
         if (

@@ -183,16 +183,25 @@ class _LayoutEditorActionsMixin:
         if self._updating:
             return
         selection = self._viewmodel.state.selection
-        if selection is None or selection.kind != SelectionKind.HOLE:
+        if selection is None or selection.kind not in (
+            SelectionKind.HOLE,
+            SelectionKind.WINDWAY,
+        ):
             return
         new_identifier = self._hole_identifier_var.get()
         try:
-            self._viewmodel.update_hole_identifier(selection.index, new_identifier)
+            if selection.kind == SelectionKind.HOLE:
+                self._viewmodel.update_hole_identifier(selection.index, new_identifier)
+            else:
+                self._viewmodel.update_windway_identifier(selection.index, new_identifier)
         except (ValueError, IndexError) as exc:
-            messagebox.showerror("Invalid hole description", str(exc), parent=self)
+            messagebox.showerror("Invalid identifier", str(exc), parent=self)
             state = self._viewmodel.state
-            hole = state.holes[selection.index]
-            self._hole_identifier_var.set(hole.identifier)
+            if selection.kind == SelectionKind.HOLE:
+                identifier = state.holes[selection.index].identifier
+            else:
+                identifier = state.windways[selection.index].identifier
+            self._hole_identifier_var.set(identifier)
             return
         self._refresh_state()
 
@@ -219,21 +228,61 @@ class _LayoutEditorActionsMixin:
         label = friendly_label(new_hole.identifier, "Hole")
         self._status_var.set(f"Added hole '{label}'")
 
-    def _remove_selected_hole(self) -> None:
-        selection = self._viewmodel.state.selection
-        if selection is None or selection.kind != SelectionKind.HOLE:
-            messagebox.showinfo("Remove hole", "Select a hole to remove first.", parent=self)
-            return
-        state = self._viewmodel.state
-        hole = state.holes[selection.index]
-        try:
-            self._viewmodel.remove_hole(selection.index)
-        except IndexError as exc:
-            messagebox.showerror("Remove hole", str(exc), parent=self)
-            return
+    def _add_windway(self) -> None:
+        new_windway = self._viewmodel.add_windway()
         self._refresh_state()
-        label = friendly_label(hole.identifier, "Hole")
-        self._status_var.set(f"Removed hole '{label}'")
+        label = friendly_label(new_windway.identifier, "Windway")
+        self._status_var.set(f"Added windway '{label}'")
+
+    def _remove_selected_element(self) -> None:
+        selection = self._viewmodel.state.selection
+        if selection is None or selection.kind not in (
+            SelectionKind.HOLE,
+            SelectionKind.WINDWAY,
+        ):
+            messagebox.showinfo(
+                "Remove element",
+                "Select a hole or windway to remove first.",
+                parent=self,
+            )
+            return
+
+        state = self._viewmodel.state
+        if selection.kind == SelectionKind.HOLE:
+            element = state.holes[selection.index]
+            try:
+                self._viewmodel.remove_hole(selection.index)
+            except IndexError as exc:
+                messagebox.showerror("Remove hole", str(exc), parent=self)
+                return
+            removed_label = friendly_label(element.identifier, "Hole")
+            message = f"Removed hole '{removed_label}'"
+        else:
+            element = state.windways[selection.index]
+            try:
+                self._viewmodel.remove_windway(selection.index)
+            except IndexError as exc:
+                messagebox.showerror("Remove windway", str(exc), parent=self)
+                return
+            removed_label = friendly_label(element.identifier, "Windway")
+            message = f"Removed windway '{removed_label}'"
+
+        self._refresh_state()
+        self._status_var.set(message)
+
+    def _apply_windway_size(self) -> None:
+        if self._updating:
+            return
+        selection = self._viewmodel.state.selection
+        if selection is None or selection.kind != SelectionKind.WINDWAY:
+            return
+        try:
+            width = self._selection_width_var.get()
+            height = self._selection_height_var.get()
+        except tk.TclError:
+            return
+        self._viewmodel.set_selected_size(width, height)
+        self._refresh_state()
 
     def _on_canvas_select(self, kind: SelectionKind, index: Optional[int]) -> None:
         self._viewmodel.select_element(kind, index)

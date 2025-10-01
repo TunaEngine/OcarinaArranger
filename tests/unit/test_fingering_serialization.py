@@ -29,11 +29,15 @@ _BASE_INSTRUMENT_ENTRY: dict[str, object] = {
         {"id": "index", "x": 44.0, "y": 32.5, "radius": 7.5},
         {"id": "middle", "x": 74.5, "y": 39.0, "radius": 7.0},
     ],
+    "windways": [
+        {"id": "primary", "x": 22.0, "y": 12.0, "width": 18.0, "height": 9.0},
+        {"id": "secondary", "x": 42.0, "y": 14.0, "width": 16.0, "height": 8.0},
+    ],
     "note_order": ["C5", "D5", "E5"],
     "note_map": {
-        "C5": [2, 2, 2],
-        "D5": [2, 2, 0],
-        "E5": [2, 1, 0],
+        "C5": [2, 2, 2, 2, 2],
+        "D5": [2, 2, 0, 2, 2],
+        "E5": [2, 1, 0, 2, 2],
     },
     "candidate_notes": ["B4", "C5", "D5", "E5"],
     "candidate_range": {"min": "B4", "max": "F6"},
@@ -80,6 +84,12 @@ def test_outline_spec_round_trip_preserves_points():
     assert spec.to_dict() == sample
 
 
+def test_windway_spec_round_trip_preserves_fields():
+    sample = {"id": "windway", "x": 10.0, "y": 15.0, "width": 12.0, "height": 6.5}
+    spec = fingering.WindwaySpec.from_dict(sample)
+    assert spec.to_dict() == sample
+
+
 def test_style_spec_round_trip_preserves_colors():
     sample = {
         "background_color": "#112233",
@@ -112,8 +122,11 @@ def test_instrument_spec_preserves_hole_order():
             {"id": "index", "x": 22, "y": 18, "radius": 6.5},
             {"id": "middle", "x": 34, "y": 22, "radius": 6},
         ],
+        "windways": [
+            {"id": "primary", "x": 12, "y": 8, "width": 16, "height": 8},
+        ],
         "note_order": ["A4"],
-        "note_map": {"A4": [2, 2, 0]},
+        "note_map": {"A4": [2, 2, 0, 2]},
     }
 
     spec = fingering.InstrumentSpec.from_dict(sample)
@@ -131,8 +144,11 @@ def test_instrument_spec_preserves_explicit_candidate_notes():
         "title": "Test Range",
         "canvas": {"width": 200, "height": 120},
         "holes": [],
+        "windways": [
+            {"id": "primary", "x": 18, "y": 10, "width": 14, "height": 6}
+        ],
         "note_order": ["A4"],
-        "note_map": {"A4": []},
+        "note_map": {"A4": [2]},
         "candidate_notes": ["G4", "A4", "B4"],
     }
 

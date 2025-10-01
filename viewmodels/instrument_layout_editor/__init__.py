@@ -3,6 +3,7 @@
 from .models import (
     EditableHole,
     EditableStyle,
+    EditableWindway,
     InstrumentLayoutState,
     OutlinePoint,
     Selection,
@@ -16,6 +17,7 @@ from .viewmodel import InstrumentLayoutEditorViewModel
 __all__ = [
     "EditableHole",
     "EditableStyle",
+    "EditableWindway",
     "InstrumentLayoutEditorViewModel",
     "InstrumentLayoutState",
     "OutlinePoint",

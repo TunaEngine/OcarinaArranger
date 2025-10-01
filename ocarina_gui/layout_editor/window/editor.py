@@ -53,8 +53,11 @@ class InstrumentLayoutEditor(
         self._initial_instrument_id: str = self._viewmodel.state.instrument_id
         self._remove_button: ttk.Button | None = None
         self._add_hole_button: ttk.Button | None = None
-        self._remove_hole_button: ttk.Button | None = None
+        self._add_windway_button: ttk.Button | None = None
+        self._remove_element_button: ttk.Button | None = None
         self._hole_entry: ttk.Entry | None = None
+        self._width_entry: ttk.Entry | None = None
+        self._height_entry: ttk.Entry | None = None
         self._json_text: tk.Text | None = None
         self._preview_frame: ttk.Frame | None = None
         self._preview_toggle: ttk.Button | None = None
@@ -77,6 +80,8 @@ class InstrumentLayoutEditor(
         self._selection_x_var = tk.DoubleVar(master=self)
         self._selection_y_var = tk.DoubleVar(master=self)
         self._selection_radius_var = tk.DoubleVar(master=self)
+        self._selection_width_var = tk.DoubleVar(master=self)
+        self._selection_height_var = tk.DoubleVar(master=self)
         self._status_var = tk.StringVar(master=self)
         self._selection_info_var = tk.StringVar(master=self, value="No element selected")
         self._hole_identifier_var = tk.StringVar(master=self)

@@ -24,7 +24,7 @@ def test_fingering_cell_click_respects_active_row() -> None:
     table.selection_set("primary")
     table.focus("primary")
     app.fingering_table = table
-    app._fingering_column_hole_index = {"hole_1": 0}
+    app._fingering_column_index = {"hole_1": 0}
     app._fingering_display_columns_override = ["hole_1"]
     app._fingering_display_columns = ("note", "hole_1")
     app._fingering_column_drag_source = None
@@ -72,7 +72,7 @@ def test_fingering_cell_click_requires_active_row_after_switching() -> None:
     table.selection_set(rows[0])
     table.focus(rows[0])
     app.fingering_table = table
-    app._fingering_column_hole_index = {"hole_1": 0}
+    app._fingering_column_index = {"hole_1": 0}
     app._fingering_display_columns_override = ["hole_1"]
     app._fingering_display_columns = ("note", "hole_1")
     app._fingering_column_drag_source = None
@@ -131,7 +131,7 @@ def test_fingering_cell_click_does_not_mark_select_ignore_on_focus_restore() -> 
     table.selection_set("primary")
     table.focus("primary")
     app.fingering_table = table
-    app._fingering_column_hole_index = {"hole_1": 0}
+    app._fingering_column_index = {"hole_1": 0}
     app._fingering_display_columns_override = ["hole_1"]
     app._fingering_display_columns = ("note", "hole_1")
     app._fingering_column_drag_source = None

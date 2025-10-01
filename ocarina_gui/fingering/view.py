@@ -38,7 +38,9 @@ class FingeringView(tk.Canvas):
         self._current_note_name: Optional[str] = None
         self._status_message: str = ""
         self._hole_tags: list[str] = []
+        self._windway_tags: list[str] = []
         self._hole_click_handler: Optional[Callable[[int], None]] = None
+        self._windway_click_handler: Optional[Callable[[int], None]] = None
         self._unsubscribe = register_instrument_listener(self._on_instrument_changed)
         self._draw_static()
 
@@ -130,16 +132,20 @@ class FingeringView(tk.Canvas):
             return
 
         holes = instrument.holes
+        windways = instrument.windways
         sequence = list(mapping)
-        if len(sequence) < len(holes):
-            sequence.extend([0] * (len(holes) - len(sequence)))
-        elif len(sequence) > len(holes):
-            sequence = sequence[: len(holes)]
+        total = len(holes) + len(windways)
+        if len(sequence) < total:
+            sequence.extend([0] * (total - len(sequence)))
+        elif len(sequence) > total:
+            sequence = sequence[:total]
+        hole_states = sequence[: len(holes)]
+        windway_states = sequence[len(holes) : len(holes) + len(windways)]
 
         covered_color = instrument.style.covered_fill_color or "#000000"
 
         self._set_status("")
-        for index, (hole, covered) in enumerate(zip(holes, sequence)):
+        for index, (hole, covered) in enumerate(zip(holes, hole_states)):
             clamped = max(0, min(2, int(covered)))
             if clamped <= 0:
                 continue
@@ -167,6 +173,30 @@ class FingeringView(tk.Canvas):
                 )
             else:
                 self._draw_half_covered(left, top, right, bottom, covered_color, tags)
+
+        for index, (windway, closed) in enumerate(zip(windways, windway_states)):
+            clamped = 0 if int(closed) <= 0 else 2
+            if clamped <= 0:
+                continue
+            half_width = max(1.0, self._scale_distance(windway.width / 2.0))
+            half_height = max(1.0, self._scale_distance(windway.height / 2.0))
+            center_x = self._scale_distance(windway.x)
+            center_y = self._scale_distance(windway.y)
+            left = center_x - half_width
+            top = center_y - half_height
+            right = center_x + half_width
+            bottom = center_y + half_height
+            windway_tag = self._windway_tag(index)
+            self.create_rectangle(
+                left,
+                top,
+                right,
+                bottom,
+                outline="",
+                width=0,
+                fill=covered_color,
+                tags=("state", windway_tag),
+            )
 
     # ------------------------------------------------------------------
     def _on_instrument_changed(self, instrument: InstrumentSpec) -> None:
@@ -242,6 +272,38 @@ class FingeringView(tk.Canvas):
         self._hole_tags = hole_tags
         self._refresh_hole_bindings()
 
+        windway_tags: list[str] = []
+        for index, windway in enumerate(instrument.windways):
+            half_width = max(1.0, self._scale_distance(windway.width / 2.0))
+            half_height = max(1.0, self._scale_distance(windway.height / 2.0))
+            center_x = self._scale_distance(windway.x)
+            center_y = self._scale_distance(windway.y)
+            windway_tag = self._windway_tag(index)
+            windway_tags.append(windway_tag)
+            hitbox_id = self.create_rectangle(
+                center_x - half_width,
+                center_y - half_height,
+                center_x + half_width,
+                center_y + half_height,
+                outline="",
+                width=0,
+                fill=instrument.style.background_color,
+                tags=("static", "windway-hitbox", windway_tag),
+            )
+            self.create_rectangle(
+                center_x - half_width,
+                center_y - half_height,
+                center_x + half_width,
+                center_y + half_height,
+                outline=instrument.style.hole_outline_color,
+                width=1,
+                fill=instrument.style.background_color,
+                tags=("static", "windway", windway_tag),
+            )
+            self.tag_lower(hitbox_id)
+        self._windway_tags = windway_tags
+        self._refresh_windway_bindings()
+
         title_x = scaled_width / 2
         title_y = self._scale_distance(20)
         note_y = title_y + self._scale_distance(18)
@@ -313,6 +375,9 @@ class FingeringView(tk.Canvas):
     def _hole_tag(self, index: int) -> str:
         return f"hole:{index}"
 
+    def _windway_tag(self, index: int) -> str:
+        return f"windway:{index}"
+
     def _refresh_hole_bindings(self) -> None:
         tags = list(self._hole_tags)
         for tag in tags:
@@ -334,3 +399,31 @@ class FingeringView(tk.Canvas):
         if handler is None:
             return
         handler(hole_index)
+
+    def set_windway_click_handler(self, handler: Optional[Callable[[int], None]]) -> None:
+        """Set a callback invoked when a windway is clicked."""
+
+        self._windway_click_handler = handler
+        self._refresh_windway_bindings()
+
+    def _refresh_windway_bindings(self) -> None:
+        tags = list(self._windway_tags)
+        for tag in tags:
+            self.tag_unbind(tag, "<Button-1>")
+
+        handler = self._windway_click_handler
+        if handler is None:
+            return
+
+        for index, tag in enumerate(tags):
+            self.tag_bind(
+                tag,
+                "<Button-1>",
+                lambda event, windway=index: self._handle_windway_click(event, windway),
+            )
+
+    def _handle_windway_click(self, _event: tk.Event, windway_index: int) -> None:
+        handler = self._windway_click_handler
+        if handler is None:
+            return
+        handler(windway_index)

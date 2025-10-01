@@ -52,6 +52,7 @@ def test_preferred_note_window_handles_single_note() -> None:
         style=StyleSpec(),
         outline=None,
         holes=[],
+        windways=[],
         note_order=("C5",),
         note_map={},
     )

@@ -137,6 +137,7 @@ class _HeadlessPreview:
     def __init__(self) -> None:
         self.history: list[tuple[str | None, int | None]] = []
         self.hole_handler: Callable[[int], None] | None = None
+        self.windway_handler: Callable[[int], None] | None = None
 
     def show_fingering(self, note_name: str | None, midi: int | None) -> None:
         self.history.append((note_name, midi))
@@ -150,6 +151,13 @@ class _HeadlessPreview:
     def trigger_hole_click(self, hole_index: int) -> None:
         if self.hole_handler:
             self.hole_handler(hole_index)
+
+    def set_windway_click_handler(self, handler: Callable[[int], None] | None) -> None:
+        self.windway_handler = handler
+
+    def trigger_windway_click(self, windway_index: int) -> None:
+        if self.windway_handler:
+            self.windway_handler(windway_index)
 
 
 def make_click_event(x: int = 10, y: int = 5) -> SimpleNamespace:

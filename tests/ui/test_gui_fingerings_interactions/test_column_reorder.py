@@ -20,7 +20,7 @@ def _build_table(app: MainWindow, columns: tuple[str, ...]) -> _HeadlessTable:
 
 
 def _configure_app_for_reorder(app: MainWindow, table: _HeadlessTable) -> None:
-    app._fingering_column_hole_index = {name: index for index, name in enumerate(table["columns"][1:])}
+    app._fingering_column_index = {name: index for index, name in enumerate(table["columns"][1:])}
     app._fingering_display_columns_override = list(table["columns"][1:])
     app._fingering_display_columns = table["columns"]
     app._fingering_column_drag_source = None
@@ -119,7 +119,9 @@ def test_fingering_column_reorder_updates_viewmodel_order() -> None:
 
     class _FakeViewModel:
         def __init__(self) -> None:
-            self.state = SimpleNamespace(instrument_id="inst")
+            self.state = SimpleNamespace(
+                instrument_id="inst", holes=[object(), object(), object()], windways=[]
+            )
 
         def reorder_holes(self, order: list[int]) -> None:
             orders.append(list(order))
@@ -157,7 +159,7 @@ def test_fingering_column_reorder_disabled_when_not_editing() -> None:
 
     columns = ("note", "hole_left", "hole_right")
     table = _build_table(app, columns)
-    app._fingering_column_hole_index = {"hole_left": 0, "hole_right": 1}
+    app._fingering_column_index = {"hole_left": 0, "hole_right": 1}
     app._fingering_display_columns_override = None
     app._fingering_display_columns = columns
     app._fingering_column_drag_source = None

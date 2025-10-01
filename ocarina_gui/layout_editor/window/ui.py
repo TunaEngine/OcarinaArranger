@@ -18,8 +18,11 @@ class _LayoutEditorUIMixin:
     _candidate_min_combo: ttk.Combobox | None
     _candidate_max_combo: ttk.Combobox | None
     _add_hole_button: ttk.Button | None
-    _remove_hole_button: ttk.Button | None
+    _add_windway_button: ttk.Button | None
+    _remove_element_button: ttk.Button | None
     _hole_entry: ttk.Entry | None
+    _width_entry: ttk.Entry | None
+    _height_entry: ttk.Entry | None
     _preview_frame: ttk.Frame | None
     _preview_toggle: ttk.Button | None
     _json_text: tk.Text | None
@@ -164,17 +167,38 @@ class _LayoutEditorUIMixin:
         self._radius_entry.bind("<Return>", lambda _e: self._apply_selection_radius())
         self._radius_entry.bind("<FocusOut>", lambda _e: self._apply_selection_radius())
 
+        ttk.Label(frame, text="Width:").grid(row=5, column=0, sticky="w", padx=4, pady=4)
+        width_entry = ttk.Entry(frame, textvariable=self._selection_width_var)
+        width_entry.grid(row=5, column=1, sticky="ew", padx=4, pady=4)
+        width_entry.bind("<Return>", lambda _e: self._apply_windway_size())
+        width_entry.bind("<FocusOut>", lambda _e: self._apply_windway_size())
+        self._width_entry = width_entry
+
+        ttk.Label(frame, text="Height:").grid(row=6, column=0, sticky="w", padx=4, pady=4)
+        height_entry = ttk.Entry(frame, textvariable=self._selection_height_var)
+        height_entry.grid(row=6, column=1, sticky="ew", padx=4, pady=4)
+        height_entry.bind("<Return>", lambda _e: self._apply_windway_size())
+        height_entry.bind("<FocusOut>", lambda _e: self._apply_windway_size())
+        self._height_entry = height_entry
+
         buttons = ttk.Frame(frame)
-        buttons.grid(row=5, column=0, columnspan=2, pady=(4, 2))
-        add_button = ttk.Button(buttons, text="Add Hole", command=self._add_hole)
-        add_button.pack(side="left", padx=2)
-        remove_button = ttk.Button(buttons, text="Remove Hole", command=self._remove_selected_hole)
+        buttons.grid(row=7, column=0, columnspan=2, pady=(4, 2))
+        add_hole_button = ttk.Button(buttons, text="Add Hole", command=self._add_hole)
+        add_hole_button.pack(side="left", padx=2)
+        add_windway_button = ttk.Button(
+            buttons, text="Add Windway", command=self._add_windway
+        )
+        add_windway_button.pack(side="left", padx=2)
+        remove_button = ttk.Button(
+            buttons, text="Remove", command=self._remove_selected_element
+        )
         remove_button.pack(side="left", padx=2)
-        self._add_hole_button = add_button
-        self._remove_hole_button = remove_button
+        self._add_hole_button = add_hole_button
+        self._add_windway_button = add_windway_button
+        self._remove_element_button = remove_button
 
         nudge_row = ttk.Frame(frame)
-        nudge_row.grid(row=6, column=0, columnspan=2, pady=(4, 2))
+        nudge_row.grid(row=8, column=0, columnspan=2, pady=(4, 2))
         ttk.Button(nudge_row, text="←", width=2, command=lambda: self._nudge_selection(-1, 0)).pack(side="left", padx=2)
         ttk.Button(nudge_row, text="→", width=2, command=lambda: self._nudge_selection(1, 0)).pack(side="left", padx=2)
         ttk.Button(nudge_row, text="↑", width=2, command=lambda: self._nudge_selection(0, -1)).pack(side="left", padx=2)

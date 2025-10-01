@@ -20,6 +20,7 @@ def test_viewmodel_initializes_from_first_instrument(layout_editor_specs) -> Non
     assert state.canvas_width == source.canvas_size[0]
     assert state.canvas_height == source.canvas_size[1]
     assert len(state.holes) == len(source.holes)
+    assert len(state.windways) == len(source.windways)
 
 
 def test_select_instrument_switches_state(layout_editor_specs) -> None:
@@ -85,3 +86,7 @@ def test_current_instrument_dict_reflects_changes(layout_editor_specs) -> None:
     hole = data["holes"][0]
     assert hole["x"] == pytest.approx(80.0)
     assert hole["y"] == pytest.approx(60.0)
+    state = viewmodel.state
+    if state.windways:
+        windway = data["windways"][0]
+        assert "width" in windway and "height" in windway
