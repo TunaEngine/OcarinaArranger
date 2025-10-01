@@ -37,7 +37,7 @@ def test_restore_log_verbosity_ignores_invalid_level(tmp_path, monkeypatch):
     restored = restore_log_verbosity_preference(Preferences(log_verbosity="invalid"))
 
     assert restored is None
-    assert logging_config.get_file_log_verbosity() is logging_config.LogVerbosity.ERROR
+    assert logging_config.get_file_log_verbosity() is logging_config.LogVerbosity.INFO
 
 
 def test_persist_log_verbosity_writes_preference(tmp_path, monkeypatch):

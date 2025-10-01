@@ -10,6 +10,7 @@ from .menu_builder import MenuBuilderMixin
 from .preview import PreviewMixin
 from .project_menu import ProjectMenuMixin
 from .theme import ThemeMenuMixin
+from .update_menu import UpdateMenuMixin
 
 
 class MenuActionsMixin(
@@ -21,6 +22,7 @@ class MenuActionsMixin(
     InstrumentLayoutMixin,
     LifecycleMixin,
     MenuBuilderMixin,
+    UpdateMenuMixin,
 ):
     """Menu, theme, and logging helpers shared by :class:`MainWindow`."""
 

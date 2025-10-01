@@ -70,6 +70,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -80,10 +85,47 @@ jobs:
           mkdir -p release dist
           find release -name '*.zip' -exec mv {} dist/ \;
 
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          set -eo pipefail
+          tag="${GITHUB_REF_NAME}"
+          tag_ref="refs/tags/${tag}"
+          tag_message=$(git for-each-ref --format='%(contents)' "$tag_ref")
+
+          if [ -n "$tag_message" ]; then
+            body="$tag_message\n\n"
+          else
+            body=""
+          fi
+
+          if git rev-parse --verify "$tag^" >/dev/null 2>&1; then
+            previous_tag=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
+          else
+            previous_tag=""
+          fi
+
+          if [ -n "$previous_tag" ]; then
+            commit_range="${previous_tag}..${tag}"
+          else
+            commit_range="$tag"
+          fi
+
+          commits=$(git log --pretty=format:'- %s' "$commit_range")
+
+          body="${body}${commits}"
+
+          {
+            echo "body<<'EOF'"
+            echo "$body"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v1
         with:
           name: Ocarina Arranger ${{ github.ref_name }}
           files: dist/*.zip
+          body: ${{ steps.release_notes.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

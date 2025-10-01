@@ -29,6 +29,7 @@ class Preferences:
     recent_projects: list[str] = field(default_factory=list)
     auto_scroll_mode: str | None = None
     preview_layout_mode: str | None = None
+    auto_update_enabled: bool | None = None
 
 
 def _default_preferences_path() -> Path:
@@ -94,12 +95,19 @@ def load_preferences(path: Path | None = None) -> Preferences:
     else:
         preview_layout_mode = None
 
+    raw_auto_update_enabled = data.get("auto_update_enabled")
+    if isinstance(raw_auto_update_enabled, bool):
+        auto_update_enabled = raw_auto_update_enabled
+    else:
+        auto_update_enabled = None
+
     return Preferences(
         theme_id=theme_id,
         log_verbosity=log_verbosity,
         recent_projects=recent_projects,
         auto_scroll_mode=auto_scroll_mode,
         preview_layout_mode=preview_layout_mode,
+        auto_update_enabled=auto_update_enabled,
     )
 
 
@@ -119,6 +127,8 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
 
     if preferences.preview_layout_mode and preferences.preview_layout_mode in PREVIEW_LAYOUT_MODES:
         data["preview_layout_mode"] = preferences.preview_layout_mode
+    if isinstance(preferences.auto_update_enabled, bool):
+        data["auto_update_enabled"] = preferences.auto_update_enabled
 
     try:
         location.parent.mkdir(parents=True, exist_ok=True)

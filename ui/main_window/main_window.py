@@ -52,6 +52,7 @@ class MainWindow(
         self._setup_instrument_attributes(state)
         self._create_convert_controls(state)
         self._setup_theme_support(preferences)
+        self._setup_auto_update_menu(preferences)
         self._setup_fingering_defaults()
         self._setup_preview_state(preferences, initial_auto_scroll_mode)
         self._setup_recent_projects(preferences)

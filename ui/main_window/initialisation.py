@@ -8,12 +8,13 @@ from typing import Callable, Dict, List, Optional, Sequence
 from adapters.file_dialog import FileDialogAdapter
 from services.score_service import ScoreService
 
+from app.version import get_app_version
 from ocarina_gui.audio import build_preview_audio_renderer
 from ocarina_gui.constants import APP_TITLE, DEFAULT_MAX, DEFAULT_MIN
 from ocarina_gui.headless import build_headless_ui
 from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.preview import Event, PreviewData
-from ocarina_gui.preferences import PREVIEW_LAYOUT_MODES, load_preferences
+from ocarina_gui.preferences import PREVIEW_LAYOUT_MODES, Preferences, load_preferences
 from ocarina_gui.staff import StaffView
 from ocarina_gui.themes import ThemeSpec, get_available_themes, get_current_theme, register_theme_listener
 from ocarina_gui.fingering import FingeringGridView, FingeringView
@@ -34,9 +35,17 @@ class MainWindowInitialisationMixin:
 
     def _initialise_preferences(self) -> object:
         self._log_path = ensure_app_logging()
+        logger.info("Starting Ocarina Arranger version %s", get_app_version())
         preferences = load_preferences()
         self._preferences = preferences
         return preferences
+
+    @property
+    def preferences(self) -> Preferences | None:
+        stored = getattr(self, "_preferences", None)
+        if isinstance(stored, Preferences):
+            return stored
+        return None
 
     def _initialise_tk_root(self) -> bool:
         try:

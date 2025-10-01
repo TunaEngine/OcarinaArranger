@@ -99,6 +99,32 @@ class MenuBuilderMixin:
 
         tools_menu = tk.Menu(menubar, tearoff=False)
         menubar.add_cascade(label="Tools", menu=tools_menu)
+
+        update_entries_added = False
+
+        manual_update = getattr(self, "_check_for_updates_command", None)
+        if callable(manual_update):
+            tools_menu.add_command(
+                label="Check for Updates...",
+                command=manual_update,
+            )
+            update_entries_added = True
+
+        auto_update_var = getattr(self, "_auto_update_enabled_var", None)
+        toggle_auto_update = getattr(self, "_on_auto_update_toggled", None)
+        if isinstance(auto_update_var, tk.BooleanVar) and callable(toggle_auto_update):
+            if update_entries_added:
+                tools_menu.add_separator()
+            tools_menu.add_checkbutton(
+                label="Enable Automatic Updates",
+                variable=auto_update_var,
+                command=toggle_auto_update,
+            )
+            update_entries_added = True
+
+        if update_entries_added:
+            tools_menu.add_separator()
+
         tools_menu.add_command(
             label="Instrument Layout Editor...",
             command=self.open_instrument_layout_editor,

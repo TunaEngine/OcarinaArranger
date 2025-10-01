@@ -11,6 +11,7 @@ def test_preferences_round_trip(tmp_path):
         recent_projects=["/music/song1.ocarina", "/music/song2.ocarina"],
         auto_scroll_mode="continuous",
         preview_layout_mode="piano_vertical",
+        auto_update_enabled=False,
     )
 
     save_preferences(preferences, path)
@@ -21,6 +22,7 @@ def test_preferences_round_trip(tmp_path):
     assert loaded.recent_projects == ["/music/song1.ocarina", "/music/song2.ocarina"]
     assert loaded.auto_scroll_mode == "continuous"
     assert loaded.preview_layout_mode == "piano_vertical"
+    assert loaded.auto_update_enabled is False
 
 
 def test_load_preferences_with_invalid_types(tmp_path):
@@ -33,6 +35,7 @@ def test_load_preferences_with_invalid_types(tmp_path):
                 "recent_projects": [1, "/valid/project.ocarina", None],
                 "auto_scroll_mode": 123,
                 "preview_layout_mode": "unsupported",
+                "auto_update_enabled": "nope",
             }
         ),
         encoding="utf-8",
@@ -44,3 +47,4 @@ def test_load_preferences_with_invalid_types(tmp_path):
     assert loaded.recent_projects == ["/valid/project.ocarina"]
     assert loaded.auto_scroll_mode is None
     assert loaded.preview_layout_mode is None
+    assert loaded.auto_update_enabled is None

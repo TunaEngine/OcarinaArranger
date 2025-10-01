@@ -10,7 +10,9 @@ class App(MainWindow):
 
 
 def _main() -> None:
-    App().mainloop()
+    app = App()
+    app.start_automatic_update_check()
+    app.mainloop()
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ _VERBOSITY_LEVELS: dict[LogVerbosity, int] = {
     LogVerbosity.VERBOSE: logging.DEBUG,
 }
 
-_DEFAULT_VERBOSITY = LogVerbosity.ERROR
+_DEFAULT_VERBOSITY = LogVerbosity.INFO
 _CURRENT_VERBOSITY = _DEFAULT_VERBOSITY
 
 
