@@ -49,7 +49,20 @@ def build_update_service(
 
     installer = installer or WindowsInstaller()
     current_version = get_app_version()
-    return UpdateService(provider, installer, current_version=current_version)
+    fallback_providers: list[ReleaseProvider] = []
+
+    if isinstance(provider, LocalFolderReleaseProvider):
+        fallback_providers.append(GitHubReleaseProvider(channel=channel))
+
+    if channel != UPDATE_CHANNEL_STABLE:
+        fallback_providers.append(GitHubReleaseProvider(channel=UPDATE_CHANNEL_STABLE))
+
+    return UpdateService(
+        provider,
+        installer,
+        current_version=current_version,
+        fallback_providers=fallback_providers,
+    )
 
 
 def _run_update_check(

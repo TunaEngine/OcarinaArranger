@@ -5,12 +5,15 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
 import textwrap
 import zipfile
 from pathlib import Path
+
+from collections.abc import Iterable
 
 from services.update.constants import WINDOWS_ARCHIVE_EXTENSIONS
 from services.update.archive import ArchiveExtraction, extract_archive, locate_archive_entry
@@ -38,20 +41,42 @@ def _find_primary_log_file() -> Path | None:
 class UpdateService:
     """Coordinate release discovery, download and verification."""
 
-    def __init__(self, provider: ReleaseProvider, installer: Installer, *, current_version: str) -> None:
+    def __init__(
+        self,
+        provider: ReleaseProvider,
+        installer: Installer,
+        *,
+        current_version: str,
+        fallback_providers: Iterable[ReleaseProvider] | None = None,
+    ) -> None:
         self._provider = provider
         self._installer = installer
         self._current_version = current_version
+        self._fallback_providers = list(fallback_providers or [])
 
     def get_available_release(self) -> ReleaseInfo | None:
         """Return the newest release newer than the current version."""
 
-        release = self._provider.fetch_latest()
+        release, fallback_name = self._fetch_release()
         if release is None:
             _LOGGER.debug("No release information available")
             return None
 
+        if fallback_name is not None:
+            _LOGGER.debug(
+                "Primary release provider returned no release; using fallback provider %s",
+                fallback_name,
+            )
+
         if not self._is_version_newer(release.version):
+            if self._should_offer_downgrade(release.version):
+                _LOGGER.info(
+                    "Downgrade available: %s -> %s",
+                    self._current_version,
+                    release.version,
+                )
+                return release
+
             _LOGGER.debug("Current version %s is up to date", self._current_version)
             return None
 
@@ -87,19 +112,71 @@ class UpdateService:
         return True
 
     def _is_version_newer(self, candidate: str) -> bool:
+        return self._compare_versions(candidate) > 0
+
+    def _fetch_release(self) -> tuple[ReleaseInfo | None, str | None]:
+        providers: list[ReleaseProvider] = [self._provider, *self._fallback_providers]
+        for index, provider in enumerate(providers):
+            provider_name = type(provider).__name__
+            _LOGGER.debug("Querying release provider %s", provider_name)
+            release = provider.fetch_latest()
+            if release is None:
+                _LOGGER.debug(
+                    "Release provider %s returned no release metadata", provider_name
+                )
+                continue
+
+            self._log_release_metadata(provider_name, release)
+
+            if index == 0:
+                return release, None
+            return release, provider_name
+        return None, None
+
+    def _log_release_metadata(self, provider_name: str, release: ReleaseInfo) -> None:
+        _LOGGER.debug(
+            "Release provider %s returned version %s (entry=%s, asset=%s, hash=%s%s)",
+            provider_name,
+            release.version,
+            release.entry_point,
+            release.asset_name,
+            "inline" if release.hash_value else "file",
+            " available"
+            if release.hash_value or release.hash_path or release.hash_url
+            else " missing",
+        )
+        if release.download_url is not None:
+            _LOGGER.debug(
+                "Release %s download URL: %s", release.version, release.download_url
+            )
+        if release.source_path is not None:
+            _LOGGER.debug(
+                "Release %s sourced from local path %s",
+                release.version,
+                release.source_path,
+            )
+
+    def _compare_versions(self, candidate: str) -> int:
         if candidate == self._current_version:
-            return False
+            return 0
         try:
             from packaging.version import InvalidVersion, Version  # type: ignore
         except Exception:  # pragma: no cover - packaging not installed
             return self._fallback_compare(candidate)
 
         try:
-            return Version(candidate) > Version(self._current_version)
+            candidate_version = Version(candidate)
+            current_version = Version(self._current_version)
         except InvalidVersion:
             return self._fallback_compare(candidate)
 
-    def _fallback_compare(self, candidate: str) -> bool:
+        if candidate_version == current_version:
+            return 0
+        if candidate_version > current_version:
+            return 1
+        return -1
+
+    def _fallback_compare(self, candidate: str) -> int:
         def tokenize(version: str) -> list[tuple[int, object]]:
             tokens: list[tuple[int, object]] = []
             for raw in version.replace("-", ".").replace("+", ".").split("."):
@@ -118,7 +195,37 @@ class UpdateService:
             current_token = current_tokens[index] if index < len(current_tokens) else (0, 0)
             candidate_token = candidate_tokens[index] if index < len(candidate_tokens) else (0, 0)
             if candidate_token != current_token:
-                return candidate_token > current_token
+                return 1 if candidate_token > current_token else -1
+        return 0
+
+    def _should_offer_downgrade(self, candidate: str) -> bool:
+        if self._is_prerelease_version(candidate):
+            return False
+        if not self._is_prerelease_version(self._current_version):
+            return False
+        return self._compare_versions(candidate) < 0
+
+    def _is_prerelease_version(self, version: str) -> bool:
+        try:
+            from packaging.version import InvalidVersion, Version  # type: ignore
+        except Exception:  # pragma: no cover - packaging not installed
+            return self._fallback_is_prerelease(version)
+
+        try:
+            parsed = Version(version)
+        except InvalidVersion:
+            return self._fallback_is_prerelease(version)
+
+        return bool(parsed.is_prerelease or getattr(parsed, "is_devrelease", False))
+
+    def _fallback_is_prerelease(self, version: str) -> bool:
+        markers = ("dev", "alpha", "beta", "rc", "pre", "preview")
+        tokens = [token for token in re.split(r"[.\-+_]", version.lower()) if token]
+        for token in tokens:
+            if any(token.startswith(marker) for marker in markers):
+                return True
+            if token[0] in {"a", "b"} and len(token) > 1 and token[1:].isdigit():
+                return True
         return False
 
     def _obtain_installer(self, release: ReleaseInfo) -> Path:
@@ -208,6 +315,7 @@ class UpdateService:
         script_path = self._write_portable_update_script(
             stage_dir, install_root, final_executable, failure_marker
         )
+        script_working_dir = script_path.parent
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             _LOGGER.info("Installer script output will be appended to %s", log_path)
@@ -232,7 +340,7 @@ class UpdateService:
         if log_path is not None:
             command.extend(["-LogPath", str(log_path)])
         command.extend(["-FailureMarkerPath", str(failure_marker)])
-        return InstallationPlan(tuple(command))
+        return InstallationPlan(tuple(command), working_directory=script_working_dir)
 
     def _determine_script_log_path(self, install_root: Path) -> Path | None:
         log_path = _find_primary_log_file()
@@ -366,6 +474,34 @@ class UpdateService:
                 }
             }
 
+            function Move-ItemWithRetry {
+                param(
+                    [string]$SourcePath,
+                    [string]$DestinationPath,
+                    [string]$Description
+                )
+
+                $maxAttempts = 5
+                $delay = 250
+
+                for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                    try {
+                        Move-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction Stop
+                        return
+                    }
+                    catch {
+                        if ($attempt -eq $maxAttempts) {
+                            throw
+                        }
+
+                        $wait = [Math]::Min($delay, 4000)
+                        Write-Log ($Description + " attempt $attempt failed: " + $_.Exception.Message + ". Retrying in " + $wait + " ms.")
+                        Start-Sleep -Milliseconds $wait
+                        $delay = $delay * 2
+                    }
+                }
+            }
+
             Write-Log "Waiting for process $ProcessId to exit before installing update."
             while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
                 Start-Sleep -Milliseconds 500
@@ -386,11 +522,11 @@ class UpdateService:
             try {
                 if (Test-Path -LiteralPath $InstallPath) {
                     Write-Log "Moving existing installation from $InstallPath to backup at $backupPath."
-                    Move-Item -LiteralPath $InstallPath -Destination $backupPath -Force
+                    Move-ItemWithRetry -SourcePath $InstallPath -DestinationPath $backupPath -Description "Moving existing installation"
                 }
 
                 Write-Log "Moving staged update from $StagePath to $InstallPath."
-                Move-Item -LiteralPath $StagePath -Destination $InstallPath -Force
+                Move-ItemWithRetry -SourcePath $StagePath -DestinationPath $InstallPath -Description "Moving staged update"
 
                 if (Test-Path -LiteralPath $backupPath) {
                     Write-Log "Removing backup at $backupPath after successful install."

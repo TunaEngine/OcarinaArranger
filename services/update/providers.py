@@ -99,21 +99,60 @@ class GitHubReleaseProvider:
         return value
 
     def _candidate_releases(self) -> Iterator[dict]:
-        if self._channel == UPDATE_CHANNEL_BETA:
-            payload = self._request_json(self._releases_url)
-            if isinstance(payload, list):
-                for entry in payload:
-                    details = self._resolve_release_details(entry)
-                    if details is not None:
-                        yield details
-            return
+        seen: set[str] = set()
 
-        data = self._request_json(self._api_url)
-        if data is None:
-            return
-        details = self._resolve_release_details(data)
-        if details is not None:
-            yield details
+        if self._channel != UPDATE_CHANNEL_BETA:
+            data = self._request_json(self._api_url)
+            if data is None:
+                _LOGGER.debug(
+                    "GitHub latest release endpoint returned no data; checking releases listing",
+                )
+            else:
+                details = self._resolve_release_details(data)
+                if details is not None and self._mark_seen(details, seen):
+                    yield details
+                else:
+                    _LOGGER.debug(
+                        "GitHub latest release endpoint returned no usable release; checking releases listing",
+                    )
+
+        yield from self._iterate_release_listing(seen)
+
+    def _iterate_release_listing(self, seen: set[str]) -> Iterator[dict]:
+        payload = self._request_json(self._releases_url)
+        if isinstance(payload, list):
+            for entry in payload:
+                details = self._resolve_release_details(entry)
+                if details is not None and self._mark_seen(details, seen):
+                    yield details
+        elif payload is not None:
+            _LOGGER.debug(
+                "GitHub releases listing returned unexpected payload type %s", type(payload).__name__
+            )
+
+    def _mark_seen(self, release: dict, seen: set[str]) -> bool:
+        identifier = self._release_identifier(release)
+        if identifier is None:
+            return True
+        if identifier in seen:
+            return False
+        seen.add(identifier)
+        return True
+
+    def _release_identifier(self, release: dict) -> str | None:
+        identifier = release.get("id")
+        if isinstance(identifier, int):
+            return f"id:{identifier}"
+        url = release.get("url")
+        if isinstance(url, str) and url:
+            return url
+        tag = release.get("tag_name")
+        if isinstance(tag, str) and tag:
+            return f"tag:{tag}"
+        name = release.get("name")
+        if isinstance(name, str) and name:
+            return f"name:{name}"
+        return None
 
     def _resolve_release_details(self, payload: dict) -> dict | None:
         if not isinstance(payload, dict):

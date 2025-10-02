@@ -25,6 +25,8 @@ from services.update.constants import (
     UPDATE_CHANNEL_BETA,
     UPDATE_CHANNEL_STABLE,
     API_URL,
+    API_RELEASES_URL,
+    LOCAL_RELEASE_ENV,
 )
 from services.update.models import InstallationPlan
 
@@ -120,6 +122,7 @@ def test_update_service_installs_newer_release(
     script_path = Path(plan.command[file_index + 1])
     assert script_path.exists()
     assert script_path.suffix.lower() == ".ps1"
+    assert plan.working_directory == script_path.parent
     log_index = plan.command.index("-LogPath")
     log_path = Path(plan.command[log_index + 1])
     expected_log = install_root.parent / f"{install_root.name}.update.20240102-030405.log"
@@ -140,6 +143,9 @@ def test_update_service_installs_newer_release(
     assert "ConvertTo-Json" in script_text
     assert "[System.IO.File]::WriteAllText" in script_text
     assert "exit 1" in script_text
+    assert "function Move-ItemWithRetry" in script_text
+    assert "Move-ItemWithRetry -SourcePath $InstallPath" in script_text
+    assert ". Retrying in " in script_text
 
 
 def test_update_service_emits_progress_logs(
@@ -608,6 +614,77 @@ def test_get_available_release_returns_none_when_current_is_newer(tmp_path: Path
     assert available is None
 
 
+def test_get_available_release_offers_stable_downgrade_for_prerelease(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="services.update")
+    release = ReleaseInfo(
+        version="1.2.1",
+        asset_name="OcarinaArranger-windows.zip",
+        download_url="https://example.invalid/stable.zip",
+        hash_value="deadbeef" * 8,
+    )
+    provider = StaticReleaseProvider(release)
+    installer = RecordingInstaller()
+    service = UpdateService(provider, installer, current_version="1.2.2.dev")
+
+    available = service.get_available_release()
+
+    assert available == release
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Downgrade available" in message for message in messages)
+
+
+def test_get_available_release_uses_fallback_provider_when_primary_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="services.update")
+    release = ReleaseInfo(
+        version="1.2.1",
+        asset_name="OcarinaArranger-windows.zip",
+        download_url="https://example.invalid/stable.zip",
+        hash_value="cafebabe" * 8,
+    )
+    provider = StaticReleaseProvider(None)
+    fallback_provider = StaticReleaseProvider(release)
+    installer = RecordingInstaller()
+    service = UpdateService(
+        provider,
+        installer,
+        current_version="1.2.2.dev",
+        fallback_providers=[fallback_provider],
+    )
+
+    available = service.get_available_release()
+
+    assert available == release
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("fallback provider" in message for message in messages)
+
+
+def test_update_service_installs_stable_downgrade(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    archive_path = _build_update_archive(tmp_path)
+    digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    release = ReleaseInfo(
+        version="1.2.1",
+        asset_name="OcarinaArranger-windows.zip",
+        source_path=archive_path,
+        hash_value=digest,
+    )
+    provider = StaticReleaseProvider(release)
+    installer = RecordingInstaller()
+    service = UpdateService(provider, installer, current_version="1.2.2.dev")
+
+    _configure_install_root(monkeypatch, tmp_path)
+
+    updated = service.check_for_updates()
+
+    assert updated is True
+    assert [version for _, version in installer.installed] == ["1.2.1"]
+
+
 def test_build_update_service_returns_none_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.platform", "linux", raising=False)
 
@@ -627,6 +704,30 @@ def test_build_update_service_creates_service_on_windows(monkeypatch: pytest.Mon
     service = build_update_service(installer=RecordingInstaller(), channel=UPDATE_CHANNEL_STABLE)
 
     assert isinstance(service, UpdateService)
+
+
+def test_build_update_service_includes_github_fallback_for_local_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("sys.platform", "win32", raising=False)
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+    metadata = {
+        "version": "1.2.2.dev",
+        "installer": "OcarinaArranger.zip",
+        "sha256": "deadbeef" * 8,
+    }
+    (local_dir / "release.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (local_dir / "OcarinaArranger.zip").write_bytes(b"payload")
+
+    monkeypatch.setenv(LOCAL_RELEASE_ENV, str(local_dir))
+    monkeypatch.setattr("services.update.builder.get_app_version", lambda: "1.2.2.dev")
+
+    service = build_update_service(installer=RecordingInstaller(), channel=UPDATE_CHANNEL_STABLE)
+
+    assert isinstance(service, UpdateService)
+    fallback_names = [type(provider).__name__ for provider in service._fallback_providers]  # type: ignore[attr-defined]
+    assert "GitHubReleaseProvider" in fallback_names
 
 
 def test_github_provider_prefers_beta_releases_when_requested(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -703,3 +804,44 @@ def test_github_provider_prefers_beta_releases_when_requested(monkeypatch: pytes
     assert info.download_url == "https://example.invalid/dev.zip"
     assert info.hash_value == "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     assert requested_urls == ["https://example.invalid/releases", listing_payload[0]["url"]]
+
+
+def test_github_provider_falls_back_to_listing_when_latest_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    stable_detail = {
+        "tag_name": "v1.2.1",
+        "prerelease": False,
+        "assets": [
+            {
+                "name": "OcarinaArranger-windows.zip",
+                "browser_download_url": "https://example.invalid/stable.zip",
+                "digest": "sha256:" + "ab" * 32,
+            }
+        ],
+    }
+
+    provider = GitHubReleaseProvider(channel=UPDATE_CHANNEL_STABLE)
+
+    def fake_request(self: GitHubReleaseProvider, url: str) -> dict | list[dict] | None:
+        calls.append(url)
+        if url == API_URL:
+            return None
+        if url == API_RELEASES_URL:
+            return [stable_detail]
+        raise AssertionError(f"Unexpected URL requested: {url}")
+
+    monkeypatch.setattr(GitHubReleaseProvider, "_request_json", fake_request)
+    monkeypatch.setattr(
+        GitHubReleaseProvider,
+        "_resolve_release_details",
+        lambda self, payload: payload,
+    )
+
+    release = provider.fetch_latest()
+
+    assert release is not None
+    assert release.version == "1.2.1"
+    assert calls == [API_URL, API_RELEASES_URL]
