@@ -5,7 +5,11 @@ from tkinter import ttk
 import pytest
 
 from ocarina_gui import themes
-from ocarina_gui.fingering import get_current_instrument
+from ocarina_gui.fingering import (
+    get_available_instruments,
+    get_current_instrument,
+    get_current_instrument_id,
+)
 
 
 def test_fingering_table_populated_from_config(gui_app):
@@ -290,3 +294,108 @@ def test_fingering_preview_replaces_note_text(gui_app):
     subsequent = preview.find_withtag("note")
 
     assert len(subsequent) == len(initial)
+
+
+def test_instrument_switching_disabled_during_edit(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Fingerings editor requires Tk widgets")
+
+    choices = get_available_instruments()
+    if len(choices) < 2:
+        pytest.skip("Multiple instruments required to test switching")
+
+    original_id = get_current_instrument_id()
+    target_choice = next(
+        (choice for choice in choices if choice.instrument_id != original_id),
+        None,
+    )
+    if target_choice is None:
+        pytest.skip("No alternate instrument available")
+
+    notifications: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def _capture_message(*args, **kwargs):
+        notifications.append((args, kwargs))
+
+    monkeypatch.setattr("ui.main_window.messagebox.showinfo", _capture_message)
+
+    gui_app.toggle_fingering_editing()
+    try:
+        selector = gui_app.fingering_selector
+        if selector is None:
+            pytest.skip("Fingerings selector widget unavailable")
+        assert selector.cget("state") == "disabled"
+
+        convert_combo = gui_app._convert_instrument_combo
+        if convert_combo is not None:
+            assert convert_combo.cget("state") == "disabled"
+
+        gui_app.set_fingering_instrument(target_choice.instrument_id)
+        assert get_current_instrument_id() == original_id
+        assert notifications
+    finally:
+        if gui_app._fingering_edit_mode:
+            gui_app.cancel_fingering_edits()
+
+    selector = gui_app.fingering_selector
+    if selector is not None:
+        assert selector.cget("state") == "readonly"
+    convert_combo = gui_app._convert_instrument_combo
+    if convert_combo is not None:
+        assert convert_combo.cget("state") == "readonly"
+
+
+def test_six_hole_instrument_enables_half_holes(gui_app):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Fingerings editor requires Tk widgets")
+
+    choices = get_available_instruments()
+    target = next((c for c in choices if c.instrument_id == "alto_c_6"), None)
+    if target is None:
+        pytest.skip("6-hole instrument not available")
+
+    original_id = get_current_instrument_id()
+    try:
+        gui_app.set_fingering_instrument(target.instrument_id)
+        var = getattr(gui_app, "_fingering_allow_half_var", None)
+        if var is None:
+            pytest.skip("Half-hole toggle variable unavailable")
+        assert bool(var.get()) is True
+        assert getattr(gui_app, "_fingering_half_notes_enabled", False) is True
+    finally:
+        if original_id != target.instrument_id:
+            gui_app.set_fingering_instrument(original_id)
+
+
+def test_destroy_discards_pending_fingering_edits(gui_app):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Fingerings editor requires Tk widgets")
+
+    instrument = get_current_instrument()
+    if not instrument.note_order:
+        pytest.skip("Instrument has no notes to edit")
+
+    target_note = instrument.note_order[0]
+    original_pattern = list(instrument.note_map.get(target_note, []))
+    if not original_pattern:
+        pytest.skip("Instrument note pattern unavailable")
+
+    gui_app.toggle_fingering_editing()
+    viewmodel = getattr(gui_app, "_fingering_edit_vm", None)
+    if viewmodel is None:
+        gui_app.cancel_fingering_edits(show_errors=False)
+        pytest.skip("Fingering editor view-model unavailable")
+
+    replacement_pattern = [0] * len(original_pattern)
+    if replacement_pattern == original_pattern:
+        replacement_pattern = [2 if value == 0 else 0 for value in original_pattern]
+    viewmodel.set_note_pattern(target_note, replacement_pattern)
+    gui_app._apply_fingering_editor_changes(target_note)
+
+    modified = get_current_instrument().note_map[target_note]
+    assert modified == replacement_pattern
+
+    gui_app.destroy()
+
+    restored = get_current_instrument().note_map[target_note]
+    assert restored == original_pattern

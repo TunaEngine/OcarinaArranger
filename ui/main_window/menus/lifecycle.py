@@ -30,6 +30,14 @@ class LifecycleMixin:
         """Tear down subscriptions and playback before destroying the window."""
 
         logger.info("Destroying main window")
+        if getattr(self, "_fingering_edit_mode", False):
+            cancel_edits = getattr(self, "cancel_fingering_edits", None)
+            if callable(cancel_edits):
+                try:
+                    cancel_edits(show_errors=False)
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.exception("Failed to cancel fingering edits during destroy")
+
         if self._theme_unsubscribe is not None:
             self._theme_unsubscribe()
             self._theme_unsubscribe = None

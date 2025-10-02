@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from shared.tkinter_geometry import center_window_over_parent
+from ocarina_gui.themes import apply_theme_to_toplevel
 from viewmodels.instrument_layout_editor_viewmodel import (
     InstrumentLayoutEditorViewModel,
     InstrumentLayoutState,
@@ -31,6 +32,8 @@ class InstrumentLayoutEditor(
 ):
     """Standalone window exposing a WYSIWYG instrument editor."""
 
+    _last_selected_instrument_id: str | None = None
+
     def __init__(
         self,
         master: tk.Misc,
@@ -38,6 +41,8 @@ class InstrumentLayoutEditor(
         viewmodel: InstrumentLayoutEditorViewModel | None = None,
         on_close: Callable[[], None] | None = None,
         on_config_saved: Callable[[Dict[str, object], str], None] | None = None,
+        allow_half_var: tk.BooleanVar | None = None,
+        on_half_toggle: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(master)
         self.title("Instrument Layout Editor")
@@ -45,6 +50,12 @@ class InstrumentLayoutEditor(
         self.resizable(True, True)
 
         self._viewmodel = viewmodel or InstrumentLayoutEditorViewModel(self._load_specs())
+        remembered_id = self.__class__._last_selected_instrument_id
+        if remembered_id:
+            try:
+                self._viewmodel.select_instrument(remembered_id)
+            except ValueError:
+                pass
         self._on_close = on_close
         self._on_config_saved = on_config_saved
         self._updating = False
@@ -66,6 +77,12 @@ class InstrumentLayoutEditor(
         self._preferred_max_combo: ttk.Combobox | None = None
         self._candidate_min_combo: ttk.Combobox | None = None
         self._candidate_max_combo: ttk.Combobox | None = None
+        self._allow_half_check: ttk.Checkbutton | None = None
+        self._allow_half_var = allow_half_var
+        self._on_half_toggle = on_half_toggle
+        self._last_instrument_id: str | None = None
+
+        apply_theme_to_toplevel(self)
 
         self.columnconfigure(0, weight=1)
         self.columnconfigure(1, weight=0)
@@ -122,6 +139,10 @@ class InstrumentLayoutEditor(
 
     def _on_canvas_move(self, kind: SelectionKind, index: int, x: float, y: float) -> None:  # type: ignore[override]
         super()._on_canvas_move(kind, index, x, y)
+
+    def _remember_last_instrument(self, instrument_id: str) -> None:
+        if instrument_id:
+            self.__class__._last_selected_instrument_id = instrument_id
 
 
 __all__ = ["InstrumentLayoutEditor"]

@@ -7,7 +7,14 @@ from typing import Callable, Dict, List, Sequence
 import tkinter as tk
 from tkinter import ttk
 
-from ocarina_gui.themes import TablePalette, ThemeSpec, set_active_theme
+from ocarina_gui.themes import (
+    INSERT_BACKGROUND_PATTERNS,
+    TablePalette,
+    ThemeSpec,
+    apply_insert_cursor_color,
+    set_ttk_caret_color,
+    set_active_theme,
+)
 
 
 class ThemeMenuMixin:
@@ -115,6 +122,16 @@ class ThemeMenuMixin:
                 self.option_add(pattern, value)
             except tk.TclError:
                 continue
+
+        insert_color = palette.text_cursor
+        set_ttk_caret_color(style, insert_color)
+        for pattern in INSERT_BACKGROUND_PATTERNS:
+            try:
+                self.option_add(pattern, insert_color)
+            except tk.TclError:
+                continue
+
+        apply_insert_cursor_color(self, insert_color)
 
         try:
             self.configure(background=palette.window_background)

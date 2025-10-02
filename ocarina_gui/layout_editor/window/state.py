@@ -7,6 +7,7 @@ from typing import Dict
 
 import tkinter as tk
 
+from ocarina_gui.fingering.half_holes import instrument_allows_half_holes
 from viewmodels.instrument_layout_editor_viewmodel import InstrumentLayoutState, SelectionKind
 
 
@@ -40,6 +41,7 @@ class _LayoutEditorStateMixin:
 
     def _refresh_state(self) -> None:
         state = self._viewmodel.state
+        previous_instrument = getattr(self, "_last_instrument_id", None)
         self._updating = True
         try:
             self._instrument_id_var.set(state.instrument_id)
@@ -81,6 +83,11 @@ class _LayoutEditorStateMixin:
         self._refresh_json_preview()
         self._update_size_entry_state()
         self._update_element_controls()
+
+        self._update_half_hole_var(state.instrument_id)
+        if previous_instrument != state.instrument_id:
+            self._remember_last_instrument(state.instrument_id)
+            self._last_instrument_id = state.instrument_id
 
     def _update_selection_vars(self, state: InstrumentLayoutState) -> None:
         selection = state.selection
@@ -158,6 +165,31 @@ class _LayoutEditorStateMixin:
                 SelectionKind.WINDWAY,
             ):
                 self._hole_identifier_var.set("")
+
+    def _update_half_hole_var(self, instrument_id: str) -> None:
+        var = getattr(self, "_allow_half_var", None)
+        if var is None:
+            return
+
+        expected = instrument_allows_half_holes(instrument_id)
+        viewmodel = getattr(self, "_viewmodel", None)
+        if viewmodel is not None:
+            try:
+                expected = bool(getattr(viewmodel.state, "allow_half_holes", expected))
+            except Exception:
+                pass
+        try:
+            current = bool(var.get())
+        except Exception:
+            current = False
+
+        if current == expected:
+            return
+
+        try:
+            var.set(expected)
+        except Exception:
+            pass
 
     @staticmethod
     def _format_number(value: float) -> str:

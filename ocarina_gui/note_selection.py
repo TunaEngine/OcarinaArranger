@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import tkinter as tk
+from contextlib import suppress
+
 from tkinter import simpledialog, ttk
 from typing import Iterable, Optional, Sequence, Set
+
+from .themes import apply_theme_to_toplevel
 
 
 class _NoteSelectionDialog(simpledialog.Dialog):
@@ -24,6 +28,10 @@ class _NoteSelectionDialog(simpledialog.Dialog):
         super().__init__(parent, title)
 
     def body(self, master: tk.Misc) -> tk.Widget:
+        palette = apply_theme_to_toplevel(self)
+        with suppress(tk.TclError):
+            master.configure(background=palette.window_background)
+
         ttk.Label(master, text="Select a note:").grid(row=0, column=0, sticky="w", padx=4, pady=(4, 2))
 
         listbox = tk.Listbox(master, height=min(12, max(4, len(self._choices))), exportselection=False)

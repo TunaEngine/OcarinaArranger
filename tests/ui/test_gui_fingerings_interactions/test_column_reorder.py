@@ -23,6 +23,8 @@ def _configure_app_for_reorder(app: MainWindow, table: _HeadlessTable) -> None:
     app._fingering_display_columns_override = list(table["columns"][1:])
     app._fingering_display_columns = table["columns"]
     app._fingering_column_drag_source = None
+    app._fingering_drop_target_id = None
+    app._fingering_drop_insert_after = False
     app._on_fingering_table_select()
 
 
@@ -70,6 +72,29 @@ def test_fingering_column_reorder_updates_display_order() -> None:
         "hole_right",
         "hole_center",
     ]
+    assert app._fingering_column_drag_source is None
+
+
+def test_fingering_column_reorder_uses_separator_drop_hint() -> None:
+    app = _make_headless_app(edit_mode=True)
+    columns = ("note", "hole_left", "hole_center", "hole_right")
+    table = _build_table(app, columns)
+    _configure_app_for_reorder(app, table)
+
+    table.set_click_target(note="target", column_ref="#3", region="heading")
+    app._on_fingering_table_button_press(SimpleNamespace(x=140, y=0))
+    assert app._fingering_column_drag_source == "hole_center"
+
+    table.set_click_target(note="target", column_ref="#4", region="heading")
+    app._on_fingering_heading_motion(SimpleNamespace(x=240, y=0))
+    assert app._fingering_drop_target_id == "hole_right"
+    assert app._fingering_drop_insert_after is True
+
+    table.set_click_target(note="target", column_ref="#0", region="separator")
+    app._on_fingering_cell_click(SimpleNamespace(x=240, y=0))
+
+    assert app._fingering_display_columns == ("note", "hole_left", "hole_right", "hole_center")
+    assert app._fingering_drop_target_id is None
     assert app._fingering_column_drag_source is None
 
 
@@ -157,22 +182,3 @@ def test_fingering_column_reorder_disabled_when_not_editing() -> None:
     assert app._fingering_display_columns == before
 
 
-def test_fingering_heading_cursor_feedback_during_reorder() -> None:
-    app = _make_headless_app(edit_mode=True)
-    columns = ("note", "hole_left", "hole_right")
-    table = _build_table(app, columns)
-    _configure_app_for_reorder(app, table)
-
-    table.set_click_target(note="target", column_ref="#2", region="heading")
-    hover = SimpleNamespace(x=120, y=0)
-    app._on_fingering_heading_pointer_motion(hover)
-    assert table.cursor == "hand2"
-
-    app._on_fingering_table_button_press(hover)
-    assert table.cursor in {"closedhand", "hand2"}
-
-    app._on_fingering_heading_release(hover)
-    assert table.cursor == "hand2"
-
-    app._on_fingering_heading_pointer_leave(SimpleNamespace(x=0, y=0))
-    assert table.cursor == ""

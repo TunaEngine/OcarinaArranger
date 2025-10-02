@@ -246,9 +246,25 @@ class _RenderWorker:
         # Lazily create the single worker the first time.
         if self._executor is None:
             # One reusable OS thread for all preview renders.
-            self._executor = ThreadPoolExecutor(
+            executor = ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix="preview-render"
             )
+
+            # Mark preview render threads as daemonic so test processes exit cleanly
+            # even if a renderer escapes shutdown (e.g. due to a failing test).
+            try:
+                thread_factory = executor._thread_factory  # type: ignore[attr-defined]
+
+                def _daemon_thread_factory(*args, **kwargs):
+                    thread = thread_factory(*args, **kwargs)
+                    thread.daemon = True
+                    return thread
+
+                executor._thread_factory = _daemon_thread_factory  # type: ignore[attr-defined]
+            except AttributeError:
+                logger.debug("ThreadPoolExecutor missing _thread_factory; using defaults")
+
+            self._executor = executor
         try:
             fut = self._executor.submit(worker)
             self._futures.append(fut)

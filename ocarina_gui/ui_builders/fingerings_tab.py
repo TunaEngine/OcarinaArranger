@@ -107,13 +107,16 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
     yscroll.grid(row=0, column=1, sticky="ns")
     tree.configure(yscrollcommand=yscroll.set)
+    xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=tree.xview)
+    xscroll.grid(row=1, column=0, sticky="ew")
+    tree.configure(xscrollcommand=xscroll.set)
 
     tree.bind("<ButtonPress-1>", app._on_fingering_table_button_press, add=True)
     tree.bind("<B1-Motion>", app._on_fingering_heading_motion, add=True)
-    tree.bind("<Motion>", app._on_fingering_heading_pointer_motion, add=True)
-    tree.bind("<Leave>", app._on_fingering_heading_pointer_leave, add=True)
+    tree.bind("<Motion>", app._on_fingering_table_motion, add=True)
     tree.bind("<<TreeviewSelect>>", app._on_fingering_table_select)
     tree.bind("<ButtonRelease-1>", app._on_fingering_cell_click, add=True)
+    tree.bind("<Leave>", app._on_fingering_table_leave, add=True)
 
     panes.add(top_section, weight=3)
 

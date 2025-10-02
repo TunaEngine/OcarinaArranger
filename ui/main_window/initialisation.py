@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, List, Optional, Sequence
@@ -138,10 +139,14 @@ class MainWindowInitialisationMixin:
         self._fingering_column_drag_source: str | None = None
         self._fingering_drop_indicator: tk.Widget | None = None
         self._fingering_drop_indicator_color: str | None = None
-        self._fingering_heading_open_cursor: str = "hand2"
-        self._fingering_heading_closed_cursor: str = "closedhand"
-        self._fingering_heading_cursor_active: str | None = None
-        self._fingering_heading_closed_cursor_supported: bool | None = None
+        self._fingering_drop_target_id: str | None = None
+        self._fingering_drop_insert_after: bool = False
+        self._fingering_half_notes_enabled: bool = False
+        if self._headless:
+            self._fingering_allow_half_var = None
+        else:
+            self._fingering_allow_half_var = tk.BooleanVar(master=self, value=False)
+        self._apply_half_note_default(self._selected_instrument_id)
 
     def _setup_preview_state(self, preferences: object, auto_scroll_mode) -> None:
         layout_pref = getattr(preferences, "preview_layout_mode", None)
@@ -315,6 +320,31 @@ class MainWindowInitialisationMixin:
 
     def _configure_main_window_shell(self) -> None:
         if not self._headless:
+            resources_dir = Path(__file__).with_name("resources")
+            png_icon_path = resources_dir / "app_icon.png"
+            try:
+                if png_icon_path.exists():
+                    icon_image = tk.PhotoImage(master=self, file=str(png_icon_path))
+                    self.iconphoto(False, icon_image)
+                    self._window_icon_image = icon_image
+                else:
+                    logger.warning("Application icon missing at %s", png_icon_path)
+            except tk.TclError:
+                logger.exception(
+                    "Failed to load application icon from %s", png_icon_path
+                )
+
+            ico_icon_path = resources_dir / "app_icon.ico"
+            if ico_icon_path.exists():
+                try:
+                    self.iconbitmap(bitmap=str(ico_icon_path))
+                except tk.TclError:
+                    logger.exception(
+                        "Failed to apply Windows taskbar icon from %s", ico_icon_path
+                    )
+            else:
+                logger.warning("Windows taskbar icon missing at %s", ico_icon_path)
+
             self.title(APP_TITLE)
             self.geometry("860x560")
             self.resizable(True, True)

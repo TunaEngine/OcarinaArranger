@@ -28,6 +28,9 @@ class _HeadlessTable:
             column: {"text": column}
             for column in columns
         }
+        self.after_idle_calls: list[tuple[Callable[..., None], tuple[object, ...]]] = []
+        self._after_jobs: dict[str, tuple[Callable[..., None], tuple[object, ...]]] = {}
+        self._after_index = 0
 
     def __getitem__(self, key: str) -> tuple[str, ...]:
         if key == "columns":
@@ -54,7 +57,13 @@ class _HeadlessTable:
                 self._displaycolumns = tuple(value)
         if "cursor" in kwargs:
             value = kwargs["cursor"]
-            self._cursor = "" if value in {None, ""} else str(value)
+            if isinstance(value, str):
+                self._cursor = value
+
+    def cget(self, option: str) -> object:
+        if option == "cursor":
+            return self._cursor
+        raise KeyError(option)
 
     def selection(self) -> tuple[str, ...]:
         return self._selection
@@ -85,9 +94,13 @@ class _HeadlessTable:
         if iid not in self._rows:
             self._rows.append(iid)
 
-    def heading(self, column: str, **kwargs) -> None:
+    def heading(self, column: str, option: str | None = None, **kwargs):
         settings = self._heading_settings.setdefault(column, {"text": column})
-        settings.update(kwargs)
+        if option is not None:
+            return settings.get(option)
+        if kwargs:
+            settings.update(kwargs)
+        return dict(settings)
 
     def column(self, column: str, option: str | None = None, **kwargs):
         settings = self._column_settings.setdefault(
@@ -132,13 +145,24 @@ class _HeadlessTable:
         self._click_column = column_ref
         self._click_region = region
 
+    @property
+    def cursor(self) -> str:
+        return self._cursor
+
     def see(self, note: str) -> None:  # pragma: no cover - defensive safeguard
         if note not in self._rows:
             raise LookupError(note)
 
-    @property
-    def cursor(self) -> str:
-        return self._cursor
+    def after_idle(self, func: Callable[..., None], *args) -> str:
+        self._after_index += 1
+        job = f"after{self._after_index}"
+        self.after_idle_calls.append((func, args))
+        self._after_jobs[job] = (func, args)
+        func(*args)
+        return job
+
+    def after_cancel(self, job: str) -> None:
+        self._after_jobs.pop(job, None)
 
 
 class _HeadlessPreview:

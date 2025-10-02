@@ -120,7 +120,10 @@ class FingeringEventMixin:
 
         current = int(pattern[element_index]) if element_index < len(pattern) else 0
         if element_index < hole_count:
-            next_value = (current + 1) % 3
+            if self._half_notes_enabled():
+                next_value = (current + 1) % 3
+            else:
+                next_value = 0 if current >= 2 else 2
             element_kind = "hole"
             element_offset = element_index
         else:
@@ -194,9 +197,12 @@ class FingeringEventMixin:
             return
 
         region = table.identify_region(event.x, event.y)
-        if region == "heading":
+        if region in {"heading", "separator"}:
             self._on_fingering_heading_release(event)
             return
+        if self._fingering_column_drag_source:
+            self._fingering_column_drag_source = None
+            self._hide_fingering_drop_indicator()
         if region != "cell":
             return
 
@@ -306,9 +312,7 @@ class FingeringEventMixin:
             self._hide_fingering_drop_indicator()
             return
         self._fingering_column_drag_source = column_id
-        self._set_fingering_heading_cursor(
-            getattr(self, "_fingering_heading_closed_cursor", None)
-        )
+        self._set_fingering_drop_hint(None, insert_after=False)
 
     def _on_fingering_heading_release(self, event: tk.Event) -> None:
         table = self.fingering_table
@@ -318,24 +322,35 @@ class FingeringEventMixin:
         self._fingering_column_drag_source = None
         if not self._fingering_edit_mode or not source:
             self._hide_fingering_drop_indicator()
-            self._update_fingering_heading_cursor(
-                getattr(event, "x", None), getattr(event, "y", None)
-            )
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         display_columns = list(self._get_display_columns(table))
         if not display_columns:
+            self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         column_ref = table.identify_column(event.x)
         target_id = self._column_id_from_ref(table, column_ref)
+        region = table.identify_region(event.x, event.y)
+        after_hint = getattr(self, "_fingering_drop_insert_after", False)
+        used_hint = False
         if target_id is None or target_id not in display_columns:
-            self._update_fingering_heading_cursor(
-                getattr(event, "x", None), getattr(event, "y", None)
-            )
-            return
+            hint_id = getattr(self, "_fingering_drop_target_id", None)
+            if hint_id and hint_id in display_columns:
+                target_id = hint_id
+                used_hint = True
+                region = "heading"
+            else:
+                self._hide_fingering_drop_indicator()
+                self._set_fingering_drop_hint(None, insert_after=False)
+                return
 
-        after = self._should_insert_after(event.x, target_id, display_columns, table)
+        if used_hint:
+            after = after_hint
+        else:
+            after = self._should_insert_after(event.x, target_id, display_columns, table)
 
         try:
             display_columns.remove(source)
@@ -395,6 +410,9 @@ class FingeringEventMixin:
             getattr(event, "x", None), getattr(event, "y", None)
         )
 
+        self._hide_fingering_drop_indicator()
+        self._set_fingering_drop_hint(None, insert_after=False)
+
     def _on_fingering_heading_motion(self, event: tk.Event) -> None:
         table = self.fingering_table
         if table is None:
@@ -402,28 +420,48 @@ class FingeringEventMixin:
         source = self._fingering_column_drag_source
         if not self._fingering_edit_mode or not source:
             self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         region = table.identify_region(event.x, event.y)
         if region not in {"heading", "separator"}:
             self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         display_columns = self._get_display_columns(table)
         if not display_columns:
             self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         column_ref = table.identify_column(event.x)
         target_id = self._column_id_from_ref(table, column_ref)
         if target_id is None or target_id not in display_columns:
             self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
 
         after = self._should_insert_after(event.x, target_id, display_columns, table)
+        self._set_fingering_drop_hint(target_id, insert_after=after)
 
         position = self._column_left_edge(display_columns, target_id, table)
         if after:
             position += self._get_column_width(table, target_id)
 
         self._show_fingering_drop_indicator(position)
+
+    def _on_fingering_table_motion(self, event: tk.Event) -> None:
+        table = self.fingering_table
+        if table is None:
+            return
+        if not self._fingering_edit_mode or self._fingering_column_drag_source:
+            return
+        region = table.identify_region(event.x, event.y)
+        if region not in {"heading", "separator"}:
+            self._hide_fingering_drop_indicator()
+            self._set_fingering_drop_hint(None, insert_after=False)
+
+    def _on_fingering_table_leave(self, _event: tk.Event) -> None:
+        self._hide_fingering_drop_indicator()
+        self._set_fingering_drop_hint(None, insert_after=False)

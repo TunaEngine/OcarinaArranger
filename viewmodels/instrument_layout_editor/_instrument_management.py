@@ -111,6 +111,14 @@ class InstrumentManagementMixin:
         if changed:
             state.dirty = True
 
+    def set_half_hole_support(self, enabled: bool) -> None:
+        state = self.state
+        value = bool(enabled)
+        if state.allow_half_holes == value:
+            return
+        state.allow_half_holes = value
+        state.dirty = True
+
     def select_instrument(self, instrument_id: str) -> None:
         if instrument_id not in self._states:
             raise ValueError(f"Unknown instrument: {instrument_id}")

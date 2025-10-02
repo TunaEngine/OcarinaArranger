@@ -141,6 +141,13 @@ class FingeringStyleMixin:
         indicator.configure(background=color)
         self._fingering_drop_indicator_color = color
 
+    def _set_fingering_drop_hint(self, target: str | None, *, insert_after: bool) -> None:
+        self._fingering_drop_target_id = target
+        if target:
+            self._fingering_drop_insert_after = bool(insert_after)
+        else:
+            self._fingering_drop_insert_after = False
+
     def _show_fingering_drop_indicator(self, position: int) -> None:
         if self._headless:
             return
@@ -153,6 +160,7 @@ class FingeringStyleMixin:
 
     def _hide_fingering_drop_indicator(self) -> None:
         if self._headless:
+            self._set_fingering_drop_hint(None, insert_after=False)
             return
         indicator = self._fingering_drop_indicator
         if indicator is None:
@@ -161,3 +169,4 @@ class FingeringStyleMixin:
             indicator.place_forget()
         except tk.TclError:
             pass
+        self._set_fingering_drop_hint(None, insert_after=False)

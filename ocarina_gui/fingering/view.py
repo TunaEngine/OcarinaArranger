@@ -304,8 +304,10 @@ class FingeringView(tk.Canvas):
         self._windway_tags = windway_tags
         self._refresh_windway_bindings()
 
-        title_x = scaled_width / 2
-        title_y = self._scale_distance(20)
+        padding_x = self._scale_distance(12)
+        padding_y = self._scale_distance(12)
+        title_x = padding_x
+        title_y = padding_y
         note_y = title_y + self._scale_distance(18)
         title_font_size = max(1, int(round(9 * self._scale)))
         note_font_size = max(1, int(round(11 * self._scale)))
@@ -315,6 +317,7 @@ class FingeringView(tk.Canvas):
             text=instrument.title,
             fill="#333333",
             font=("TkDefaultFont", title_font_size),
+            anchor="nw",
             tags=("static", "title"),
         )
         self._note_text_id = self.create_text(
@@ -323,6 +326,7 @@ class FingeringView(tk.Canvas):
             text="",
             fill="#222222",
             font=("TkDefaultFont", note_font_size),
+            anchor="nw",
             tags=("note",),
         )
         status_y = note_y + self._scale_distance(16)
@@ -333,6 +337,7 @@ class FingeringView(tk.Canvas):
             text="",
             fill="#aa0000",
             font=("TkDefaultFont", status_font_size),
+            anchor="nw",
             tags=("note", "status"),
         )
         self.tag_raise("note")

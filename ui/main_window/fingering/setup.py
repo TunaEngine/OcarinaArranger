@@ -92,13 +92,34 @@ class FingeringSetupMixin:
         if self.fingering_instrument_var is not None:
             self.fingering_instrument_var.set(selected_name)
 
+        self._apply_half_note_default(selected_id)
+
     def set_fingering_instrument(self, instrument_id: str) -> None:
         logger.info("Setting fingering instrument", extra={"instrument_id": instrument_id})
+        if getattr(self, "_fingering_edit_mode", False):
+            try:
+                current_id = get_current_instrument_id()
+            except Exception:
+                current_id = ""
+            if instrument_id != current_id:
+                logger.info(
+                    "Ignoring instrument change while editing fingerings",
+                    extra={"requested": instrument_id, "active": current_id},
+                )
+                if not self._headless:
+                    messagebox.showinfo(
+                        "Instrument",
+                        "Finish or cancel fingering edits before switching instruments.",
+                        parent=self,
+                    )
+                return
         try:
             set_active_instrument(instrument_id)
         except ValueError as exc:
             messagebox.showerror("Instrument", str(exc), parent=self)
             return
+
+        self._apply_half_note_default(instrument_id)
 
         if hasattr(self, "_on_library_instrument_changed"):
             self._on_library_instrument_changed(instrument_id, update_range=True)

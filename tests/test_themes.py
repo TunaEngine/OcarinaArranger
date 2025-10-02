@@ -1,5 +1,8 @@
 import json
 import os
+import tkinter as tk
+from tkinter import ttk
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,7 @@ def test_default_theme_is_loaded(reset_theme):
     palette = theme.palette
     assert palette.window_background.startswith("#")
     assert palette.text_muted != palette.text_primary
+    assert palette.text_cursor == palette.text_primary
     assert palette.piano_roll.background.startswith("#")
     assert palette.piano_roll.cursor_primary.startswith("#")
     assert palette.staff.background.startswith("#")
@@ -42,6 +46,7 @@ def test_can_switch_to_dark_theme(reset_theme):
     palette = theme.palette
     assert palette.window_background != "#f0f0f0"
     assert palette.text_primary != palette.text_muted
+    assert palette.text_cursor != palette.text_primary
     assert palette.piano_roll.accidental_row_fill != palette.piano_roll.natural_row_fill
 
 
@@ -74,3 +79,106 @@ def test_load_library_uses_saved_theme(monkeypatch, tmp_path):
 
     library = themes._load_library()
     assert library.current_id() == "dark"
+
+
+@pytest.mark.gui
+def test_apply_theme_to_toplevel_sets_dialog_defaults(reset_theme):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter display is not available")
+
+    root.withdraw()
+
+    try:
+        themes.set_active_theme("dark")
+        window = tk.Toplevel(root)
+        palette = themes.apply_theme_to_toplevel(window)
+
+        entry = tk.Entry(window)
+        listbox = tk.Listbox(window)
+
+        window.update_idletasks()
+
+        assert window.cget("background").lower() == palette.window_background.lower()
+        assert entry.cget("insertbackground").lower() == palette.text_cursor.lower()
+        assert listbox.cget("background").lower() == palette.listbox.background.lower()
+    finally:
+        with suppress(Exception):
+            entry.destroy()
+        with suppress(Exception):
+            listbox.destroy()
+        with suppress(Exception):
+            window.destroy()
+        with suppress(Exception):
+            root.destroy()
+
+
+@pytest.mark.gui
+def test_apply_theme_updates_existing_entries(reset_theme):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter display is not available")
+
+    root.withdraw()
+
+    try:
+        themes.set_active_theme("dark")
+        window = tk.Toplevel(root)
+        entry = tk.Entry(window)
+        entry.configure(insertbackground="#111111")
+        window.update_idletasks()
+
+        palette = themes.apply_theme_to_toplevel(window)
+
+        assert entry.cget("insertbackground").lower() == palette.text_cursor.lower()
+    finally:
+        with suppress(Exception):
+            entry.destroy()
+        with suppress(Exception):
+            window.destroy()
+        with suppress(Exception):
+            root.destroy()
+
+
+@pytest.mark.gui
+def test_apply_theme_sets_ttk_entry_caret_color(reset_theme):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter display is not available")
+
+    root.withdraw()
+
+    late_entry = None
+
+    try:
+        themes.set_active_theme("dark")
+        window = tk.Toplevel(root)
+        entry = ttk.Entry(window)
+        style = ttk.Style(root)
+
+        palette = themes.apply_theme_to_toplevel(window)
+        window.update_idletasks()
+
+        style_name = entry.cget("style") or entry.winfo_class()
+        configured = style.configure(style_name).get("insertcolor", "")
+        assert configured.lower() == palette.text_cursor.lower()
+
+        late_entry = ttk.Entry(window)
+        window.update_idletasks()
+
+        late_style_name = late_entry.cget("style") or late_entry.winfo_class()
+        late_configured = style.configure(late_style_name).get("insertcolor", "")
+        assert late_configured.lower() == palette.text_cursor.lower()
+    finally:
+        if late_entry is not None:
+            with suppress(Exception):
+                late_entry.destroy()
+        with suppress(Exception):
+            entry.destroy()
+        with suppress(Exception):
+            window.destroy()
+        with suppress(Exception):
+            root.destroy()

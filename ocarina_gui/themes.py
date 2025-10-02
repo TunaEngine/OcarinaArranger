@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import tkinter as tk
+from collections import deque
 from dataclasses import dataclass
 from importlib import resources
+from tkinter import ttk
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .preferences import Preferences, load_preferences, save_preferences
@@ -163,6 +166,7 @@ class ThemePalette:
     window_background: str
     text_primary: str
     text_muted: str
+    text_cursor: str
     piano_roll: PianoRollPalette
     staff: StaffPalette
     listbox: ListboxPalette
@@ -174,11 +178,103 @@ class ThemePalette:
             window_background=str(data["window_background"]),
             text_primary=str(data["text_primary"]),
             text_muted=str(data["text_muted"]),
+            text_cursor=str(data.get("text_cursor", data["text_primary"])),
             piano_roll=PianoRollPalette.from_dict(data["piano_roll"]),
             staff=StaffPalette.from_dict(data["staff"]),
             listbox=ListboxPalette.from_dict(data["listbox"]),
             table=TablePalette.from_dict(data.get("table", {})),
         )
+
+
+INSERT_BACKGROUND_PATTERNS: Tuple[str, ...] = (
+    "*Entry.insertBackground",
+    "*Text.insertBackground",
+    "*Spinbox.insertBackground",
+    "*TEntry*insertBackground",
+    "*TSpinbox*insertBackground",
+    "*TCombobox*insertBackground",
+)
+TTK_INSERT_STYLE_NAMES: Tuple[str, ...] = (
+    "TEntry",
+    "TSpinbox",
+    "TCombobox",
+)
+
+try:
+    _TTK_INSERT_WIDGET_TYPES: Tuple[type, ...] = tuple(
+        getattr(ttk, name)
+        for name in ("Entry", "Spinbox", "Combobox")
+        if hasattr(ttk, name)
+    )
+except Exception:  # pragma: no cover - minimal Tk distributions
+    _TTK_INSERT_WIDGET_TYPES = ()
+
+
+def _configure_ttk_insert_color(style: ttk.Style, style_name: str, color: str) -> None:
+    try:
+        style.configure(style_name, insertcolor=color)
+    except tk.TclError:
+        pass
+
+
+def _ensure_default_ttk_insert_colors(style: ttk.Style, color: str) -> None:
+    for style_name in TTK_INSERT_STYLE_NAMES:
+        _configure_ttk_insert_color(style, style_name, color)
+
+
+def _maybe_set_widget_style_insert_color(widget: tk.Misc, color: str) -> None:
+    if not _TTK_INSERT_WIDGET_TYPES or not isinstance(widget, _TTK_INSERT_WIDGET_TYPES):
+        return
+
+    style_name = ""
+    try:
+        style_name = widget.cget("style")
+    except tk.TclError:
+        style_name = ""
+
+    if not style_name:
+        style_name = widget.winfo_class()
+
+    style = ttk.Style(widget)
+    _configure_ttk_insert_color(style, style_name, color)
+
+
+def set_ttk_caret_color(style: ttk.Style, color: str) -> None:
+    """Apply ``color`` to the insertion cursor for common ttk entry styles."""
+
+    _ensure_default_ttk_insert_colors(style, color)
+
+
+def apply_insert_cursor_color(widget: tk.Misc, color: str) -> None:
+    """Force ``insertbackground`` on ``widget`` and all descendants."""
+
+    queue: deque[tk.Misc] = deque([widget])
+    seen: set[str] = set()
+
+    while queue:
+        current = queue.popleft()
+        identifier = str(current)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+
+        if hasattr(current, "configure"):
+            try:
+                current.configure(insertbackground=color)
+            except tk.TclError:
+                pass
+            except AttributeError:  # pragma: no cover - non-configurable object
+                pass
+
+        _maybe_set_widget_style_insert_color(current, color)
+
+        try:
+            children = current.winfo_children()
+        except tk.TclError:
+            continue
+        for child in children:
+            if isinstance(child, tk.Misc):
+                queue.append(child)
 
 
 @dataclass(frozen=True)
@@ -369,17 +465,66 @@ def register_theme_listener(listener: Callable[[ThemeSpec], None]) -> Callable[[
     return _get_library().register(listener)
 
 
+def apply_theme_to_toplevel(window: tk.Misc) -> ThemePalette:
+    """Apply the current theme's Tk option defaults to ``window``.
+
+    The main window configures ttk styles globally, but individual toplevels need
+    their own option database entries so classic Tk widgets (``Entry``, ``Text``,
+    ``Listbox``) and the window background inherit the palette.  This helper makes
+    the process reusable for dialogs created outside the main window lifecycle.
+    """
+
+    theme = get_current_theme()
+    palette = theme.palette
+
+    try:
+        window.configure(background=palette.window_background)
+    except tk.TclError:
+        pass
+
+    for pattern, value in theme.options.items():
+        try:
+            window.option_add(pattern, value)
+        except tk.TclError:
+            continue
+
+    for pattern in INSERT_BACKGROUND_PATTERNS:
+        try:
+            window.option_add(pattern, palette.text_cursor)
+        except tk.TclError:
+            continue
+
+    try:
+        style = ttk.Style(window)
+    except tk.TclError:
+        style = None
+    else:
+        set_ttk_caret_color(style, palette.text_cursor)
+
+    apply_insert_cursor_color(window, palette.text_cursor)
+
+    return palette
+
+
 __all__ = [
-    "ThemeSpec",
-    "ThemePalette",
+    "INSERT_BACKGROUND_PATTERNS",
     "PianoRollPalette",
     "StaffPalette",
     "ListboxPalette",
+    "TablePalette",
+    "ThemePalette",
+    "ThemeSpec",
     "ThemeChoice",
+    "ThemeLibrary",
     "get_available_themes",
     "get_current_theme",
     "get_current_theme_id",
     "get_theme",
     "set_active_theme",
     "register_theme_listener",
+    "apply_theme_to_toplevel",
+    "apply_insert_cursor_color",
+    "set_ttk_caret_color",
 ]
+
+

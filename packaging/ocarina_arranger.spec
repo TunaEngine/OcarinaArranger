@@ -30,6 +30,14 @@ analysis = Analysis(
             "ocarina_gui/fingering/config",
         ),
         (str(project_dir / "app" / "VERSION"), "app"),
+        (
+            str(project_dir / "ui" / "main_window" / "resources" / "app_icon.png"),
+            "ui/main_window/resources",
+        ),
+        (
+            str(project_dir / "ui" / "main_window" / "resources" / "app_icon.ico"),
+            "ui/main_window/resources",
+        ),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -56,6 +64,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     target_arch=None,
+    icon=str(project_dir / "ui" / "main_window" / "resources" / "app_icon.ico"),
 )
 
 coll = COLLECT(

@@ -10,6 +10,7 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from ocarina_gui.preferences import Preferences, save_preferences
+from ocarina_gui.themes import apply_theme_to_toplevel
 from services.update import ReleaseInfo, UpdateError, UpdateService, build_update_service
 from services.update.constants import (
     UPDATE_CHANNEL_BETA,
@@ -49,7 +50,9 @@ class _UpdateDownloadDialog(tk.Toplevel):
             self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._disable_close)
 
-        message = tk.Label(self, text="Downloading the latest update…", anchor="w")
+        apply_theme_to_toplevel(self)
+
+        message = ttk.Label(self, text="Downloading the latest update…", anchor="w")
         message.pack(fill="x", padx=20, pady=(20, 10))
 
         self._progress = ttk.Progressbar(self, mode="indeterminate", length=260)

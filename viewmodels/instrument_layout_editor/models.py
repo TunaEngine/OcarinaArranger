@@ -98,6 +98,7 @@ class InstrumentLayoutState:
     outline_points: List[OutlinePoint] = field(default_factory=list)
     outline_closed: bool = False
     style: EditableStyle = field(default_factory=lambda: EditableStyle.from_spec(StyleSpec()))
+    allow_half_holes: bool = False
     note_order: List[str] = field(default_factory=list)
     note_map: Dict[str, List[int]] = field(default_factory=dict)
     candidate_notes: List[str] = field(default_factory=list)
@@ -158,6 +159,7 @@ def state_from_spec(instrument: InstrumentSpec) -> InstrumentLayoutState:
         style=EditableStyle.from_spec(instrument.style),
         note_order=list(instrument.note_order),
         note_map=note_map,
+        allow_half_holes=bool(getattr(instrument, "allow_half_holes", False)),
         candidate_notes=candidate_notes,
         candidate_range_min=str(getattr(instrument, "candidate_range_min", "")),
         candidate_range_max=str(getattr(instrument, "candidate_range_max", "")),
@@ -195,6 +197,7 @@ def clone_state(
         has_explicit_candidate_range = False
         preferred_range_min = ""
         preferred_range_max = ""
+        allow_half_holes = False
     else:
         canvas_width = template.canvas_width
         canvas_height = template.canvas_height
@@ -245,6 +248,7 @@ def clone_state(
             has_explicit_candidate_range = False
             preferred_range_min = ""
             preferred_range_max = ""
+        allow_half_holes = template.allow_half_holes
 
     return InstrumentLayoutState(
         instrument_id=instrument_id,
@@ -252,6 +256,7 @@ def clone_state(
         title=str(title).strip() if title else name,
         canvas_width=canvas_width,
         canvas_height=canvas_height,
+        allow_half_holes=allow_half_holes,
         holes=holes,
         windways=windways,
         outline_points=outline_points,
@@ -301,6 +306,7 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
         "note_order": list(state.note_order),
         "note_map": {note: list(pattern) for note, pattern in state.note_map.items()},
         "candidate_notes": list(state.candidate_notes),
+        "allow_half_holes": state.allow_half_holes,
     }
     if state.has_explicit_candidate_range and (
         state.candidate_range_min or state.candidate_range_max

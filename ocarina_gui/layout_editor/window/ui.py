@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Callable, Dict
 
 import tkinter as tk
 from tkinter import ttk
@@ -27,6 +27,9 @@ class _LayoutEditorUIMixin:
     _preview_toggle: ttk.Button | None
     _json_text: tk.Text | None
     _radius_entry: ttk.Entry
+    _allow_half_var: tk.BooleanVar | None
+    _allow_half_check: ttk.Checkbutton | None
+    _on_half_toggle: Callable[[], None] | None
 
     def _build_header(self, parent: ttk.Frame) -> None:
         selector_frame = ttk.Frame(parent)
@@ -133,6 +136,36 @@ class _LayoutEditorUIMixin:
         max_combo.bind("<FocusOut>", lambda _e: self._apply_preferred_range())
         self._preferred_min_combo = min_combo
         self._preferred_max_combo = max_combo
+
+        allow_half_var = getattr(self, "_allow_half_var", None)
+        if allow_half_var is not None:
+            check = ttk.Checkbutton(
+                general,
+                text="Allow half-holes",
+                variable=allow_half_var,
+                command=self._handle_half_toggle,
+            )
+            check.grid(row=7, column=0, columnspan=2, sticky="w", padx=4, pady=4)
+            self._allow_half_check = check
+
+    def _handle_half_toggle(self) -> None:
+        allow_half_var = getattr(self, "_allow_half_var", None)
+        viewmodel = getattr(self, "_viewmodel", None)
+        instrument_state = getattr(viewmodel, "state", None)
+        instrument_id = getattr(instrument_state, "instrument_id", "")
+
+        viewmodel = getattr(self, "_viewmodel", None)
+        if allow_half_var is not None and instrument_id and viewmodel is not None:
+            try:
+                enabled = bool(allow_half_var.get())
+            except Exception:
+                enabled = False
+            viewmodel.set_half_hole_support(enabled)
+            self._refresh_state()
+
+        callback = getattr(self, "_on_half_toggle", None)
+        if callback is not None:
+            callback()
 
     def _build_selection_panel(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Selection")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from ui.main_window import MainWindow
 
 from .helpers import _HeadlessPreview, _HeadlessTable, make_click_event
@@ -52,6 +54,66 @@ def test_fingering_cell_click_respects_active_row() -> None:
 
     app._on_fingering_cell_click(event)
     assert toggled == [("target", 0)]
+
+
+def test_cycle_skips_half_state_when_disabled() -> None:
+    app = MainWindow.__new__(MainWindow)
+    app._headless = True
+    app._fingering_edit_mode = True
+    app._fingering_half_notes_enabled = False
+    app._fingering_allow_half_var = None
+    state = SimpleNamespace(
+        holes=[object()],
+        windways=[],
+        note_map={"note": [0]},
+    )
+
+    class DummyViewModel:
+        def __init__(self) -> None:
+            self.state = state
+
+        def set_note_pattern(self, note: str, pattern) -> None:
+            self.state.note_map[note] = list(pattern)
+
+    app._fingering_edit_vm = DummyViewModel()
+    app._apply_fingering_editor_changes = lambda focus=None: None
+    app._update_fingering_note_actions_state = lambda: None
+
+    app._cycle_fingering_state("note", 0)
+    assert app._fingering_edit_vm.state.note_map["note"] == [2]
+
+    app._cycle_fingering_state("note", 0)
+    assert app._fingering_edit_vm.state.note_map["note"] == [0]
+
+
+def test_cycle_allows_half_state_when_enabled() -> None:
+    app = MainWindow.__new__(MainWindow)
+    app._headless = True
+    app._fingering_edit_mode = True
+    app._fingering_half_notes_enabled = True
+    app._fingering_allow_half_var = None
+    state = SimpleNamespace(
+        holes=[object()],
+        windways=[],
+        note_map={"note": [0]},
+    )
+
+    class DummyViewModel:
+        def __init__(self) -> None:
+            self.state = state
+
+        def set_note_pattern(self, note: str, pattern) -> None:
+            self.state.note_map[note] = list(pattern)
+
+    app._fingering_edit_vm = DummyViewModel()
+    app._apply_fingering_editor_changes = lambda focus=None: None
+    app._update_fingering_note_actions_state = lambda: None
+
+    app._cycle_fingering_state("note", 0)
+    assert app._fingering_edit_vm.state.note_map["note"] == [1]
+
+    app._cycle_fingering_state("note", 0)
+    assert app._fingering_edit_vm.state.note_map["note"] == [2]
 
 
 def test_fingering_cell_click_requires_active_row_after_switching() -> None:

@@ -138,6 +138,7 @@ class InstrumentSettingsMixin:
                 return
         self._selected_instrument_id = instrument_id
         self._viewmodel.state.instrument_id = instrument_id
+        self._apply_half_note_default(instrument_id)
         try:
             spec = get_instrument(instrument_id)
         except Exception:

@@ -7,6 +7,7 @@ from tkinter import ttk
 from typing import Optional
 
 from ocarina_gui.pdf_export.types import PdfExportOptions
+from ocarina_gui.themes import apply_theme_to_toplevel
 from shared.tkinter_geometry import center_window_over_parent
 
 
@@ -21,6 +22,8 @@ class PdfExportOptionsDialog(tk.Toplevel):
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self._result: Optional[PdfExportOptions] = None
+
+        apply_theme_to_toplevel(self)
 
         container = ttk.Frame(self, padding=16)
         container.grid(row=0, column=0, sticky="nsew")

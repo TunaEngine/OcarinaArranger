@@ -21,6 +21,9 @@ __all__ = [
 ]
 
 
+_DEFAULT_HALF_HOLE_INSTRUMENT_IDS: frozenset[str] = frozenset({"alto_c_6"})
+
+
 @dataclass(frozen=True)
 class HoleSpec:
     """Specification for a fingering hole."""
@@ -150,6 +153,7 @@ class InstrumentSpec:
     windways: List[WindwaySpec]
     note_order: Sequence[str]
     note_map: Dict[str, List[int]]
+    allow_half_holes: bool = False
     candidate_notes: Sequence[str] = ()
     candidate_range_min: str = ""
     candidate_range_max: str = ""
@@ -271,6 +275,13 @@ class InstrumentSpec:
         if not preferred_max:
             preferred_max = default_max
 
+        allow_half_setting = data.get("allow_half_holes")
+        allow_half_holes = (
+            bool(allow_half_setting)
+            if allow_half_setting is not None
+            else instrument_id in _DEFAULT_HALF_HOLE_INSTRUMENT_IDS
+        )
+
         min_midi = parse_note_name_safe(preferred_min)
         max_midi = parse_note_name_safe(preferred_max)
         if (
@@ -291,12 +302,13 @@ class InstrumentSpec:
             style=style,
             outline=outline,
             holes=holes,
+            windways=windways,
             note_order=note_order,
             note_map=note_map,
+            allow_half_holes=allow_half_holes,
             candidate_notes=tuple(combined_candidates),
             candidate_range_min=candidate_range_min,
             candidate_range_max=candidate_range_max,
-            windways=windways,
             _has_explicit_candidates=has_explicit_candidates,
             _has_explicit_candidate_range=explicit_candidate_range,
             preferred_range_min=preferred_min,
@@ -317,6 +329,41 @@ class InstrumentSpec:
         elif len(sequence) > total:
             sequence = sequence[:total]
         return sequence
+
+    def to_dict(self) -> Dict[str, object]:
+        """Serialize the specification into a configuration dictionary."""
+
+        data: Dict[str, object] = {
+            "id": self.instrument_id,
+            "name": self.name,
+            "title": self.title,
+            "canvas": {
+                "width": int(self.canvas_size[0]),
+                "height": int(self.canvas_size[1]),
+            },
+            "style": self.style.to_dict(),
+            "holes": [hole.to_dict() for hole in self.holes],
+            "windways": [windway.to_dict() for windway in self.windways],
+            "note_order": list(self.note_order),
+            "note_map": {note: list(pattern) for note, pattern in self.note_map.items()},
+            "candidate_notes": list(self.candidate_notes),
+            "allow_half_holes": self.allow_half_holes,
+        }
+        if self.outline is not None:
+            data["outline"] = self.outline.to_dict()
+        if getattr(self, "_has_explicit_candidate_range", False) and (
+            self.candidate_range_min or self.candidate_range_max
+        ):
+            data["candidate_range"] = {
+                "min": self.candidate_range_min,
+                "max": self.candidate_range_max,
+            }
+        if self.preferred_range_min or self.preferred_range_max:
+            data["preferred_range"] = {
+                "min": self.preferred_range_min,
+                "max": self.preferred_range_max,
+            }
+        return data
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {

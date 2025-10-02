@@ -123,6 +123,8 @@ class FingeringTableMixin:
         if number >= 2:
             return "●"
         if number == 1:
+            if not self._half_notes_enabled():
+                return "●"
             return "◐"
         return "○"
 

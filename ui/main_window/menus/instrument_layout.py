@@ -38,9 +38,13 @@ class InstrumentLayoutMixin:
             logger.info("Instrument layout configuration saved", extra={"instrument_id": current_id})
             self._refresh_fingering_after_layout_save(current_id)
 
+        half_var = getattr(self, "_fingering_allow_half_var", None)
+        on_half_toggle = getattr(self, "_on_fingering_half_notes_toggle", None)
         self._layout_editor_window = InstrumentLayoutEditor(
             self,
             on_close=_on_close,
             on_config_saved=_on_config_saved,
+            allow_half_var=half_var,
+            on_half_toggle=on_half_toggle if callable(on_half_toggle) else None,
         )
         logger.info("Instrument layout editor window created")
