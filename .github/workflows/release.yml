@@ -92,9 +92,10 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           tag_ref="refs/tags/${tag}"
           tag_message=$(git for-each-ref --format='%(contents)' "$tag_ref")
+          tag_subject=$(printf '%s' "$tag_message" | sed -n '1p' | sed 's/[[:space:]]*$//')
 
           if [ -n "$tag_message" ]; then
-            body="$tag_message\n\n"
+            body="${tag_message}"$'\n\n'
           else
             body=""
           fi
@@ -117,6 +118,13 @@ jobs:
           fi
 
           commits=$(git log --pretty=format:'- %s' "$commit_range")
+
+          if [ -n "$tag_subject" ]; then
+            first_commit=$(printf '%s\n' "$commits" | head -n1)
+            if [ "$first_commit" = "- $tag_subject" ]; then
+              commits=$(printf '%s\n' "$commits" | tail -n +2)
+            fi
+          fi
 
           body="${body}${commits}"
 
