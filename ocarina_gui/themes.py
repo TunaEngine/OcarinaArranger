@@ -18,6 +18,8 @@ class PianoRollPalette:
     natural_row_fill: str
     accidental_row_fill: str
     grid_line: str
+    measure_line: str
+    measure_number_text: str
     note_fill_sharp: str
     note_fill_natural: str
     note_outline: str
@@ -36,6 +38,13 @@ class PianoRollPalette:
             natural_row_fill=str(data.get("natural_row_fill", data["background"])),
             accidental_row_fill=str(data.get("accidental_row_fill", data["background"])),
             grid_line=str(data["grid_line"]),
+            measure_line=str(data.get("measure_line", data["grid_line"])),
+            measure_number_text=str(
+                data.get(
+                    "measure_number_text",
+                    data.get("measure_line", data["grid_line"]),
+                )
+            ),
             note_fill_sharp=str(data["note_fill_sharp"]),
             note_fill_natural=str(data["note_fill_natural"]),
             note_outline=str(data["note_outline"]),
@@ -62,6 +71,7 @@ class StaffPalette:
     outline: str
     staff_line: str
     measure_line: str
+    measure_number_text: str
     accidental_text: str
     note_fill: str
     note_outline: str
@@ -76,6 +86,9 @@ class StaffPalette:
             outline=str(data["outline"]),
             staff_line=str(data["staff_line"]),
             measure_line=str(data["measure_line"]),
+            measure_number_text=str(
+                data.get("measure_number_text", data["measure_line"])
+            ),
             accidental_text=str(data["accidental_text"]),
             note_fill=str(data["note_fill"]),
             note_outline=str(data.get("note_outline", data["note_fill"])),

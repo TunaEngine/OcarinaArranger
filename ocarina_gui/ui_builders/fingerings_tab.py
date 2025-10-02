@@ -110,6 +110,8 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
 
     tree.bind("<ButtonPress-1>", app._on_fingering_table_button_press, add=True)
     tree.bind("<B1-Motion>", app._on_fingering_heading_motion, add=True)
+    tree.bind("<Motion>", app._on_fingering_heading_pointer_motion, add=True)
+    tree.bind("<Leave>", app._on_fingering_heading_pointer_leave, add=True)
     tree.bind("<<TreeviewSelect>>", app._on_fingering_table_select)
     tree.bind("<ButtonRelease-1>", app._on_fingering_cell_click, add=True)
 

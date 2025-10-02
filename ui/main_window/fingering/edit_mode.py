@@ -64,6 +64,7 @@ class FingeringEditModeMixin:
         self._fingering_click_guard_note = None
         self._fingering_display_columns_override = None
         self._hide_fingering_drop_indicator()
+        self._set_fingering_heading_cursor(None)
 
         if self._fingering_edit_button is not None:
             self._fingering_edit_button.config(text="Done")
@@ -84,6 +85,7 @@ class FingeringEditModeMixin:
         self._fingering_display_columns_override = None
         self._fingering_column_drag_source = None
         self._hide_fingering_drop_indicator()
+        self._set_fingering_heading_cursor(None)
 
         if self._fingering_edit_button is not None:
             self._fingering_edit_button.config(text="Edit...")

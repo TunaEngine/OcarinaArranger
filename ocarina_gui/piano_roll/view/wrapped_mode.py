@@ -40,6 +40,7 @@ class WrappedModeMixin:
         self: "PianoRoll",
         events,
         pulses_per_quarter: int,
+        ticks_per_measure: int,
     ) -> None:
         geometry = self._current_geometry()
         viewport_width = self._get_viewport_width(prefer_hint=False)
@@ -54,6 +55,7 @@ class WrappedModeMixin:
             left_pad=self.LEFT_PAD,
             right_pad=self.RIGHT_PAD,
             viewport_width=viewport_width,
+            ticks_per_measure=ticks_per_measure,
         )
 
         self._wrap_layout = result.layout

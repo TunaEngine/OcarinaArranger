@@ -167,11 +167,27 @@ def _draw_piano_roll_page(
 
     tick = max(0, (page_start // quarter_ticks) * quarter_ticks)
     page_end = page_start + page_span
+    measure_ticks = quarter_ticks * 4
+    measure_font = max(6.0, layout.font_size - 3.0)
+    label_offset = min(row_height * 0.6, 14.0)
     while tick <= page_end:
         local = tick - page_start
         if local >= 0:
             x = grid_left + local * scale_x
-            page.draw_line(x, grid_top, x, grid_top + actual_height, gray=0.85, line_width=0.5)
+            is_measure = measure_ticks > 0 and tick % measure_ticks == 0
+            line_gray = 0.55 if is_measure else 0.85
+            line_width = 0.8 if is_measure else 0.5
+            page.draw_line(x, grid_top, x, grid_top + actual_height, gray=line_gray, line_width=line_width)
+            if is_measure and measure_ticks > 0:
+                measure_number = tick // max(1, measure_ticks) + 1
+                if measure_number > 1:
+                    page.draw_text(
+                        x + 2.0,
+                        grid_top + label_offset,
+                        str(measure_number),
+                        size=measure_font,
+                        fill_gray=0.35,
+                    )
         tick += quarter_ticks
 
     for onset, duration, midi, _program in events:

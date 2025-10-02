@@ -131,6 +131,7 @@ def render_wrapped_view(
     left_pad: int,
     right_pad: int,
     viewport_width: int,
+    ticks_per_measure: int,
 ) -> WrappedRenderResult:
     """Render events using the wrapped piano roll layout."""
 
@@ -174,6 +175,8 @@ def render_wrapped_view(
         y_top = float(y_offset)
         y_bottom = float(y_offset + line_height)
 
+        tag = f"wrapped_line_{line_index}"
+
         lines.append(
             WrappedLine(
                 start=float(line_start),
@@ -193,7 +196,7 @@ def render_wrapped_view(
         )
 
         for midi in range(geometry.min_midi, geometry.max_midi + 1):
-            row_top = y_offset + geometry.note_y(midi)
+            row_top = geometry.note_y(midi)
             fill = palette.accidental_row_fill if is_accidental(midi) else palette.natural_row_fill
             canvas.create_rectangle(
                 geometry.left_pad,
@@ -202,19 +205,21 @@ def render_wrapped_view(
                 row_top + geometry.px_per_note,
                 outline="",
                 fill=fill,
+                tags=(tag,),
             )
+            labels_row_top = y_offset + geometry.note_y(midi)
             labels.create_rectangle(
                 0,
-                row_top,
+                labels_row_top,
                 geometry.label_width,
-                row_top + geometry.px_per_note,
+                labels_row_top + geometry.px_per_note,
                 outline="",
                 fill=fill,
             )
             label = "#" if is_accidental(midi) else label_for_midi(midi)
             labels.create_text(
                 geometry.label_width - 6,
-                row_top + geometry.px_per_note / 2,
+                labels_row_top + geometry.px_per_note / 2,
                 anchor="e",
                 fill=palette.note_label_text,
                 text=label,
@@ -222,10 +227,64 @@ def render_wrapped_view(
                 tags=("note_label",),
             )
 
+        if ticks_per_measure > 0 and events:
+            measure_spacing_px = max(1, int(round(ticks_per_measure * px_per_tick)))
+            if measure_spacing_px > 0:
+                max_x = width - right_pad
+                label_offset = geometry.note_y(geometry.max_midi) + min(
+                    geometry.px_per_note * 0.4,
+                    14.0,
+                )
+                measure_tick = int(math.floor(line_start / max(1, ticks_per_measure))) * max(
+                    1, ticks_per_measure
+                )
+                if measure_tick < line_start:
+                    measure_tick += max(1, ticks_per_measure)
+                line_has_measure = False
+                while measure_tick <= line_end + 1e-6:
+                    local_tick = measure_tick - line_start
+                    x = left_pad + int(round(local_tick * px_per_tick))
+                    if x > max_x:
+                        break
+                    canvas.create_line(
+                        x,
+                        0,
+                        x,
+                        line_height,
+                        fill=palette.measure_line,
+                        width=1,
+                        state="hidden",
+                        tags=(tag, "virtualized", "measure_line"),
+                    )
+                    measure_number = measure_tick // max(1, ticks_per_measure) + 1
+                    if measure_number > 1:
+                        canvas.create_text(
+                            x,
+                            label_offset,
+                            text=str(measure_number),
+                            fill=palette.measure_number_text,
+                            font=("TkDefaultFont", 8),
+                            anchor="n",
+                            state="hidden",
+                            tags=(tag, "virtualized", "measure_number"),
+                        )
+                    line_has_measure = True
+                    measure_tick += max(1, ticks_per_measure)
+                if not line_has_measure:
+                    canvas.create_line(
+                        left_pad,
+                        0,
+                        left_pad,
+                        line_height,
+                        fill=palette.measure_line,
+                        width=1,
+                        state="hidden",
+                        tags=(tag, "virtualized", "measure_line"),
+                    )
+
         if not events:
             continue
 
-        tag = f"wrapped_line_{line_index}"
         start_index = bisect_left(event_onsets, line_start)
         while start_index > 0:
             prev_onset, prev_duration, _prev_midi, _prev_program = events[start_index - 1]
@@ -257,6 +316,8 @@ def render_wrapped_view(
 
         canvas.move(tag, 0, y_offset)
         canvas.itemconfigure(tag, state="normal")
+
+    canvas.tag_raise("measure_number")
 
     highlight_height = geometry.px_per_note
     label_highlight = labels.create_rectangle(

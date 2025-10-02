@@ -173,7 +173,7 @@ class HeadlessPianoRoll:
     label_width: int = 70
     LEFT_PAD: int = 10
     canvas: HeadlessCanvas = field(default_factory=HeadlessCanvas)
-    _cached: Optional[Tuple[Sequence[Event], int]] = None
+    _cached: Optional[Tuple[Sequence[Event], int, int, int]] = None
     _fingering_cb: Optional[Callable[[Optional[int]], None]] = None
     _cursor_cb: Optional[Callable[[int], None]] = None
     _cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
@@ -184,8 +184,15 @@ class HeadlessPianoRoll:
     def set_range(self, minimum: int, maximum: int) -> None:  # pragma: no cover - stored for completeness
         self.range = (minimum, maximum)
 
-    def render(self, events: Sequence[Event], pulses_per_quarter: int) -> None:
-        self._cached = (events, pulses_per_quarter)
+    def render(
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        *,
+        beats: int = 4,
+        beat_unit: int = 4,
+    ) -> None:
+        self._cached = (events, pulses_per_quarter, beats, beat_unit)
         if self._fingering_cb:
             self._fingering_cb(None)
 

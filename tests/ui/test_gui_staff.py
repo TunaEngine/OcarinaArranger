@@ -26,11 +26,17 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
         events = [
             (0, 120, 52, 0),
             (480, 120, 84, 0),
+            (1920, 120, 64, 0),
         ]
         staff.render(events, pulses_per_quarter=480, beats=4, beat_type=4)
 
         canvas = staff.canvas
         y_top = getattr(staff, "_last_y_top", 40)
+
+        measure_items = canvas.find_withtag("measure_number")
+        assert measure_items, "expected measure numbers to be drawn"
+        measure_texts = {canvas.itemcget(item, "text") for item in measure_items}
+        assert "2" in measure_texts
 
         def _ledger_segments() -> list[tuple[float, float, float, float]]:
             segments: list[tuple[float, float, float, float]] = []

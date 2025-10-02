@@ -103,6 +103,82 @@ def test_piano_roll_hover_handles_notes_below_range(gui_app):
     assert status == "No fingering available"
 
 
+def test_piano_roll_draws_measure_numbers(gui_app):
+    roll = gui_app.roll_orig
+    assert roll is not None
+    canvas = getattr(roll, "canvas", None)
+    if canvas is None or not hasattr(canvas, "find_withtag"):
+        pytest.skip("Piano roll rendering requires Tk-based widgets")
+
+    events = [(index * 480, 240, roll.min_midi + (index % 3)) for index in range(12)]
+    roll.render(events, pulses_per_quarter=480, beats=4, beat_unit=4)
+    gui_app.update_idletasks()
+
+    measure_lines = canvas.find_withtag("measure_line")
+    assert measure_lines, "expected measure lines to be drawn"
+
+    measure_labels = [
+        canvas.itemcget(item, "text")
+        for item in canvas.find_withtag("measure_number")
+        if canvas.type(item) == "text"
+    ]
+    assert any(label == "2" for label in measure_labels)
+
+
+def test_vertical_piano_roll_draws_measure_numbers(gui_app):
+    roll = gui_app.roll_orig
+    assert roll is not None
+    canvas = getattr(roll, "canvas", None)
+    if canvas is None or not hasattr(canvas, "find_withtag"):
+        pytest.skip("Piano roll rendering requires Tk-based widgets")
+    if not hasattr(roll, "set_time_scroll_orientation"):
+        pytest.skip("Wrapped piano roll layout requires Tk-based widgets")
+
+    try:
+        roll.set_time_scroll_orientation("vertical")
+    except Exception:
+        pytest.skip("Wrapped piano roll layout requires Tk-based widgets")
+
+    try:
+        roll.px_per_tick = 2.0
+        events = [(index * 480, 240, roll.min_midi + (index % 4)) for index in range(16)]
+        roll.render(events, pulses_per_quarter=480, beats=3, beat_unit=4)
+        gui_app.update_idletasks()
+
+        measure_lines = canvas.find_withtag("measure_line")
+        assert measure_lines, "expected measure lines in wrapped layout"
+
+        measure_labels = [
+            canvas.itemcget(item, "text")
+            for item in canvas.find_withtag("measure_number")
+            if canvas.type(item) == "text"
+        ]
+        assert any(label == "2" for label in measure_labels)
+
+        layout = getattr(roll, "_wrap_layout", None)
+        assert layout is not None and layout.lines, "expected wrapped layout metadata"
+        assert len(layout.lines) > 1, "expected multiple wrapped systems for verification"
+
+        for index, info in enumerate(layout.lines):
+            tag = f"wrapped_line_{index}"
+            line_measure_ids = [
+                item
+                for item in canvas.find_withtag(tag)
+                if "measure_line" in canvas.gettags(item) and canvas.type(item) == "line"
+            ]
+            assert line_measure_ids, f"expected measure lines for wrapped system {index}"
+
+            tops = [canvas.coords(item)[1] for item in line_measure_ids]
+            bottoms = [canvas.coords(item)[3] for item in line_measure_ids]
+            assert any(abs(top - info.y_top) <= 1.5 for top in tops), "measure lines should align with system top"
+            assert any(abs(bottom - info.y_bottom) <= 1.5 for bottom in bottoms), "measure lines should align with system bottom"
+    finally:
+        try:
+            roll.set_time_scroll_orientation("horizontal")
+        except Exception:
+            pass
+
+
 def test_piano_roll_cursor_autoscrolls_into_view(gui_app):
     roll = gui_app.roll_orig
     assert roll is not None

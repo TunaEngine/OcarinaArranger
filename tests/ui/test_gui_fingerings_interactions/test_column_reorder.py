@@ -1,5 +1,4 @@
 """Tests for column drag-and-drop behaviours in the fingerings table."""
-
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -27,11 +26,11 @@ def _configure_app_for_reorder(app: MainWindow, table: _HeadlessTable) -> None:
     app._on_fingering_table_select()
 
 
-def test_fingering_column_reorder_updates_display_order() -> None:
+def _make_headless_app(*, edit_mode: bool) -> MainWindow:
     app = MainWindow.__new__(MainWindow)
     app._headless = True
     app._fingering_edit_vm = None
-    app._fingering_edit_mode = True
+    app._fingering_edit_mode = edit_mode
     app._fingering_ignore_next_select = False
     app._fingering_click_guard_note = None
     app._fingering_last_selected_note = None
@@ -39,7 +38,19 @@ def test_fingering_column_reorder_updates_display_order() -> None:
     app.fingering_preview = _HeadlessPreview()
     app._fingering_drop_indicator = None
     app._fingering_drop_indicator_color = None
+    app._fingering_display_columns_override = None
+    app._fingering_display_columns = tuple()
+    app._fingering_column_index = {}
+    app._fingering_column_drag_source = None
+    app._fingering_heading_open_cursor = "hand2"
+    app._fingering_heading_closed_cursor = "closedhand"
+    app._fingering_heading_cursor_active = ""
+    app._fingering_heading_closed_cursor_supported = None
+    return app
 
+
+def test_fingering_column_reorder_updates_display_order() -> None:
+    app = _make_headless_app(edit_mode=True)
     columns = ("note", "hole_left", "hole_center", "hole_right")
     table = _build_table(app, columns)
     _configure_app_for_reorder(app, table)
@@ -63,18 +74,7 @@ def test_fingering_column_reorder_updates_display_order() -> None:
 
 
 def test_fingering_column_reorder_preserves_hole_mapping() -> None:
-    app = MainWindow.__new__(MainWindow)
-    app._headless = True
-    app._fingering_edit_vm = None
-    app._fingering_edit_mode = True
-    app._fingering_ignore_next_select = False
-    app._fingering_click_guard_note = None
-    app._fingering_last_selected_note = None
-    app._fingering_note_to_midi = {"target": 60}
-    app.fingering_preview = _HeadlessPreview()
-    app._fingering_drop_indicator = None
-    app._fingering_drop_indicator_color = None
-
+    app = _make_headless_app(edit_mode=True)
     columns = ("note", "hole_left", "hole_center", "hole_right")
     table = _build_table(app, columns)
     _configure_app_for_reorder(app, table)
@@ -99,18 +99,7 @@ def test_fingering_column_reorder_preserves_hole_mapping() -> None:
 
 
 def test_fingering_column_reorder_updates_viewmodel_order() -> None:
-    app = MainWindow.__new__(MainWindow)
-    app._headless = True
-    app._fingering_edit_vm = None
-    app._fingering_edit_mode = True
-    app._fingering_ignore_next_select = False
-    app._fingering_click_guard_note = None
-    app._fingering_last_selected_note = None
-    app._fingering_note_to_midi = {"target": 60}
-    app.fingering_preview = _HeadlessPreview()
-    app._fingering_drop_indicator = None
-    app._fingering_drop_indicator_color = None
-
+    app = _make_headless_app(edit_mode=True)
     columns = ("note", "hole_left", "hole_center", "hole_right")
     table = _build_table(app, columns)
     _configure_app_for_reorder(app, table)
@@ -145,18 +134,7 @@ def test_fingering_column_reorder_updates_viewmodel_order() -> None:
 
 
 def test_fingering_column_reorder_disabled_when_not_editing() -> None:
-    app = MainWindow.__new__(MainWindow)
-    app._headless = True
-    app._fingering_edit_vm = None
-    app._fingering_edit_mode = False
-    app._fingering_ignore_next_select = False
-    app._fingering_click_guard_note = None
-    app._fingering_last_selected_note = None
-    app._fingering_note_to_midi = {"target": 60}
-    app.fingering_preview = _HeadlessPreview()
-    app._fingering_drop_indicator = None
-    app._fingering_drop_indicator_color = None
-
+    app = _make_headless_app(edit_mode=False)
     columns = ("note", "hole_left", "hole_right")
     table = _build_table(app, columns)
     app._fingering_column_index = {"hole_left": 0, "hole_right": 1}
@@ -168,6 +146,8 @@ def test_fingering_column_reorder_disabled_when_not_editing() -> None:
     before = app._fingering_display_columns
 
     table.set_click_target(note="target", column_ref="#2", region="heading")
+    app._on_fingering_heading_pointer_motion(SimpleNamespace(x=120, y=0))
+    assert table.cursor == ""
     app._on_fingering_table_button_press(SimpleNamespace(x=120, y=0))
     assert app._fingering_column_drag_source is None
 
@@ -175,3 +155,24 @@ def test_fingering_column_reorder_disabled_when_not_editing() -> None:
     app._on_fingering_cell_click(SimpleNamespace(x=180, y=0))
 
     assert app._fingering_display_columns == before
+
+
+def test_fingering_heading_cursor_feedback_during_reorder() -> None:
+    app = _make_headless_app(edit_mode=True)
+    columns = ("note", "hole_left", "hole_right")
+    table = _build_table(app, columns)
+    _configure_app_for_reorder(app, table)
+
+    table.set_click_target(note="target", column_ref="#2", region="heading")
+    hover = SimpleNamespace(x=120, y=0)
+    app._on_fingering_heading_pointer_motion(hover)
+    assert table.cursor == "hand2"
+
+    app._on_fingering_table_button_press(hover)
+    assert table.cursor in {"closedhand", "hand2"}
+
+    app._on_fingering_heading_release(hover)
+    assert table.cursor == "hand2"
+
+    app._on_fingering_heading_pointer_leave(SimpleNamespace(x=0, y=0))
+    assert table.cursor == ""

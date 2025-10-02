@@ -113,8 +113,12 @@ class HorizontalRenderer:
                     tags=(new_tag, "virtualized", "staff_line"),
                 )
 
-        measure_spacing_px = max(1, int(round(view._ticks_per_measure * view.px_per_tick)))
-        measure_limit = min(draw_right, view._scroll_width - 40)
+        px_per_tick = max(view.px_per_tick, 1e-6)
+        measure_spacing_px = max(1, int(round(view._ticks_per_measure * px_per_tick)))
+        measure_limit = min(
+            view._scroll_width - 40,
+            max(draw_right, view.LEFT_PAD) + measure_spacing_px,
+        )
         if measure_spacing_px > 0 and line_left < measure_limit:
             start = max(view.LEFT_PAD, draw_left)
             offset = max(0, (start - view.LEFT_PAD) // measure_spacing_px * measure_spacing_px)
@@ -131,9 +135,21 @@ class HorizontalRenderer:
                     state="hidden",
                     tags=(new_tag, "virtualized", "measure_line"),
                 )
+                measure_tick = max(0, int(round((x - view.LEFT_PAD) / px_per_tick)))
+                measure_number = measure_tick // max(1, view._ticks_per_measure) + 1
+                if measure_number > 1:
+                    view.canvas.create_text(
+                        x,
+                        y_top - 14,
+                        text=str(measure_number),
+                        fill=palette.measure_number_text,
+                        font=("TkDefaultFont", 8),
+                        anchor="s",
+                        state="hidden",
+                        tags=(new_tag, "virtualized", "measure_number"),
+                    )
                 x += measure_spacing_px
 
-        px_per_tick = max(view.px_per_tick, 1e-6)
         tick_left = max(0, int((draw_left - view.LEFT_PAD) / px_per_tick) - 4)
         tick_right = max(0, int((draw_right - view.LEFT_PAD) / px_per_tick) + 4)
 

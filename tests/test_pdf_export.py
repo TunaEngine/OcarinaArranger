@@ -9,6 +9,7 @@ from ocarina_gui.pdf_export import export_arranged_pdf
 from ocarina_gui.pdf_export.layouts import resolve_layout
 from ocarina_gui.pdf_export.notes import ArrangedNote, PatternData, group_patterns
 from ocarina_gui.pdf_export.pages.fingering import build_fingering_pages
+from ocarina_gui.pdf_export.pages.piano_roll import build_piano_roll_pages
 from ocarina_gui.pdf_export.pages.staff import build_staff_pages
 from ocarina_gui.pdf_export.pages.text import build_text_page
 from ocarina_gui.pdf_export.types import PdfExportOptions
@@ -69,6 +70,44 @@ def test_export_arranged_pdf_writes_expected_content(
     assert b"Arranged staff view" in data
     assert b"Used fingerings visuals" in data
     assert b"C4" in data
+
+
+def test_staff_pdf_includes_measure_numbers() -> None:
+    layout = resolve_layout("A4", "portrait")
+    events = [
+        (0, 240, 60, 0),
+        (1920, 240, 62, 0),
+        (3840, 240, 64, 0),
+    ]
+
+    pages = build_staff_pages(layout, events, pulses_per_quarter=480)
+
+    assert pages, "expected at least one staff page"
+
+    texts_with_gray = _collect_text_with_gray(pages[0])
+    measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.55) < 1e-6}
+
+    assert "2" in measure_numbers
+    assert "3" in measure_numbers
+
+
+def test_piano_roll_pdf_includes_measure_numbers() -> None:
+    layout = resolve_layout("A4", "portrait")
+    events = [
+        (0, 240, 60, 0),
+        (1920, 240, 62, 0),
+        (3840, 240, 64, 0),
+    ]
+
+    pages = build_piano_roll_pages(layout, events, pulses_per_quarter=480, prefer_flats=False)
+
+    assert pages, "expected at least one piano roll page"
+
+    texts_with_gray = _collect_text_with_gray(pages[0])
+    measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.35) < 1e-6}
+
+    assert "2" in measure_numbers
+    assert "3" in measure_numbers
 
 
 def test_export_arranged_pdf_skips_disabled_sections(
@@ -315,6 +354,27 @@ def test_staff_page_draws_ledger_lines_and_octave_labels() -> None:
         if text in {"3", "6"} and y > summary_threshold
     }
     assert {"3", "6"} <= octave_blocks
+
+
+def _collect_text_with_gray(page) -> list[tuple[float, str]]:
+    commands = getattr(page, "_commands")
+    results: list[tuple[float, str]] = []
+    for index, command in enumerate(commands):
+        if command != "BT" or index < 1 or index + 3 >= len(commands):
+            continue
+        fill_command = commands[index - 1]
+        text_command = commands[index + 3]
+        if not fill_command.endswith(" g") or not text_command.endswith(" Tj"):
+            continue
+        try:
+            gray = float(fill_command.split()[0])
+        except ValueError:
+            continue
+        text_body = text_command[:-3]
+        if not (text_body.startswith("(") and text_body.endswith(")")):
+            continue
+        results.append((gray, text_body[1:-1]))
+    return results
 
 
 def _collect_text_blocks(page) -> list[tuple[float, float, str]]:

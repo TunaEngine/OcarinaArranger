@@ -88,7 +88,12 @@ class PreviewRenderingMixin:
         staff.render(events, data.pulses_per_quarter, data.beats, data.beat_type)
         roll.sync_x_with(staff.canvas)
         staff.sync_x_with(roll.canvas)
-        roll.render(events, data.pulses_per_quarter)
+        roll.render(
+            events,
+            data.pulses_per_quarter,
+            beats=int(getattr(data, "beats", 4) or 4),
+            beat_unit=int(getattr(data, "beat_type", 4) or 4),
+        )
         roll.set_cursor(0)
         if hasattr(staff, "set_cursor"):
             staff.set_cursor(0)

@@ -19,6 +19,7 @@ class _HeadlessTable:
         self._click_region = "cell"
         self._click_column = "#1"
         self._click_row = rows[0]
+        self._cursor = ""
         self._column_settings: dict[str, dict[str, object]] = {
             column: {"width": 80, "minwidth": 20, "anchor": "center", "stretch": "0"}
             for column in columns
@@ -51,6 +52,9 @@ class _HeadlessTable:
                 self._displaycolumns = (value,)
             else:
                 self._displaycolumns = tuple(value)
+        if "cursor" in kwargs:
+            value = kwargs["cursor"]
+            self._cursor = "" if value in {None, ""} else str(value)
 
     def selection(self) -> tuple[str, ...]:
         return self._selection
@@ -131,6 +135,10 @@ class _HeadlessTable:
     def see(self, note: str) -> None:  # pragma: no cover - defensive safeguard
         if note not in self._rows:
             raise LookupError(note)
+
+    @property
+    def cursor(self) -> str:
+        return self._cursor
 
 
 class _HeadlessPreview:

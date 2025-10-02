@@ -68,6 +68,7 @@ class PianoRoll(
         self._content_height = 0
         self._total_ticks = 0
         self._scroll_width = 1
+        self._ticks_per_measure = 0
         self._last_scroll_fraction: Optional[float] = None
         self._loop_start_line: Optional[int] = None
         self._loop_end_line: Optional[int] = None
@@ -95,7 +96,7 @@ class PianoRoll(
         self.labels.bind("<ButtonRelease-1>", self._on_cursor_release, add="+")
 
         self._renderer = PianoRollRenderer(self.canvas, self.labels, self._palette)
-        self._cached: Optional[Tuple[Tuple[Event, ...], int]] = None
+        self._cached: Optional[Tuple[Tuple[Event, ...], int, int, int]] = None
 
     def _wrap_line_for_y(self, y: float):
         """Bridge hover mixin requests to the wrapped-layout helper."""
@@ -137,16 +138,16 @@ class PianoRoll(
         if abs(new_height - self.px_per_note) > 1e-6:
             self.px_per_note = new_height
             if self._cached:
-                events, ppq = self._cached
-                self.render(events, ppq)
+                events, ppq, beats, beat_type = self._cached
+                self.render(events, ppq, beats=beats, beat_unit=beat_type)
 
     def set_time_zoom(self, multiplier: float) -> None:
         new_px = max(0.1, min(5.0, self.px_per_tick * multiplier))
         if abs(new_px - self.px_per_tick) > 1e-6:
             self.px_per_tick = new_px
             if self._cached:
-                events, ppq = self._cached
-                self.render(events, ppq)
+                events, ppq, beats, beat_type = self._cached
+                self.render(events, ppq, beats=beats, beat_unit=beat_type)
 
     def set_time_scroll_orientation(self, orientation: str) -> None:
         normalized = orientation.lower()
@@ -164,9 +165,16 @@ class PianoRoll(
         if target_canvas not in self._x_targets:
             self._x_targets.append(target_canvas)
 
-    def render(self, events: Sequence[EventLike], pulses_per_quarter: int) -> None:
+    def render(
+        self,
+        events: Sequence[EventLike],
+        pulses_per_quarter: int,
+        *,
+        beats: int = 4,
+        beat_unit: int = 4,
+    ) -> None:
         normalized_events = tuple(sorted(normalize_events(events), key=lambda item: item[0]))
-        self._cached = (normalized_events, pulses_per_quarter)
+        self._cached = (normalized_events, pulses_per_quarter, beats, beat_unit)
         self._label_highlight = None
         self._cursor_line = None
         self._loop_start_line = None
@@ -174,11 +182,26 @@ class PianoRoll(
         self._wrap_layout = None
         self._last_scroll_fraction = None
 
+        self._ticks_per_measure = self._calculate_ticks_per_measure(
+            pulses_per_quarter,
+            beats,
+            beat_unit,
+        )
+
         if self._time_layout_mode == "wrapped":
-            self._render_wrapped_vertical(normalized_events, pulses_per_quarter)
+            self._render_wrapped_vertical(
+                normalized_events,
+                pulses_per_quarter,
+                self._ticks_per_measure,
+            )
             return
 
-        outcome = self._renderer.render(normalized_events, pulses_per_quarter, self._current_geometry())
+        outcome = self._renderer.render(
+            normalized_events,
+            pulses_per_quarter,
+            self._current_geometry(),
+            ticks_per_measure=self._ticks_per_measure,
+        )
         self._total_ticks = outcome.total_ticks
         self._content_height = outcome.content_height
         self._scroll_width = outcome.scroll_width
@@ -245,8 +268,12 @@ class PianoRoll(
         if self._time_layout_mode == "wrapped":
             if width > 1:
                 if self._cached and width != self._wrap_viewport_width:
-                    events, ppq = self._cached
-                    self._render_wrapped_vertical(events, ppq)
+                    events, ppq, _beats, _beat_type = self._cached
+                    self._render_wrapped_vertical(
+                        events,
+                        ppq,
+                        self._ticks_per_measure,
+                    )
                 else:
                     self._wrap_viewport_width = width
             return
@@ -294,11 +321,26 @@ class PianoRoll(
         self.canvas.configure(bg=palette.background)
         self._renderer.set_palette(palette)
         if self._cached:
-            events, ppq = self._cached
-            self.render(events, ppq)
+            events, ppq, beats, beat_unit = self._cached
+            self.render(events, ppq, beats=beats, beat_unit=beat_unit)
 
     def _on_theme_changed(self, theme: ThemeSpec) -> None:
         self.apply_palette(theme.palette.piano_roll)
+
+    @staticmethod
+    def _calculate_ticks_per_measure(
+        pulses_per_quarter: int,
+        beats: int,
+        beat_unit: int,
+    ) -> int:
+        quarter_ticks = max(1, int(pulses_per_quarter))
+        beats_per_measure = max(1, int(beats))
+        normalized_unit = max(1, int(beat_unit))
+        if normalized_unit == 4:
+            ticks_per_beat = quarter_ticks
+        else:
+            ticks_per_beat = max(1, int(round(quarter_ticks * 4 / normalized_unit)))
+        return max(1, ticks_per_beat * beats_per_measure)
 
     def _raise_overlay_items(self) -> None:
         if self.canvas.find_withtag("overlay"):

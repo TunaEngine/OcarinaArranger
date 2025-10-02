@@ -35,6 +35,7 @@ class PianoRollRenderer:
         self._normalized_events: Tuple[Event, ...] = ()
         self._event_onsets: Tuple[int, ...] = ()
         self._quarter_px = 0
+        self._ticks_per_measure = 0
         self._drawn_range: Optional[Tuple[int, int]] = None
         self._scroll_width = 1
         self._content_height = 0
@@ -51,6 +52,8 @@ class PianoRollRenderer:
         events: Sequence[Event],
         pulses_per_quarter: int,
         geometry: RenderGeometry,
+        *,
+        ticks_per_measure: int,
     ) -> RenderOutcome:
         palette = self._palette
         normalized = tuple(events)
@@ -58,6 +61,7 @@ class PianoRollRenderer:
         self.labels.delete("all")
         self._active_virtual_tag_index = 0
         self._drawn_range = None
+        self._ticks_per_measure = max(0, int(ticks_per_measure))
 
         if not normalized:
             self._normalized_events = ()
@@ -143,6 +147,7 @@ class PianoRollRenderer:
             except Exception:
                 pass
         self.canvas.tag_raise(note_label_tag)
+        self.canvas.tag_raise("measure_number")
         if old_tag != new_tag:
             self.canvas.delete(old_tag)
         self._active_virtual_tag_index = next_index
@@ -233,24 +238,73 @@ class PianoRollRenderer:
         palette,
     ) -> None:
         spacing = self._quarter_px
-        if spacing <= 0:
+        left_pad = geometry.left_pad
+        px_per_tick = max(geometry.px_per_tick, 1e-6)
+        if spacing > 0:
+            start = max(left_pad, draw_left)
+            offset = max(0, int((start - left_pad) // spacing) * spacing)
+            x = left_pad + offset
+            if x < start:
+                x += spacing
+            while x <= draw_right:
+                self.canvas.create_line(
+                    x,
+                    0,
+                    x,
+                    height,
+                    fill=palette.grid_line,
+                    state="hidden",
+                    tags=(tag, "virtualized", "grid_line"),
+                )
+                x += spacing
+
+        ticks_per_measure = self._ticks_per_measure
+        if ticks_per_measure <= 0:
             return
-        start = max(geometry.left_pad, draw_left)
-        offset = max(0, int((start - geometry.left_pad) // spacing) * spacing)
-        x = geometry.left_pad + offset
+
+        measure_spacing_px = max(1, int(round(ticks_per_measure * px_per_tick)))
+        if measure_spacing_px <= 0:
+            return
+
+        max_extent = max(left_pad, self._scroll_width - geometry.right_pad)
+        right_limit = min(max_extent, max(draw_right, left_pad) + measure_spacing_px)
+        if right_limit <= left_pad:
+            return
+
+        start = max(left_pad, draw_left)
+        offset = max(0, (start - left_pad) // measure_spacing_px * measure_spacing_px)
+        x = left_pad + offset
         if x < start:
-            x += spacing
-        while x <= draw_right:
+            x += measure_spacing_px
+
+        label_y = geometry.note_y(geometry.max_midi) + min(
+            geometry.px_per_note * 0.4,
+            14.0,
+        )
+        while x <= right_limit:
             self.canvas.create_line(
                 x,
                 0,
                 x,
                 height,
-                fill=palette.grid_line,
+                fill=palette.measure_line,
                 state="hidden",
-                tags=(tag, "virtualized", "grid_line"),
+                tags=(tag, "virtualized", "measure_line"),
             )
-            x += spacing
+            measure_tick = max(0, int(round((x - left_pad) / px_per_tick)))
+            measure_number = measure_tick // max(1, ticks_per_measure) + 1
+            if measure_number > 1:
+                self.canvas.create_text(
+                    x,
+                    label_y,
+                    text=str(measure_number),
+                    fill=palette.measure_number_text,
+                    font=("TkDefaultFont", 8),
+                    anchor="n",
+                    state="hidden",
+                    tags=(tag, "virtualized", "measure_number"),
+                )
+            x += measure_spacing_px
 
     def _events_in_window(self, draw_left: int, draw_right: int, geometry: RenderGeometry) -> Iterable[Event]:
         if not self._event_onsets:

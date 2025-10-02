@@ -80,7 +80,8 @@ class WrappedRenderer:
             view.cursor.update_loop_markers()
             return
 
-        measure_spacing_px = max(1, int(round(view._ticks_per_measure * view.px_per_tick)))
+        px_per_tick = max(view.px_per_tick, 1e-6)
+        measure_spacing_px = max(1, int(round(view._ticks_per_measure * px_per_tick)))
 
         for line_index in range(line_count):
             line_start = line_index * ticks_per_line
@@ -125,6 +126,16 @@ class WrappedRenderer:
                         y_top + 4 * view.staff_spacing + 12,
                         fill=palette.measure_line,
                     )
+                    measure_number = local_tick // max(1, view._ticks_per_measure) + 1
+                    if measure_number > 1:
+                        view.canvas.create_text(
+                            x,
+                            y_top - 14,
+                            text=str(measure_number),
+                            fill=palette.measure_number_text,
+                            font=("TkDefaultFont", 8),
+                            anchor="s",
+                        )
                     local_tick += view._ticks_per_measure
 
             start_index = bisect_left(view._event_onsets, line_start)

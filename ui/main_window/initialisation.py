@@ -138,6 +138,10 @@ class MainWindowInitialisationMixin:
         self._fingering_column_drag_source: str | None = None
         self._fingering_drop_indicator: tk.Widget | None = None
         self._fingering_drop_indicator_color: str | None = None
+        self._fingering_heading_open_cursor: str = "hand2"
+        self._fingering_heading_closed_cursor: str = "closedhand"
+        self._fingering_heading_cursor_active: str | None = None
+        self._fingering_heading_closed_cursor_supported: bool | None = None
 
     def _setup_preview_state(self, preferences: object, auto_scroll_mode) -> None:
         layout_pref = getattr(preferences, "preview_layout_mode", None)

@@ -158,12 +158,22 @@ def _draw_staff_page(
         scale_x = staff_width / max(1.0, float(system_span))
 
         tick = max(0, (system_start // ticks_per_measure) * ticks_per_measure)
+        measure_font = max(6.0, layout.font_size - 3)
         while tick <= system_start + system_span:
             local = tick - system_start
             if local >= 0:
                 x = staff_left + 10 + local * scale_x
                 line_top = system_box_top + 6
                 page.draw_line(x, line_top, x, staff_bottom + 18, gray=0.75, line_width=0.5)
+                measure_number = tick // max(1, ticks_per_measure) + 1
+                if measure_number > 1:
+                    page.draw_text(
+                        x + 2,
+                        line_top - 4,
+                        str(measure_number),
+                        size=measure_font,
+                        fill_gray=0.55,
+                    )
             tick += ticks_per_measure
 
         system_end = system_start + system_span
