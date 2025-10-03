@@ -481,7 +481,7 @@ class UpdateService:
                     [string]$Description
                 )
 
-                $maxAttempts = 5
+                $maxAttempts = 8
                 $delay = 250
 
                 for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
@@ -499,6 +499,22 @@ class UpdateService:
                         Start-Sleep -Milliseconds $wait
                         $delay = $delay * 2
                     }
+                }
+            }
+
+            function Clear-ItemAttributes {
+                param([string]$TargetPath)
+
+                try {
+                    if ($TargetPath -eq '') {
+                        return
+                    }
+
+                    Write-Log ("Clearing restrictive attributes from " + $TargetPath + ".")
+                    & attrib.exe '-R' '-S' '-H' $TargetPath '/S' '/D' | Out-Null
+                }
+                catch {
+                    Write-Log ("Failed to adjust attributes on " + $TargetPath + ": " + $_.Exception.Message)
                 }
             }
 
@@ -525,6 +541,7 @@ class UpdateService:
                     Move-ItemWithRetry -SourcePath $InstallPath -DestinationPath $backupPath -Description "Moving existing installation"
                 }
 
+                Clear-ItemAttributes -TargetPath $StagePath
                 Write-Log "Moving staged update from $StagePath to $InstallPath."
                 Move-ItemWithRetry -SourcePath $StagePath -DestinationPath $InstallPath -Description "Moving staged update"
 

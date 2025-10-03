@@ -87,6 +87,9 @@ def test_update_service_installs_newer_release(
     assert "function Move-ItemWithRetry" in script_text
     assert "Move-ItemWithRetry -SourcePath $InstallPath" in script_text
     assert ". Retrying in " in script_text
+    assert "function Clear-ItemAttributes" in script_text
+    assert "Clearing restrictive attributes from" in script_text
+    assert "attrib.exe" in script_text
 
 
 def test_update_service_emits_progress_logs(

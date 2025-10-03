@@ -183,6 +183,7 @@
       "id": "alto_c_6",
       "name": "6-hole Alto C",
       "title": "6-hole Alto C",
+      "allow_half_holes": true,
       "canvas": {
         "width": 260,
         "height": 200

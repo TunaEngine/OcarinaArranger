@@ -1,0 +1,43 @@
+name: Notify Discord on release
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post release announcement to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          REPO_NAME="${GITHUB_REPOSITORY}"
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          RELEASE_URL="${{ github.event.release.html_url }}"
+          RELEASE_NAME="${{ github.event.release.name }}"
+          RELEASE_BODY="${RELEASE_BODY:-}"
+
+          if [ -z "$RELEASE_NAME" ]; then
+            RELEASE_NAME="$TAG_NAME"
+          fi
+
+          jq -nc \
+            --arg repo "$REPO_NAME" \
+            --arg name "$RELEASE_NAME" \
+            --arg tag "$TAG_NAME" \
+            --arg url "$RELEASE_URL" \
+            --arg body "$RELEASE_BODY" \
+            '{
+              content:
+                ("🚀 " + $repo + " released " + $name + " (" + $tag + ")\n" + $url
+                + (if ($body | length) > 0 then "\n\n" + $body else "" end))
+            }' \
+            | curl -sS -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK_URL"

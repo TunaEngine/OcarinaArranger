@@ -14,6 +14,7 @@ _SUPPORT_FORM_ID = "1FAIpQLSf_RKAOaQ2dyCPRR931x55_k34HlNPagsp6xDBodngHF0v5Wg"
 _ROUTER_QUESTION_ID = "1276457049"
 _APP_VERSION_QUESTION_ID = "1926758933"
 _OS_QUESTION_ID = "1600824233"
+_DISCORD_INVITE_URL = "https://discord.gg/xVs5W6WR"
 
 
 class SupportMenuMixin:
@@ -30,13 +31,18 @@ class SupportMenuMixin:
 
     def _open_support_form(self, router_value: str) -> None:
         url = self._build_support_form_url(router_value)
-        try:
-            opened = webbrowser.open(url, new=1, autoraise=True)
-        except Exception:  # pragma: no cover - defensive guard
-            logger.exception("Unable to open support form", extra={"url": url})
-            return
-        if not opened:
-            logger.warning("Support form URL did not open", extra={"url": url})
+        self._open_url(
+            url,
+            context="support form",
+            failure_message="Support form URL did not open",
+        )
+
+    def _open_discord_command(self) -> None:
+        self._open_url(
+            _DISCORD_INVITE_URL,
+            context="Discord community",
+            failure_message="Discord community URL did not open",
+        )
 
     def _build_support_form_url(self, router_value: str) -> str:
         query_params = {
@@ -49,6 +55,15 @@ class SupportMenuMixin:
             f"https://docs.google.com/forms/d/e/{_SUPPORT_FORM_ID}/viewform?usp=pp_url&"
             f"{encoded_params}"
         )
+
+    def _open_url(self, url: str, *, context: str, failure_message: str) -> None:
+        try:
+            opened = webbrowser.open(url, new=1, autoraise=True)
+        except Exception:  # pragma: no cover - defensive guard
+            logger.exception("Unable to open %s", context, extra={"url": url})
+            return
+        if not opened:
+            logger.warning(failure_message, extra={"url": url})
 
     def _detect_platform_label(self) -> str:
         system = (platform.system() or "").strip()

@@ -159,3 +159,8 @@ class MenuBuilderMixin:
             label="Suggest a Feature...",
             command=self._suggest_feature_command,
         )
+        help_menu.add_separator()
+        help_menu.add_command(
+            label="Community (Discord)",
+            command=self._open_discord_command,
+        )

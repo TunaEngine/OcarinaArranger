@@ -42,6 +42,10 @@ python -m ocarina_gui.app
 
 ![alt text](README-assets/dark.png)
 
+## Community
+
+Join our Discord community on [Discord](https://discord.gg/xVs5W6WR).
+
 ## Notes
 
 - Conversion pipeline: transpose to C/Am -> collapse chords -> enforce A4-F6 -> (optional) favor lower register.

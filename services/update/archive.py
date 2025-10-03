@@ -25,7 +25,45 @@ class ArchiveExtraction:
 
     @property
     def relative_entry(self) -> Path:
-        return self.entry_path.relative_to(self.root)
+        try:
+            return self.entry_path.relative_to(self.root)
+        except ValueError:
+            try:
+                root_resolved = self.root.resolve(strict=True)
+                entry_resolved = self.entry_path.resolve(strict=True)
+            except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+                raise UpdateError(
+                    "Extracted update files were unexpectedly removed"
+                ) from exc
+            try:
+                return entry_resolved.relative_to(root_resolved)
+            except ValueError as exc:
+                relative_via_samefile = _relative_path_via_samefile(
+                    root_resolved, entry_resolved
+                )
+                if relative_via_samefile is not None:
+                    return relative_via_samefile
+                raise UpdateError(
+                    "Executable entry is not located within the extracted archive"
+                ) from exc
+
+
+def _relative_path_via_samefile(root: Path, entry: Path) -> Path | None:
+    """Compute ``entry`` relative to ``root`` using ``samefile`` semantics."""
+
+    relative_parts: list[str] = []
+    current = entry
+    try:
+        while True:
+            if current.samefile(root):
+                return Path(*reversed(relative_parts))
+            parent = current.parent
+            if parent == current:
+                return None
+            relative_parts.append(current.name)
+            current = parent
+    except OSError:
+        return None
 
 
 def extract_archive(archive_path: Path) -> Path:
