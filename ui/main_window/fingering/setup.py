@@ -73,6 +73,9 @@ class FingeringSetupMixin:
             except ValueError:
                 pass
         active_id = get_current_instrument_id()
+        on_library_change = getattr(self, "_on_library_instrument_changed", None)
+        if callable(on_library_change):
+            on_library_change(active_id, update_range=True)
         self._refresh_fingering_instrument_choices(active_id)
         self._populate_fingering_table()
         self._on_fingering_table_select()
