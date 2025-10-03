@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pytest
@@ -87,3 +88,30 @@ def test_disabling_file_logging_suppresses_output(tmp_path, monkeypatch):
     _flush_managed_handlers()
 
     assert log_path.stat().st_size == initial_size
+
+
+def test_logging_masks_user_identifiers(tmp_path, monkeypatch):
+    monkeypatch.setenv("OCARINA_LOG_DIR", str(tmp_path))
+
+    log_path = logging_config.ensure_app_logging()
+    candidates = {
+        Path.home().name,
+        os.environ.get("USERNAME"),
+        os.environ.get("USER"),
+        os.environ.get("LOGNAME"),
+    }
+    username = next((candidate for candidate in candidates if candidate), None)
+    if username is None:
+        pytest.skip("No username available to verify masking")
+
+    logging.getLogger("tests.logging").info("User identifier: %s", username)
+    logging.getLogger("tests.logging").info("Home directory: %s", Path.home())
+    _flush_managed_handlers()
+
+    contents = log_path.read_text(encoding="utf-8")
+    assert username.lower() not in contents.lower()
+    assert logging_config.USER_PLACEHOLDER in contents
+
+    home_path = str(Path.home())
+    assert home_path not in contents
+    assert logging_config.USER_HOME_PLACEHOLDER in contents

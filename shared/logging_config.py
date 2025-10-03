@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from enum import Enum
 from pathlib import Path
 import sys
@@ -36,6 +37,9 @@ _CONFIGURED = False
 _LOG_PATH: Path | None = None
 _HANDLER_TAG = "_ocarina_logging_handler"
 _FILE_HANDLER: logging.FileHandler | None = None
+
+USER_PLACEHOLDER = "<user>"
+USER_HOME_PLACEHOLDER = "<user_home>"
 
 
 class LogVerbosity(str, Enum):
@@ -58,6 +62,105 @@ _VERBOSITY_LEVELS: dict[LogVerbosity, int] = {
 
 _DEFAULT_VERBOSITY = LogVerbosity.INFO
 _CURRENT_VERBOSITY = _DEFAULT_VERBOSITY
+
+
+def _collect_username_candidates() -> set[str]:
+    candidates: set[str] = set()
+    home_name = Path.home().name
+    if home_name:
+        candidates.add(home_name)
+    for env_var in ("USERNAME", "USER", "LOGNAME"):
+        value = os.environ.get(env_var)
+        if value:
+            candidates.add(value)
+    return {candidate.strip() for candidate in candidates if candidate and candidate.strip()}
+
+
+def _collect_path_candidates() -> set[str]:
+    candidates: set[str] = set()
+    home_path = Path.home()
+    home_str = str(home_path)
+    if home_str:
+        candidates.add(home_str)
+    for env_var in ("HOME", "USERPROFILE"):
+        value = os.environ.get(env_var)
+        if value:
+            candidates.add(os.path.expanduser(value))
+    homedrive = os.environ.get("HOMEDRIVE")
+    homepath = os.environ.get("HOMEPATH")
+    if homedrive and homepath:
+        candidates.add(os.path.join(homedrive, homepath))
+    elif homepath:
+        candidates.add(homepath)
+
+    normalised = {
+        os.path.normpath(candidate)
+        for candidate in candidates
+        if candidate and candidate not in {os.sep, ""}
+    }
+    return {candidate for candidate in normalised if candidate}
+
+
+def _compile_username_pattern(username: str) -> re.Pattern[str]:
+    escaped = re.escape(username)
+    if any(character.isalnum() for character in username):
+        return re.compile(rf"(?<!\\w){escaped}(?!\\w)", re.IGNORECASE)
+    return re.compile(escaped, re.IGNORECASE)
+
+
+def _compile_path_pattern(path: str) -> re.Pattern[str]:
+    flags = re.IGNORECASE if os.name == "nt" else 0
+    return re.compile(re.escape(path), flags)
+
+
+def _build_redaction_patterns() -> list[tuple[re.Pattern[str], str]]:
+    patterns: list[tuple[re.Pattern[str], str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for path in _collect_path_candidates():
+        variants = {path}
+        alternate = path.replace("\\", "/")
+        if alternate != path:
+            variants.add(alternate)
+        backslashed = path.replace("/", "\\")
+        if backslashed != path:
+            variants.add(backslashed)
+        for variant in variants:
+            normalised_variant = os.path.normpath(variant)
+            if normalised_variant in {os.sep, ""}:
+                continue
+            key = (
+                normalised_variant.lower() if os.name == "nt" else normalised_variant,
+                USER_HOME_PLACEHOLDER,
+            )
+            if key in seen:
+                continue
+            patterns.append((_compile_path_pattern(normalised_variant), USER_HOME_PLACEHOLDER))
+            seen.add(key)
+
+    usernames = sorted(_collect_username_candidates(), key=len, reverse=True)
+    for username in usernames:
+        patterns.append((_compile_username_pattern(username), USER_PLACEHOLDER))
+
+    return patterns
+
+
+_REDACTION_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(_build_redaction_patterns())
+
+
+def _sanitize_text(message: str) -> str:
+    if not message or not _REDACTION_PATTERNS:
+        return message
+    redacted = message
+    for pattern, replacement in _REDACTION_PATTERNS:
+        redacted = pattern.sub(replacement, redacted)
+    return redacted
+
+
+class _RedactingFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        formatted = super().format(record)
+        return _sanitize_text(formatted)
 
 
 def ensure_app_logging() -> Path:
@@ -84,7 +187,7 @@ def ensure_app_logging() -> Path:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
-    formatter = logging.Formatter(
+    formatter = _RedactingFormatter(
         "%(asctime)s %(levelname)s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
