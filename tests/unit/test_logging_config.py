@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 
@@ -55,8 +56,25 @@ def test_logging_configuration_is_idempotent(tmp_path, monkeypatch):
 
     # Only the file handler should be installed during tests (stderr is not a tty).
     assert len(managed_handlers) == 1
-    assert isinstance(managed_handlers[0], logging.FileHandler)
+    assert isinstance(managed_handlers[0], RotatingFileHandler)
     assert Path(managed_handlers[0].baseFilename) == first_path
+
+
+def test_logging_uses_rotating_file_handler(tmp_path, monkeypatch):
+    monkeypatch.setenv("OCARINA_LOG_DIR", str(tmp_path))
+
+    logging_config.ensure_app_logging()
+    managed_handlers = [
+        handler
+        for handler in logging.getLogger().handlers
+        if getattr(handler, logging_config._HANDLER_TAG, False)  # type: ignore[attr-defined]
+    ]
+
+    assert len(managed_handlers) == 1
+    handler = managed_handlers[0]
+    assert isinstance(handler, RotatingFileHandler)
+    assert handler.maxBytes == logging_config._MAX_LOG_BYTES
+    assert handler.backupCount == logging_config._LOG_BACKUP_COUNT
 
 
 def test_can_adjust_file_log_verbosity(tmp_path, monkeypatch):

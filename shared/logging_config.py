@@ -24,9 +24,10 @@ from __future__ import annotations
 import logging
 import os
 import re
-from enum import Enum
-from pathlib import Path
 import sys
+from enum import Enum
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Iterable
 
 _LOG_FILE_ENV = "OCARINA_LOG_FILE"
@@ -36,7 +37,9 @@ _DEFAULT_LOGNAME = "preview.log"
 _CONFIGURED = False
 _LOG_PATH: Path | None = None
 _HANDLER_TAG = "_ocarina_logging_handler"
-_FILE_HANDLER: logging.FileHandler | None = None
+_FILE_HANDLER: RotatingFileHandler | None = None
+_MAX_LOG_BYTES = 5 * 1024 * 1024
+_LOG_BACKUP_COUNT = 2
 
 USER_PLACEHOLDER = "<user>"
 USER_HOME_PLACEHOLDER = "<user_home>"
@@ -192,7 +195,12 @@ def ensure_app_logging() -> Path:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        log_path,
+        maxBytes=_MAX_LOG_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
     file_handler.setLevel(_VERBOSITY_LEVELS[_CURRENT_VERBOSITY])
     file_handler.setFormatter(formatter)
     setattr(file_handler, _HANDLER_TAG, True)
