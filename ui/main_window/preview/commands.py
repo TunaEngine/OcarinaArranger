@@ -4,6 +4,7 @@ import logging
 import os
 from tkinter import messagebox
 
+from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_tools import (
     export_midi_poly,
@@ -70,7 +71,7 @@ class PreviewCommandsMixin:
         self._record_preview_import()
         return result
 
-    def convert(self) -> None:
+    def convert(self) -> Result[ConversionResult, str] | None:
         self._sync_viewmodel_settings()
         logger.info(
             "Conversion requested",
@@ -79,16 +80,16 @@ class PreviewCommandsMixin:
         options = ask_pdf_export_options(self)
         if options is None:
             logger.info("Conversion cancelled from PDF options dialog")
-            return
+            return None
         result = self._viewmodel.convert(options)
         if result is None:
             logger.info("Conversion cancelled by user")
-            return
+            return None
         if result.is_err():
             logger.error("Conversion failed: %s", result.error)
             messagebox.showerror("Conversion failed", result.error)
             self.status.set(self._viewmodel.state.status_message)
-            return
+            return result
         conversion = result.unwrap()
         logger.info(
             "Conversion completed",
@@ -99,6 +100,7 @@ class PreviewCommandsMixin:
         )
         self._after_conversion(conversion)
         self.status.set(self._viewmodel.state.status_message)
+        return result
 
     def reimport_and_arrange(self) -> None:
         path = self._require_input_path("Please choose a valid input file first.")

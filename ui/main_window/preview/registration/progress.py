@@ -22,14 +22,14 @@ class PreviewProgressMixin:
             try:
                 if loading:
                     progress_var.set(0.0)
-            except tk.TclError:
+            except (tk.TclError, RuntimeError, AttributeError):
                 pass
         if label_var is not None and message is not None:
             try:
                 label_var.set(
                     f"{message} {self._format_progress_percentage(0.0)}"
                 )
-            except tk.TclError:
+            except (tk.TclError, RuntimeError, AttributeError):
                 pass
         self._update_preview_render_progress(side)
         if hasattr(self, "_update_reimport_button_state"):
@@ -57,7 +57,7 @@ class PreviewProgressMixin:
             return
         try:
             manager = frame.winfo_manager()
-        except tk.TclError:
+        except (tk.TclError, RuntimeError, AttributeError):
             manager = ""
         initial_loading = side in self._preview_initial_loading
         base_message = self._preview_progress_messages.get(side)
@@ -80,7 +80,7 @@ class PreviewProgressMixin:
                 frame.lift()
                 try:
                     frame.focus_set()
-                except tk.TclError:
+                except (tk.TclError, RuntimeError):
                     pass
             elif initial_loading:
                 progress_var.set(0.0)
@@ -97,7 +97,7 @@ class PreviewProgressMixin:
                 frame.lift()
                 try:
                     frame.focus_set()
-                except tk.TclError:
+                except (tk.TclError, RuntimeError):
                     pass
             else:
                 progress_var.set(0.0)
@@ -106,6 +106,6 @@ class PreviewProgressMixin:
                     frame.place_forget()
                 elif manager:
                     frame.pack_forget()
-        except tk.TclError:
+        except (tk.TclError, RuntimeError, AttributeError):
             return
         self._update_preview_apply_cancel_state(side)

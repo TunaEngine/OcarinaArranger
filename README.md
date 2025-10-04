@@ -98,9 +98,20 @@ location.
 
 ## Running Tests
 
+Install the test dependencies first:
+
+```
+python -m pip install pytest pytest-bdd
+```
+
+Then run the suite:
+
 ```
 python -m pytest
 ```
+
+For the roadmap that tracks behaviour-driven UI coverage, see
+[`docs/e2e_test_plan.md`](docs/e2e_test_plan.md).
 
 ### Polyphonic MIDI regression
 
