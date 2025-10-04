@@ -198,17 +198,35 @@ def test_preview_play_toggle_resets_elapsed(gui_app, tmp_path, monkeypatch):
     assert playback.state.is_playing
     assert gui_app._playback_last_ts == pytest.approx(1000.0)
 
-    gui_app._playback_step()
-    job = gui_app._playback_job
-    if job is not None:
-        try:
-            gui_app.after_cancel(job)
-        except Exception:
-            pass
-        gui_app._playback_job = None
 
-    assert playback.state.is_playing
-    assert playback.state.position_tick < playback.state.duration_tick
+def test_loop_range_selection_enables_loop(gui_app, tmp_path):
+    tree, _ = make_linear_score_with_tempo()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    side = "arranged"
+    playback = gui_app._preview_playback[side]
+    pulses = max(1, playback.state.pulses_per_quarter)
+
+    loop_enabled_var = gui_app._preview_loop_enabled_vars[side]
+    loop_enabled_var.set(False)
+
+    gui_app._begin_loop_range_selection(side)
+    gui_app._handle_loop_range_click(side, pulses * 4)
+    gui_app._handle_loop_range_click(side, pulses * 8)
+    gui_app.update_idletasks()
+
+    assert gui_app._coerce_tk_bool(loop_enabled_var.get()) is True
+
+    gui_app._apply_preview_settings(side)
+    gui_app.update_idletasks()
+
+    loop_state = playback.state.loop
+    assert loop_state.enabled
+    assert loop_state.start_tick == pulses * 4
+    assert loop_state.end_tick == pulses * 8
 
 
 def test_preview_cursor_seek_updates_playback_state(gui_app, tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 from typing import Callable, Dict, List, Sequence
@@ -26,6 +27,9 @@ from .windows_theme import (
     is_dark_color,
     schedule_window_frame_refresh,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ThemeMenuMixin:
@@ -181,6 +185,13 @@ class ThemeMenuMixin:
                 tag = "even" if index % 2 == 0 else "odd"
                 self.fingering_table.item(item, tags=(tag,))
             self._refresh_fingering_heading_style()
+
+        refresh_assets = getattr(self, "_refresh_preview_theme_assets", None)
+        if callable(refresh_assets):
+            try:
+                refresh_assets()
+            except Exception:
+                logger.debug("Failed to refresh preview theme assets", exc_info=True)
 
     def _apply_table_palette(self, palette: TablePalette) -> Dict[str, List[str]]:
         if self._headless:

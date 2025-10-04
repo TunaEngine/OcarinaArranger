@@ -5,6 +5,7 @@ import tkinter as tk
 from typing import Optional
 
 from app.config import PlaybackTiming, get_playback_timing
+from ocarina_gui.color_utils import hex_to_rgb
 from ocarina_gui.fingering import FingeringView
 from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.staff import StaffView
@@ -98,6 +99,37 @@ class PreviewPlaybackControlMixin:
         text_var = self._preview_play_vars.get(side)
         if text_var is not None:
             text_var.set("Pause" if playback.state.is_playing else "Play")
+        play_buttons = getattr(self, "_preview_play_buttons", None)
+        if isinstance(play_buttons, dict):
+            play_btn = play_buttons.get(side)
+        else:
+            play_btn = None
+        if play_btn is not None:
+            icon_sets = getattr(self, "_preview_play_icons", None)
+            icons = icon_sets.get(side) if isinstance(icon_sets, dict) else None
+            desired_key = "pause" if playback.state.is_playing else "play"
+            image = icons.get(desired_key) if isinstance(icons, dict) else None
+            if image is not None:
+                play_btn.configure(image=image, compound="left")
+            else:
+                play_btn.configure(image="", compound="none")
+        position_var = getattr(self, "_preview_position_vars", {}).get(side)
+        duration_var = getattr(self, "_preview_duration_vars", {}).get(side)
+        if position_var is not None or duration_var is not None:
+            if playback.state.is_loaded:
+                position_label = self._format_preview_time_label(
+                    playback, playback.state.position_tick
+                )
+                duration_label = self._format_preview_time_label(
+                    playback, playback.state.duration_tick
+                )
+            else:
+                position_label = "0:00.000"
+                duration_label = "0:00.000"
+            if position_var is not None:
+                position_var.set(position_label)
+            if duration_var is not None:
+                duration_var.set(duration_label)
         self._update_preview_render_progress(side)
         controls_enabled = (
             playback.state.is_loaded
@@ -106,6 +138,79 @@ class PreviewPlaybackControlMixin:
         )
         self._set_preview_controls_enabled(side, controls_enabled)
         self._update_preview_fingering(side)
+
+    def _register_arranged_icon_target(self, name: str, widget: tk.Widget) -> None:
+        registry = getattr(self, "_arranged_icon_targets", None)
+        if registry is None:
+            registry = {}
+            self._arranged_icon_targets = registry
+        registry.setdefault(name, []).append(widget)
+
+    def _refresh_preview_theme_assets(self) -> None:
+        self._refresh_arranged_icon_theme()
+
+    def _refresh_arranged_icon_theme(self) -> None:
+        cache = getattr(self, "_arranged_icon_cache", None)
+        if not cache:
+            return
+
+        variant = "dark" if self._is_preview_theme_dark() else "light"
+
+        icon_targets = getattr(self, "_arranged_icon_targets", {})
+        if isinstance(icon_targets, dict):
+            for name, widgets in icon_targets.items():
+                entry = cache.get(name)
+                if not isinstance(entry, dict):
+                    continue
+                icon = entry.get(variant) or entry.get("light")
+                if icon is None:
+                    continue
+                for widget in widgets:
+                    try:
+                        widget.configure(image=icon)
+                    except tk.TclError:
+                        continue
+
+        play_icons = getattr(self, "_preview_play_icons", {})
+        play_buttons = getattr(self, "_preview_play_buttons", {})
+        if isinstance(play_icons, dict):
+            for side, icon_map in play_icons.items():
+                if not isinstance(icon_map, dict):
+                    continue
+                for role in ("play", "pause"):
+                    entry = cache.get(role)
+                    icon = None
+                    if isinstance(entry, dict):
+                        icon = entry.get(variant) or entry.get("light")
+                    icon_map[role] = icon
+                if side in play_buttons:
+                    self._update_playback_visuals(side)
+
+    def _is_preview_theme_dark(self) -> bool:
+        theme = getattr(self, "_theme", None)
+        if theme is None:
+            return False
+
+        background = getattr(getattr(theme, "palette", None), "window_background", "")
+        try:
+            red, green, blue = hex_to_rgb(background)
+        except ValueError:
+            identifier = getattr(theme, "theme_id", "")
+            return "dark" in str(identifier).lower()
+
+        luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255.0
+        return luminance < 0.5
+
+    @staticmethod
+    def _format_preview_time_label(
+        playback: PreviewPlaybackViewModel, ticks: int
+    ) -> str:
+        pulses = max(1, getattr(playback.state, "pulses_per_quarter", 1))
+        tempo = getattr(playback.state, "tempo_bpm", 60.0) or 60.0
+        tempo = max(tempo, 1e-6)
+        seconds = max(0.0, (ticks / pulses) * 60.0 / tempo)
+        minutes, remainder = divmod(seconds, 60.0)
+        return f"{int(minutes)}:{remainder:06.3f}"
 
     def _sync_preview_playback_controls(self, side: str) -> None:
         playback = self._preview_playback.get(side)

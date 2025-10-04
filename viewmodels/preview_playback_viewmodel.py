@@ -272,15 +272,31 @@ class PreviewPlaybackViewModel:
         if not self.state.is_loaded:
             return
 
-        start = self._clamp_tick(loop.start_tick)
-        end = self._clamp_tick(loop.end_tick)
-        if end <= start:
-            loop = LoopRegion(enabled=False, start_tick=0, end_tick=self.state.duration_tick)
-        else:
-            loop = LoopRegion(enabled=loop.enabled, start_tick=start, end_tick=end)
+        requested_start = max(0, int(loop.start_tick))
+        requested_end = max(requested_start, int(loop.end_tick))
+        requested_loop = LoopRegion(
+            enabled=bool(loop.enabled and requested_end > requested_start),
+            start_tick=requested_start,
+            end_tick=requested_end,
+        )
 
-        self.state.loop = loop
-        self._audio.set_loop(loop)
+        clamped_start = self._clamp_tick(requested_start)
+        clamped_end = self._clamp_tick(requested_end)
+        if clamped_end <= clamped_start:
+            playback_loop = LoopRegion(
+                enabled=False,
+                start_tick=0,
+                end_tick=self.state.duration_tick,
+            )
+        else:
+            playback_loop = LoopRegion(
+                enabled=requested_loop.enabled,
+                start_tick=clamped_start,
+                end_tick=clamped_end,
+            )
+
+        self.state.loop = requested_loop
+        self._audio.set_loop(playback_loop)
         self.seek_to(self.state.position_tick)
         logger.debug(
             "set_loop: enabled=%s start=%d end=%d",

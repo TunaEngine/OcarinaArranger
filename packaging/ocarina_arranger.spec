@@ -18,6 +18,12 @@ except NameError:
         spec_path = Path.cwd() / "packaging" / "ocarina_arranger.spec"
 
 project_dir = spec_path.parent.parent
+if str(project_dir) not in sys.path:
+    sys.path.insert(0, str(project_dir))
+
+from pyinstaller_helpers.assets import list_arranged_preview_asset_datas
+
+arranged_asset_datas = list_arranged_preview_asset_datas(project_dir)
 
 analysis = Analysis(
     [str(project_dir / "ocarina_gui" / "app.py")],
@@ -38,6 +44,7 @@ analysis = Analysis(
             str(project_dir / "ui" / "main_window" / "resources" / "app_icon.ico"),
             "ui/main_window/resources",
         ),
+        *arranged_asset_datas,
     ],
     hiddenimports=[],
     hookspath=[],

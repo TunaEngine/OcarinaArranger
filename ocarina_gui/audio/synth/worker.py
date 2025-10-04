@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from queue import Empty, SimpleQueue
 from typing import Callable, Optional, Sequence
-from concurrent.futures import ThreadPoolExecutor, Future
 
 from viewmodels.preview_playback_viewmodel import AudioRenderListener
 
@@ -39,9 +39,17 @@ class _RenderWorker:
         self._lock = threading.Lock()
         self._render_ready = threading.Event()
         self._render_ready.set()
-        # Single-thread pool to avoid per-render thread creation races (Windows GC/pytest).
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._futures: list[Future] = []
+        # Dedicated background thread consuming render tasks.  Using a
+        # long-lived thread avoids Windows debug breakpoints that can be
+        # triggered when spawning threads during interpreter finalisation
+        # (observed under pytest).
+        self._tasks: SimpleQueue[Callable[[], None] | None] = SimpleQueue()
+        self._thread: Optional[threading.Thread] = threading.Thread(
+            target=self._worker_loop,
+            name="preview-render",
+            daemon=True,
+        )
+        self._thread.start()
         self._shutdown = False
 
         # The following state variables are protected by self._lock
@@ -68,21 +76,40 @@ class _RenderWorker:
         # Let any in-flight worker hit its finally: and set the ready flag.
         self._render_ready.wait(timeout=3.0)
 
-        # Tear down the single worker thread deterministically.
-        exec_ref = None
-        with self._lock:
-            exec_ref = self._executor
-            self._executor = None
-        if exec_ref is not None:
-            # Cancel queued tasks (if any) and wait for the worker to exit.
+        # Drop any queued-but-not-yet processed tasks.  These would be stale
+        # renders that we no longer care about during shutdown.
+        drained_task = False
+        while True:
             try:
-                exec_ref.shutdown(wait=True, cancel_futures=True)
-            except Exception:
-                logger.warning("Executor shutdown raised", exc_info=True)
+                task = self._tasks.get_nowait()
+            except Empty:
+                break
+            else:
+                if task is None:
+                    # Sentinel already queued; nothing else to do.
+                    break
+                drained_task = True
 
-        # Clear completed futures list.
+        if drained_task:
+            # Anything that was waiting on the cancelled render needs to be
+            # notified that no work will arrive.
+            self._render_ready.set()
+
+        thread: Optional[threading.Thread]
         with self._lock:
-            self._futures = [f for f in self._futures if not f.done()]
+            thread = self._thread
+            self._thread = None
+
+        if thread is not None:
+            # Signal the background loop to exit and wait for it to stop.
+            self._tasks.put(None)
+            try:
+                thread.join(timeout=3.0)
+            except Exception:  # pragma: no cover - defensive guard
+                logger.warning("Render worker thread join failed", exc_info=True)
+
+        # Fresh queue instance in case the worker is ever restarted for tests.
+        self._tasks = SimpleQueue()
 
     def update_source(
         self, events: Sequence[Event], pulses_per_quarter: int, tempo: float
@@ -243,37 +270,10 @@ class _RenderWorker:
             finally:
                 self._render_ready.set()
 
-        # Lazily create the single worker the first time.
-        if self._executor is None:
-            # One reusable OS thread for all preview renders.
-            executor = ThreadPoolExecutor(
-                max_workers=1, thread_name_prefix="preview-render"
-            )
-
-            # Mark preview render threads as daemonic so test processes exit cleanly
-            # even if a renderer escapes shutdown (e.g. due to a failing test).
-            try:
-                thread_factory = executor._thread_factory  # type: ignore[attr-defined]
-
-                def _daemon_thread_factory(*args, **kwargs):
-                    thread = thread_factory(*args, **kwargs)
-                    thread.daemon = True
-                    return thread
-
-                executor._thread_factory = _daemon_thread_factory  # type: ignore[attr-defined]
-            except AttributeError:
-                logger.debug("ThreadPoolExecutor missing _thread_factory; using defaults")
-
-            self._executor = executor
         try:
-            fut = self._executor.submit(worker)
-            self._futures.append(fut)
-        except RuntimeError:
-            # Happens if executor is shutting down; ignore new work.
-            logger.exception("Failed to submit render task")
-            return
-        except Exception:  # pragma: no cover - thread launch failure
-            logger.exception("SynthRenderer render thread failed to start")
+            self._tasks.put_nowait(worker)
+        except Exception:  # pragma: no cover - queue put should not fail
+            logger.exception("SynthRenderer render task queue put failed")
             with self._lock:
                 if generation == self._render_generation:
                     self._buffer = b""
@@ -284,6 +284,17 @@ class _RenderWorker:
             self._render_ready.set()
             self._notify_render_progress(active_listener, generation, 1.0)
             self._notify_render_complete(active_listener, generation, False)
+
+    def _worker_loop(self) -> None:
+        """Consume queued render tasks until shutdown."""
+        while True:
+            task = self._tasks.get()
+            if task is None:
+                return
+            try:
+                task()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.exception("Render task execution failed")
 
     @staticmethod
     def _notify_render_progress(

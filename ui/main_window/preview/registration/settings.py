@@ -48,19 +48,41 @@ class PreviewSettingsMixin:
         except (tk.TclError, ValueError):
             return
         try:
-            met_enabled = bool(met_var.get())
-        except tk.TclError:
-            met_enabled = playback.state.metronome_enabled
+            met_enabled = self._coerce_tk_bool(met_var.get())
+        except (tk.TclError, TypeError, ValueError):
+            met_enabled = self._coerce_tk_bool(
+                playback.state.metronome_enabled,
+                default=bool(playback.state.metronome_enabled),
+            )
         try:
-            loop_enabled = bool(loop_enabled_var.get())
-        except tk.TclError:
-            loop_enabled = playback.state.loop.enabled
+            loop_enabled = self._coerce_tk_bool(loop_enabled_var.get())
+        except (tk.TclError, TypeError, ValueError):
+            loop_enabled = self._coerce_tk_bool(
+                playback.state.loop.enabled,
+                default=bool(playback.state.loop.enabled),
+            )
         try:
             loop_start = float(loop_start_var.get())
             loop_end = float(loop_end_var.get())
         except (tk.TclError, ValueError):
             self._update_preview_apply_cancel_state(side, valid=False)
             return
+        applied = self._preview_applied_settings.get(side, {})
+        try:
+            applied_start = float(applied.get("loop_start", loop_start))
+        except (TypeError, ValueError):
+            applied_start = loop_start
+        try:
+            applied_end = float(applied.get("loop_end", loop_end))
+        except (TypeError, ValueError):
+            applied_end = loop_end
+        has_range = loop_end > loop_start
+        range_changed = (
+            abs(loop_start - applied_start) > 1e-6
+            or abs(loop_end - applied_end) > 1e-6
+        )
+        if has_range and range_changed and not loop_enabled:
+            loop_enabled = True
         if loop_end < loop_start:
             self._update_preview_apply_cancel_state(side, valid=False)
             return
@@ -70,7 +92,7 @@ class PreviewSettingsMixin:
         pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
         loop_start_tick = int(round(loop_start * pulses_per_quarter))
         loop_end_tick = int(round(loop_end * pulses_per_quarter))
-        visible_loop = bool(loop_enabled and loop_end > loop_start)
+        visible_loop = bool(loop_enabled and has_range)
         region = (
             LoopRegion(enabled=False, start_tick=0, end_tick=playback.state.duration_tick)
             if not visible_loop
@@ -81,7 +103,7 @@ class PreviewSettingsMixin:
         applied_snapshot = {
             "tempo": float(tempo),
             "metronome": bool(met_enabled),
-            "loop_enabled": visible_loop,
+            "loop_enabled": bool(visible_loop),
             "loop_start": float(loop_start),
             "loop_end": float(loop_end),
         }
@@ -93,7 +115,7 @@ class PreviewSettingsMixin:
         settings[side] = PreviewPlaybackSnapshot(
             tempo_bpm=float(tempo),
             metronome_enabled=bool(met_enabled),
-            loop_enabled=visible_loop,
+            loop_enabled=bool(visible_loop),
             loop_start_beat=float(loop_start),
             loop_end_beat=float(loop_end),
         )
@@ -239,13 +261,23 @@ class PreviewSettingsMixin:
         cancel_button = self._preview_cancel_buttons.get(side)
         if apply_button is None or cancel_button is None:
             return
+        all_apply = self._preview_linked_apply_buttons.get(side) or [apply_button]
+        all_cancel = self._preview_linked_cancel_buttons.get(side) or [cancel_button]
+
+        def set_state(buttons, state):
+            for button in buttons:
+                try:
+                    button.state(state)
+                except tk.TclError:
+                    continue
+
         playback = self._preview_playback.get(side)
         applied = self._preview_applied_settings.get(side)
         if playback is None or applied is None:
             return
         if not valid:
-            apply_button.state(["disabled"])
-            cancel_button.state(["disabled"])
+            set_state(all_apply, ["disabled"])
+            set_state(all_cancel, ["disabled"])
             return
         tempo_value = tempo
         if tempo_value is None:
@@ -254,25 +286,39 @@ class PreviewSettingsMixin:
                 try:
                     tempo_value = float(var.get())
                 except (tk.TclError, ValueError):
-                    apply_button.state(["disabled"])
-                    cancel_button.state(["disabled"])
+                    set_state(all_apply, ["disabled"])
+                    set_state(all_cancel, ["disabled"])
                     return
         met_value = metronome
         if met_value is None:
             var_bool = self._preview_metronome_vars.get(side)
             if var_bool is not None:
                 try:
-                    met_value = bool(var_bool.get())
-                except tk.TclError:
+                    met_value = self._coerce_tk_bool(var_bool.get())
+                except (tk.TclError, TypeError, ValueError):
                     met_value = bool(applied["metronome"])
+            else:
+                met_value = bool(applied["metronome"])
+        else:
+            try:
+                met_value = self._coerce_tk_bool(met_value)
+            except (TypeError, ValueError):
+                met_value = bool(applied["metronome"])
         loop_enabled_value = loop_enabled
         if loop_enabled_value is None:
             var_loop = self._preview_loop_enabled_vars.get(side)
             if var_loop is not None:
                 try:
-                    loop_enabled_value = bool(var_loop.get())
-                except tk.TclError:
+                    loop_enabled_value = self._coerce_tk_bool(var_loop.get())
+                except (tk.TclError, TypeError, ValueError):
                     loop_enabled_value = bool(applied["loop_enabled"])
+            else:
+                loop_enabled_value = bool(applied["loop_enabled"])
+        else:
+            try:
+                loop_enabled_value = self._coerce_tk_bool(loop_enabled_value)
+            except (TypeError, ValueError):
+                loop_enabled_value = bool(applied["loop_enabled"])
         loop_start_value = loop_start
         if loop_start_value is None:
             start_var = self._preview_loop_start_vars.get(side)
@@ -280,8 +326,8 @@ class PreviewSettingsMixin:
                 try:
                     loop_start_value = float(start_var.get())
                 except (tk.TclError, ValueError):
-                    apply_button.state(["disabled"])
-                    cancel_button.state(["disabled"])
+                    set_state(all_apply, ["disabled"])
+                    set_state(all_cancel, ["disabled"])
                     return
         loop_end_value = loop_end
         if loop_end_value is None:
@@ -290,39 +336,36 @@ class PreviewSettingsMixin:
                 try:
                     loop_end_value = float(end_var.get())
                 except (tk.TclError, ValueError):
-                    apply_button.state(["disabled"])
-                    cancel_button.state(["disabled"])
+                    set_state(all_apply, ["disabled"])
+                    set_state(all_cancel, ["disabled"])
                     return
         if (
             loop_start_value is not None
             and loop_end_value is not None
             and loop_end_value < loop_start_value
         ):
-            apply_button.state(["disabled"])
-            cancel_button.state(["disabled"])
+            set_state(all_apply, ["disabled"])
+            set_state(all_cancel, ["disabled"])
             return
         changed = False
         if tempo_value is not None and abs(tempo_value - applied["tempo"]) > 1e-6:
             changed = True
         if met_value is not None and bool(met_value) != bool(applied["metronome"]):
             changed = True
-        if (
-            loop_enabled_value is not None
-            and bool(loop_enabled_value) != bool(applied["loop_enabled"])
-        ):
+        if bool(loop_enabled_value) != bool(applied["loop_enabled"]):
             changed = True
         if loop_start_value is not None and abs(loop_start_value - applied["loop_start"]) > 1e-6:
             changed = True
         if loop_end_value is not None and abs(loop_end_value - applied["loop_end"]) > 1e-6:
             changed = True
         if playback.state.is_rendering or playback.state.is_playing:
-            apply_button.state(["disabled"])
-            cancel_button.state(["disabled"])
+            set_state(all_apply, ["disabled"])
+            set_state(all_cancel, ["disabled"])
         elif changed:
-            apply_button.state(["!disabled"])
-            cancel_button.state(["!disabled"])
+            set_state(all_apply, ["!disabled"])
+            set_state(all_cancel, ["!disabled"])
         else:
-            apply_button.state(["disabled"])
-            cancel_button.state(["disabled"])
+            set_state(all_apply, ["disabled"])
+            set_state(all_cancel, ["disabled"])
 
         self._update_transpose_apply_cancel_state()

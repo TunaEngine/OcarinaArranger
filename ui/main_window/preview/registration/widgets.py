@@ -27,15 +27,29 @@ class PreviewWidgetRegistrationMixin:
         self._update_transpose_apply_cancel_state()
 
     def _register_preview_control_buttons(
-        self, side: str, apply_button: ttk.Button, cancel_button: ttk.Button
+        self,
+        side: str,
+        apply_button: ttk.Button,
+        cancel_button: ttk.Button,
+        *,
+        additional: bool = False,
     ) -> None:
-        self._preview_apply_buttons[side] = apply_button
-        self._preview_cancel_buttons[side] = cancel_button
-        try:
-            apply_button.state(["disabled"])
-            cancel_button.state(["disabled"])
-        except tk.TclError:
-            pass
+        if additional:
+            self._preview_linked_apply_buttons.setdefault(side, []).append(apply_button)
+            self._preview_linked_cancel_buttons.setdefault(side, []).append(cancel_button)
+            if side not in self._preview_apply_buttons:
+                self._preview_apply_buttons[side] = apply_button
+                self._preview_cancel_buttons[side] = cancel_button
+        else:
+            self._preview_apply_buttons[side] = apply_button
+            self._preview_cancel_buttons[side] = cancel_button
+            self._preview_linked_apply_buttons[side] = [apply_button]
+            self._preview_linked_cancel_buttons[side] = [cancel_button]
+        for button in (apply_button, cancel_button):
+            try:
+                button.state(["disabled"])
+            except tk.TclError:
+                continue
         self._update_preview_apply_cancel_state(side)
 
     def _register_preview_adjust_widgets(

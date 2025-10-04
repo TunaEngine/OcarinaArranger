@@ -65,6 +65,33 @@ class PreviewInputHandlersMixin:
                     logging.getLogger(__name__).debug("Unable to show audio warning", exc_info=True)
         self._update_playback_visuals(side)
 
+    def _on_preview_stop(self, side: str) -> None:
+        playback = self._preview_playback.get(side)
+        if playback is None:
+            return
+        playback.stop()
+        self._update_playback_visuals(side)
+
+    def _on_preview_rewind(self, side: str) -> None:
+        playback = self._preview_playback.get(side)
+        if playback is None:
+            return
+        playback.stop()
+        playback.seek_to(0)
+        self._update_playback_visuals(side)
+
+    def _on_preview_fast_forward(self, side: str) -> None:
+        playback = self._preview_playback.get(side)
+        if playback is None:
+            return
+        playback.stop()
+        target = playback.state.duration_tick
+        loop = getattr(playback.state, "loop", None)
+        if loop and getattr(loop, "enabled", False):
+            target = getattr(loop, "end_tick", target)
+        playback.seek_to(target)
+        self._update_playback_visuals(side)
+
     def _on_preview_cursor_seek(self, side: str, tick: int) -> None:
         playback = self._preview_playback.get(side)
         if playback is None:
@@ -96,8 +123,8 @@ class PreviewInputHandlersMixin:
         if var is None:
             return
         try:
-            enabled = bool(var.get())
-        except tk.TclError:
+            enabled = self._coerce_tk_bool(var.get())
+        except (tk.TclError, TypeError, ValueError):
             return
         self._update_preview_apply_cancel_state(side, metronome=enabled)
 
@@ -108,8 +135,8 @@ class PreviewInputHandlersMixin:
         if var is None:
             return
         try:
-            enabled = bool(var.get())
-        except tk.TclError:
+            enabled = self._coerce_tk_bool(var.get())
+        except (tk.TclError, TypeError, ValueError):
             return
         self._update_preview_apply_cancel_state(side, loop_enabled=enabled)
         self._update_loop_marker_visuals(side)
@@ -180,5 +207,11 @@ class PreviewInputHandlersMixin:
             loop_end_var.set(end_tick / pulses_per_quarter)
         except tk.TclError:
             pass
+        loop_enabled_var = self._preview_loop_enabled_vars.get(side)
+        if loop_enabled_var is not None:
+            try:
+                loop_enabled_var.set(True)
+            except tk.TclError:
+                pass
         self._cancel_loop_range_selection(side)
         self._update_loop_marker_visuals(side)

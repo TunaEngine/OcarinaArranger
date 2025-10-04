@@ -20,6 +20,27 @@ logger = logging.getLogger(__name__)
 class PreviewUtilitiesMixin:
     """Shared helpers for preview state management and filesystem access."""
 
+    @staticmethod
+    def _coerce_tk_bool(value: object, *, default: bool | None = None) -> bool:
+        """Best-effort coercion of Tkinter variable values to real booleans."""
+
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            try:
+                return bool(int(value))
+            except (TypeError, ValueError):
+                pass
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "t", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "f", "no", "off", ""}:
+                return False
+        if default is not None:
+            return default
+        raise ValueError(f"Cannot interpret {value!r} as a boolean")
+
     def _sync_viewmodel_settings(self) -> None:
         self._viewmodel.update_settings(
             input_path=self.input_path.get(),
@@ -50,8 +71,17 @@ class PreviewUtilitiesMixin:
                 loop_end = float(applied.get("loop_end", loop_start))
             except (TypeError, ValueError):
                 loop_end = loop_start
-            loop_enabled = bool(applied.get("loop_enabled", False)) and loop_end > loop_start
-            met_enabled = bool(applied.get("metronome", False))
+            try:
+                loop_enabled_flag = self._coerce_tk_bool(
+                    applied.get("loop_enabled", False)
+                )
+            except (TypeError, ValueError):
+                loop_enabled_flag = bool(applied.get("loop_enabled", False))
+            loop_enabled = loop_enabled_flag and loop_end > loop_start
+            try:
+                met_enabled = self._coerce_tk_bool(applied.get("metronome", False))
+            except (TypeError, ValueError):
+                met_enabled = bool(applied.get("metronome", False))
             if side not in seeded_sides:
                 if (
                     abs(tempo - 120.0) < 1e-6

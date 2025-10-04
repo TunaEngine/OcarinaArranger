@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from importlib import resources
+from importlib.abc import Traversable
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Dict, List, Optional, Sequence
@@ -29,6 +30,24 @@ from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 from ui.main_window.tk_support import collect_tk_variables_from_attrs, release_tracked_tk_variables
 
 logger = logging.getLogger(__name__)
+
+MAIN_WINDOW_RESOURCE_PACKAGE = "ui.main_window.resources"
+
+
+def _get_main_window_resource(resource_name: str) -> Traversable | None:
+    """Return a traversable handle for a bundled main-window resource."""
+
+    try:
+        resource = resources.files(MAIN_WINDOW_RESOURCE_PACKAGE).joinpath(
+            resource_name
+        )
+    except (FileNotFoundError, ModuleNotFoundError):
+        return None
+
+    is_file = getattr(resource, "is_file", None)
+    if callable(is_file) and is_file():
+        return resource
+    return None
 
 
 class MainWindowInitialisationMixin:
@@ -188,6 +207,16 @@ class MainWindowInitialisationMixin:
             "original": tk.StringVar(master=self, value="Play"),
             "arranged": tk.StringVar(master=self, value="Play"),
         }
+        self._preview_play_buttons: Dict[str, object] = {}
+        self._preview_play_icons: Dict[str, Dict[str, object]] = {}
+        self._preview_position_vars = {
+            "original": tk.StringVar(master=self, value="0:00.000"),
+            "arranged": tk.StringVar(master=self, value="0:00.000"),
+        }
+        self._preview_duration_vars = {
+            "original": tk.StringVar(master=self, value="0:00.000"),
+            "arranged": tk.StringVar(master=self, value="0:00.000"),
+        }
         self._preview_tempo_vars = {
             "original": tk.DoubleVar(
                 master=self, value=self._preview_playback["original"].state.tempo_bpm
@@ -253,6 +282,8 @@ class MainWindowInitialisationMixin:
         self._loop_range_active: set[str] = set()
         self._preview_apply_buttons: dict[str, ttk.Button] = {}
         self._preview_cancel_buttons: dict[str, ttk.Button] = {}
+        self._preview_linked_apply_buttons: dict[str, list[ttk.Button]] = {}
+        self._preview_linked_cancel_buttons: dict[str, list[ttk.Button]] = {}
         self._preview_progress_frames: dict[str, ttk.Frame] = {}
         self._preview_progress_places: dict[str, dict[str, float]] = {}
         self._preview_progress_messages: dict[str, str] = {}
@@ -327,30 +358,21 @@ class MainWindowInitialisationMixin:
 
     def _configure_main_window_shell(self) -> None:
         if not self._headless:
-            resources_dir = Path(__file__).with_name("resources")
-            png_icon_path = resources_dir / "app_icon.png"
-            try:
-                if png_icon_path.exists():
-                    icon_image = tk.PhotoImage(master=self, file=str(png_icon_path))
-                    self.iconphoto(False, icon_image)
-                    self._window_icon_image = icon_image
-                else:
-                    logger.warning("Application icon missing at %s", png_icon_path)
-            except tk.TclError:
-                logger.exception(
-                    "Failed to load application icon from %s", png_icon_path
+            icon_image = self._load_window_photoimage("app_icon.png")
+            if icon_image is not None:
+                self.iconphoto(False, icon_image)
+                self._window_icon_image = icon_image
+            else:
+                logger.warning(
+                    "Application icon resource %s could not be loaded",
+                    "app_icon.png",
                 )
 
-            ico_icon_path = resources_dir / "app_icon.ico"
-            if ico_icon_path.exists():
-                try:
-                    self.iconbitmap(bitmap=str(ico_icon_path))
-                except tk.TclError:
-                    logger.exception(
-                        "Failed to apply Windows taskbar icon from %s", ico_icon_path
-                    )
-            else:
-                logger.warning("Windows taskbar icon missing at %s", ico_icon_path)
+            if not self._apply_windows_taskbar_icon("app_icon.ico"):
+                logger.warning(
+                    "Windows taskbar icon resource %s could not be applied",
+                    "app_icon.ico",
+                )
 
             self.title(APP_TITLE)
             self.geometry("860x560")
@@ -367,6 +389,40 @@ class MainWindowInitialisationMixin:
             self._log_path,
             self._log_verbosity.get(),
         )
+
+    def _load_window_photoimage(self, resource_name: str) -> tk.PhotoImage | None:
+        resource = _get_main_window_resource(resource_name)
+        if resource is None:
+            return None
+
+        try:
+            with resources.as_file(resource) as path:
+                icon_path = str(path)
+                return tk.PhotoImage(master=self, file=icon_path)
+        except tk.TclError:
+            logger.exception("Failed to load application icon from %s", resource_name)
+        except FileNotFoundError:
+            logger.warning("Application icon missing at %s", resource_name)
+        return None
+
+    def _apply_windows_taskbar_icon(self, resource_name: str) -> bool:
+        resource = _get_main_window_resource(resource_name)
+        if resource is None:
+            return False
+
+        try:
+            with resources.as_file(resource) as path:
+                icon_path = str(path)
+                try:
+                    self.iconbitmap(bitmap=icon_path)
+                    return True
+                except tk.TclError:
+                    logger.exception(
+                        "Failed to apply Windows taskbar icon from %s", icon_path
+                    )
+        except FileNotFoundError:
+            logger.warning("Windows taskbar icon missing at %s", resource_name)
+        return False
 
     def _initialise_preview_references(self) -> None:
         self.roll_orig: Optional[PianoRoll] = None
