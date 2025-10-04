@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from typing import Callable, Dict, Sequence, Tuple
 
@@ -18,19 +19,28 @@ class MenuBuilderMixin:
 
     def _build_menus(self) -> None:
         menubar = tk.Menu(self)
-        self.config(menu=menubar)
+        # Decide whether to use native menubar (macOS) or custom (others).
+        self._use_native_menubar = (sys.platform == "darwin")
+        if self._use_native_menubar:
+            menubar = self._register_menu(menubar, role="menubar")
+            self.config(menu=menubar)
+        else:
+            # Register but as a normal submenu so Windows native theming logic
+            # does not try to recolor a non-existent OS menubar.
+            menubar = self._register_menu(menubar, role="submenu")
+            # Defer creation of the CustomMenuBar until after items are added.
 
-        file_menu = tk.Menu(menubar, tearoff=False)
+        file_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Open Project...", command=self._open_project_command)
         file_menu.add_command(label="Save Project...", command=self._save_project_command)
-        self._recent_projects_menu = tk.Menu(file_menu, tearoff=False)
+        self._recent_projects_menu = self._register_menu(tk.Menu(file_menu, tearoff=False))
         file_menu.add_cascade(label="Open Recent", menu=self._recent_projects_menu)
         self._refresh_recent_projects_menu()
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.destroy)
 
-        view_menu = tk.Menu(menubar, tearoff=False)
+        view_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="View", menu=view_menu)
 
         for choice in self._theme_choices:
@@ -47,7 +57,7 @@ class MenuBuilderMixin:
 
         if hasattr(self, "_auto_scroll_mode"):
             view_menu.add_separator()
-            auto_scroll_menu = tk.Menu(view_menu, tearoff=False)
+            auto_scroll_menu = self._register_menu(tk.Menu(view_menu, tearoff=False))
             view_menu.add_cascade(label="Auto-scroll Mode", menu=auto_scroll_menu)
             for mode in AutoScrollMode:
                 auto_scroll_menu.add_radiobutton(
@@ -59,7 +69,7 @@ class MenuBuilderMixin:
 
         if hasattr(self, "preview_layout_mode"):
             view_menu.add_separator()
-            layout_menu = tk.Menu(view_menu, tearoff=False)
+            layout_menu = self._register_menu(tk.Menu(view_menu, tearoff=False))
             view_menu.add_cascade(label="Preview Layout", menu=layout_menu)
             layout_labels = getattr(self, "_preview_layout_value_to_label", {})
             ordered_values = list(layout_labels.keys())
@@ -83,7 +93,7 @@ class MenuBuilderMixin:
                     command=_select_layout,
                 )
 
-        logs_menu = tk.Menu(menubar, tearoff=False)
+        logs_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="Logs", menu=logs_menu)
         for label, verbosity in self._log_verbosity_choices:
             callback = self._log_menu_actions.get(verbosity.value)
@@ -97,7 +107,7 @@ class MenuBuilderMixin:
                 value=verbosity.value,
             )
 
-        tools_menu = tk.Menu(menubar, tearoff=False)
+        tools_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         update_entries_added = False
@@ -145,7 +155,7 @@ class MenuBuilderMixin:
             command=self.open_instrument_layout_editor,
         )
 
-        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(
             label="Send Feedback...",
@@ -164,3 +174,16 @@ class MenuBuilderMixin:
             label="Community (Discord)",
             command=self._open_discord_command,
         )
+
+        # If using the custom menubar, build it now that cascades are defined.
+        if not getattr(self, "_use_native_menubar", False) and not getattr(self, "_headless", False):
+            try:
+                from .custom_bar import CustomMenuBar  # local import to avoid cycles
+            except Exception:
+                CustomMenuBar = None  # type: ignore
+            if CustomMenuBar is not None:
+                try:
+                    self._custom_menubar = CustomMenuBar(self, menubar)
+                    self._custom_menubar.pack(side="top", fill="x")
+                except Exception:
+                    self._custom_menubar = None

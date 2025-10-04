@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+import sys
 import threading
 from typing import Callable, Optional, Sequence
 
@@ -26,6 +28,41 @@ from .worker import _RenderWorker
 from .tone import _midi_to_frequency  # noqa: F401 - re-exported for callers
 
 logger = logging.getLogger(__name__)
+_logger_preconfigured = bool(logger.handlers)
+if not _logger_preconfigured:
+    logger.addHandler(logging.NullHandler())
+if sys.platform.startswith("win") and not _logger_preconfigured:
+    # Prevent Windows logging filters/handlers attached to the root logger from
+    # running inside background audio threads where they can trip interpreter
+    # shutdown assertions (PyThreadState_Get: no current thread).  By keeping the
+    # renderer logger self-contained we avoid those fatal breakpoints while
+    # still allowing callers to opt-in to detailed diagnostics by attaching
+    # their own handlers directly to this logger.
+    logger.propagate = False
+
+_logging_enabled = True
+
+
+def _disable_logging() -> None:
+    global _logging_enabled
+    _logging_enabled = False
+
+
+atexit.register(_disable_logging)
+
+
+def _safe_debug(message: str, *args: object) -> None:
+    if not _logging_enabled or sys.is_finalizing():
+        return
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    logger.debug(message, *args)
+
+
+def _safe_warning(message: str, *args: object, **kwargs: object) -> None:
+    if not _logging_enabled or sys.is_finalizing():
+        return
+    logger.warning(message, *args, **kwargs)
 
 
 class _SynthRenderer(AudioRenderer):
@@ -76,7 +113,7 @@ class _SynthRenderer(AudioRenderer):
         self._worker.update_source(self._events, self._ppq, self._tempo)
         self._position_tick = 0
         self._ensure_buffer(force=True, wait=False)
-        logger.debug(
+        _safe_debug(
             "SynthRenderer.prepare: events=%d ppq=%d buffer_bytes=%d (async)",
             len(self._events),
             self._ppq,
@@ -85,7 +122,7 @@ class _SynthRenderer(AudioRenderer):
 
     def start(self, position_tick: int, tempo_bpm: float) -> bool:
         with self._playback_lock:
-            logger.debug(
+            _safe_debug(
                 "SynthRenderer.start requested at tick=%d tempo=%.3f",
                 position_tick,
                 tempo_bpm,
@@ -94,7 +131,7 @@ class _SynthRenderer(AudioRenderer):
             self._position_tick = position_tick
             self._stop_playback()
             if not self._events:
-                logger.debug("SynthRenderer.start aborted: no events available")
+                _safe_debug("SynthRenderer.start aborted: no events available")
                 return False
             self._ensure_buffer(wait=False)
             buffer_ready = bool(self._worker.buffer) and (
@@ -102,33 +139,33 @@ class _SynthRenderer(AudioRenderer):
             )
             if buffer_ready:
                 started = self._play_from_tick(position_tick)
-                logger.debug("SynthRenderer.start result=%s", started)
+                _safe_debug("SynthRenderer.start result=%s", started)
                 return started
             generation = self._worker.render_generation
             self._restart_after_render(generation, position_tick)
-            logger.debug(
+            _safe_debug(
                 "SynthRenderer.start deferred until render generation %d", generation
             )
             return True
 
     def pause(self) -> None:
-        logger.debug("SynthRenderer.pause invoked")
+        _safe_debug("SynthRenderer.pause invoked")
         self._stop_playback()
 
     def stop(self) -> None:
-        logger.debug("SynthRenderer.stop invoked")
+        _safe_debug("SynthRenderer.stop invoked")
         self._stop_playback()
 
     def seek(self, tick: int) -> None:
         with self._playback_lock:
             self._position_tick = max(0, tick)
             if not self._is_playing:
-                logger.debug(
+                _safe_debug(
                     "SynthRenderer.seek stored tick=%d (not playing)",
                     self._position_tick,
                 )
                 return
-            logger.debug(
+            _safe_debug(
                 "SynthRenderer.seek restarting playback from tick=%d",
                 self._position_tick,
             )
@@ -136,7 +173,7 @@ class _SynthRenderer(AudioRenderer):
 
     def set_tempo(self, tempo_bpm: float) -> None:
         with self._playback_lock:
-            logger.debug("SynthRenderer.set_tempo: %.3f", tempo_bpm)
+            _safe_debug("SynthRenderer.set_tempo: %.3f", tempo_bpm)
             self._tempo = tempo_bpm
             was_playing = self._is_playing
             position = self._position_tick
@@ -149,7 +186,7 @@ class _SynthRenderer(AudioRenderer):
 
     def set_loop(self, loop: LoopRegion) -> None:  # pragma: no cover - stored for future use
         self._loop = loop
-        logger.debug(
+        _safe_debug(
             "SynthRenderer.set_loop: enabled=%s start=%d end=%d",
             loop.enabled,
             loop.start_tick,
@@ -174,7 +211,7 @@ class _SynthRenderer(AudioRenderer):
             self._metronome_enabled = desired_enabled
             self._beats_per_measure = beats
             self._beat_unit = unit
-            logger.debug(
+            _safe_debug(
                 "SynthRenderer.set_metronome: enabled=%s beats=%d unit=%d",
                 self._metronome_enabled,
                 self._beats_per_measure,
@@ -203,9 +240,9 @@ class _SynthRenderer(AudioRenderer):
             try:
                 self._player.stop_all()
             except Exception:  # pragma: no cover - backend specific failures
-                logger.warning("Audio player stop_all raised", exc_info=True)
+                _safe_warning("Audio player stop_all raised", exc_info=True)
             self._is_playing = False
-            logger.debug("SynthRenderer: playback stopped")
+            _safe_debug("SynthRenderer: playback stopped")
 
     def _ensure_buffer(self, force: bool = False, wait: bool = True) -> None:
         with self._config_lock:
@@ -250,17 +287,17 @@ class _SynthRenderer(AudioRenderer):
                     try:
                         self._play_from_tick(position)
                     except Exception:  # pragma: no cover - defensive guard
-                        logger.warning(
+                        _safe_warning(
                             "SynthRenderer resume playback failed", exc_info=True
                         )
             except Exception:  # pragma: no cover - defensive guard
-                logger.warning("SynthRenderer resume wait failed", exc_info=True)
+                _safe_warning("SynthRenderer resume wait failed", exc_info=True)
 
         self._resume_threads = [t for t in self._resume_threads if t.is_alive()]
         thread = threading.Thread(
             target=resume,
             name=f"preview-resume-{generation}",
-            daemon=False,
+            daemon=True,
         )
         thread.start()
         self._resume_threads.append(thread)
@@ -271,7 +308,7 @@ class _SynthRenderer(AudioRenderer):
             if not buffer:
                 self._is_playing = False
                 self._handle = None
-                logger.debug("SynthRenderer._play_from_tick: no buffer to play")
+                _safe_debug("SynthRenderer._play_from_tick: no buffer to play")
                 return False
             self._stop_handle_only()
             ticks_per_second = max(self._worker.ticks_per_second, 1e-3)
@@ -279,7 +316,7 @@ class _SynthRenderer(AudioRenderer):
             byte_offset = max(0, min(len(buffer), start_sample * 2))
             if byte_offset >= len(buffer):
                 self._is_playing = False
-                logger.debug(
+                _safe_debug(
                     "SynthRenderer._play_from_tick: byte_offset beyond buffer (tick=%d)",
                     tick,
                 )
@@ -290,16 +327,16 @@ class _SynthRenderer(AudioRenderer):
                 try:
                     self._player.stop_all()
                 except Exception:  # pragma: no cover - backend specific failures
-                    logger.warning("Audio player stop_all raised", exc_info=True)
+                    _safe_warning("Audio player stop_all raised", exc_info=True)
                 self._handle = None
                 self._is_playing = False
-                logger.debug(
+                _safe_debug(
                     "SynthRenderer._play_from_tick: backend returned no handle"
                 )
                 return False
             self._handle = handle
             self._is_playing = True
-            logger.debug(
+            _safe_debug(
                 "SynthRenderer._play_from_tick: started playback at tick=%d bytes=%d",
                 tick,
                 len(slice_bytes),
@@ -314,9 +351,9 @@ class _SynthRenderer(AudioRenderer):
         try:
             handle.stop()
         except Exception:  # pragma: no cover - backend specific failures
-            logger.warning("Failed stopping playback", exc_info=True)
+            _safe_warning("Failed stopping playback", exc_info=True)
         self._handle = None
-        logger.debug("SynthRenderer: handle cleared")
+        _safe_debug("SynthRenderer: handle cleared")
 
 
 __all__ = [

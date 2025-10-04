@@ -116,6 +116,13 @@ class MainWindowInitialisationMixin:
         self._theme_actions: Dict[str, Callable[[], None]] = {}
         self._log_menu_actions: Dict[str, Callable[[], None]] = {}
         self._applied_style_maps: Dict[str, List[str]] = {}
+        self._registered_menus: list[tk.Menu] = []
+        self._menubar: tk.Menu | None = None
+        self._menu_palette_snapshot: dict[str, str] | None = None
+        self._last_title_background_attempt: str | None = None
+        self._last_title_color_attempt: str | None = None
+        self._last_title_dark_mode_attempt: bool | None = None
+        self._last_title_hwnd_attempt: int | None = None
 
     def _setup_fingering_defaults(self) -> None:
         self._fingering_table_style: str | None = None

@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import tkinter as tk
+from dataclasses import dataclass
 from typing import Callable, Optional
 
+from ocarina_gui.color_utils import hex_to_rgb
 from ocarina_gui.constants import midi_to_name, natural_of
+from ocarina_gui.themes import ThemeSpec, get_current_theme, register_theme_listener
 from ocarina_tools.pitch import parse_note_name
 
 from .library import get_current_instrument, register_instrument_listener
@@ -15,18 +18,30 @@ from .specs import InstrumentSpec
 __all__ = ["FingeringView"]
 
 
+@dataclass(frozen=True)
+class _FingeringCanvasColors:
+    """Resolved colors for rendering fingering canvases."""
+
+    background: str
+    outline: str
+    hole_outline: str
+    covered_fill: str
+
+
 class FingeringView(tk.Canvas):
     """Displays configurable ocarina fingerings for a given MIDI pitch."""
 
     def __init__(self, master: tk.Misc, *, scale: float = 1.0, **kwargs) -> None:
         self._scale = max(0.1, float(scale))
         instrument = get_current_instrument()
+        self._theme: ThemeSpec | None = get_current_theme()
+        initial_colors = self._resolve_canvas_colors(instrument)
         width, height = self._scaled_canvas_size(instrument)
         super().__init__(
             master,
             width=width,
             height=height,
-            bg=instrument.style.background_color,
+            bg=initial_colors.background,
             highlightthickness=0,
             **kwargs,
         )
@@ -42,6 +57,9 @@ class FingeringView(tk.Canvas):
         self._hole_click_handler: Optional[Callable[[int], None]] = None
         self._windway_click_handler: Optional[Callable[[int], None]] = None
         self._unsubscribe = register_instrument_listener(self._on_instrument_changed)
+        self._theme_unsubscribe: Optional[Callable[[], None]] = register_theme_listener(
+            self._on_theme_changed
+        )
         self._draw_static()
 
     # ------------------------------------------------------------------
@@ -68,6 +86,9 @@ class FingeringView(tk.Canvas):
             if self._unsubscribe:
                 self._unsubscribe()
                 self._unsubscribe = None
+            if self._theme_unsubscribe:
+                self._theme_unsubscribe()
+                self._theme_unsubscribe = None
         finally:
             super().destroy()
 
@@ -142,7 +163,8 @@ class FingeringView(tk.Canvas):
         hole_states = sequence[: len(holes)]
         windway_states = sequence[len(holes) : len(holes) + len(windways)]
 
-        covered_color = instrument.style.covered_fill_color or "#000000"
+        colors = self._resolve_canvas_colors()
+        covered_color = colors.covered_fill or "#000000"
 
         self._set_status("")
         for index, (hole, covered) in enumerate(zip(holes, hole_states)):
@@ -206,6 +228,18 @@ class FingeringView(tk.Canvas):
                 self._unsubscribe = None
             return
         self._instrument = instrument
+        self._restore_display_state()
+
+    def _on_theme_changed(self, theme: ThemeSpec) -> None:
+        if not self.winfo_exists():
+            if self._theme_unsubscribe:
+                self._theme_unsubscribe()
+                self._theme_unsubscribe = None
+            return
+        self._theme = theme
+        self._restore_display_state()
+
+    def _restore_display_state(self) -> None:
         self._draw_static()
         if self._current_note_name:
             self.show_fingering(self._current_note_name, self._current_midi)
@@ -222,9 +256,11 @@ class FingeringView(tk.Canvas):
         self._status_text_id = None
         instrument = self._instrument
         scaled_width, scaled_height = self._scaled_canvas_size(instrument)
-        self.configure(
-            width=scaled_width, height=scaled_height, bg=instrument.style.background_color
-        )
+        colors = self._resolve_canvas_colors()
+        palette = getattr(self._theme, "palette", None)
+        text_primary = getattr(palette, "text_primary", "#222222")
+        text_muted = getattr(palette, "text_muted", "#333333")
+        self.configure(width=scaled_width, height=scaled_height, bg=colors.background)
 
         if instrument.outline is not None:
             outline_points: list[tuple[float, float]] = list(instrument.outline.points)
@@ -236,7 +272,7 @@ class FingeringView(tk.Canvas):
                 coordinates.append(self._scale_distance(y))
             self.create_line(
                 *coordinates,
-                fill=instrument.style.outline_color,
+                fill=colors.outline,
                 width=self._scale_outline_width(instrument.style.outline_width),
                 smooth=instrument.style.outline_smooth,
                 tags=("static", "outline"),
@@ -256,7 +292,7 @@ class FingeringView(tk.Canvas):
                 center_y + radius,
                 outline="",
                 width=0,
-                fill=instrument.style.background_color,
+                fill=colors.background,
                 tags=("static", "hole-hitbox", hole_tag),
             )
             self.create_oval(
@@ -264,7 +300,7 @@ class FingeringView(tk.Canvas):
                 center_y - radius,
                 center_x + radius,
                 center_y + radius,
-                outline=instrument.style.hole_outline_color,
+                outline=colors.hole_outline,
                 width=1,
                 tags=("static", "hole", hole_tag),
             )
@@ -287,7 +323,7 @@ class FingeringView(tk.Canvas):
                 center_y + half_height,
                 outline="",
                 width=0,
-                fill=instrument.style.background_color,
+                fill=colors.background,
                 tags=("static", "windway-hitbox", windway_tag),
             )
             self.create_rectangle(
@@ -295,9 +331,9 @@ class FingeringView(tk.Canvas):
                 center_y - half_height,
                 center_x + half_width,
                 center_y + half_height,
-                outline=instrument.style.hole_outline_color,
+                outline=colors.hole_outline,
                 width=1,
-                fill=instrument.style.background_color,
+                fill=colors.background,
                 tags=("static", "windway", windway_tag),
             )
             self.tag_lower(hitbox_id)
@@ -315,7 +351,7 @@ class FingeringView(tk.Canvas):
             title_x,
             title_y,
             text=instrument.title,
-            fill="#333333",
+            fill=text_muted,
             font=("TkDefaultFont", title_font_size),
             anchor="nw",
             tags=("static", "title"),
@@ -324,7 +360,7 @@ class FingeringView(tk.Canvas):
             title_x,
             note_y,
             text="",
-            fill="#222222",
+            fill=text_primary,
             font=("TkDefaultFont", note_font_size),
             anchor="nw",
             tags=("note",),
@@ -341,6 +377,46 @@ class FingeringView(tk.Canvas):
             tags=("note", "status"),
         )
         self.tag_raise("note")
+
+    def _resolve_canvas_colors(
+        self, instrument: InstrumentSpec | None = None
+    ) -> _FingeringCanvasColors:
+        spec = instrument or self._instrument
+        style = spec.style
+        background = style.background_color or "#ffffff"
+        outline = style.outline_color or "#000000"
+        hole_outline = style.hole_outline_color or outline
+        covered_fill = style.covered_fill_color or hole_outline
+
+        if self._is_dark_theme():
+            swap_background = hole_outline or background
+            swap_foreground = background or outline
+            background = swap_background
+            outline = swap_foreground
+            hole_outline = swap_foreground
+            covered_fill = swap_foreground
+
+        return _FingeringCanvasColors(
+            background=background,
+            outline=outline,
+            hole_outline=hole_outline,
+            covered_fill=covered_fill,
+        )
+
+    def _is_dark_theme(self) -> bool:
+        theme = self._theme
+        if theme is None:
+            return False
+
+        background = theme.palette.window_background
+        try:
+            red, green, blue = hex_to_rgb(background)
+        except ValueError:
+            return "dark" in theme.theme_id.lower()
+
+        # Rec. 601 luma approximation to determine perceived brightness.
+        luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255.0
+        return luminance < 0.5
 
     def _set_status(self, message: str) -> None:
         self._status_message = message

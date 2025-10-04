@@ -2,18 +2,29 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from typing import Callable, Dict, List, Sequence
 
 import tkinter as tk
 from tkinter import ttk
 
+from ocarina_gui.color_utils import hex_to_rgb, mix_colors, rgb_to_hex
 from ocarina_gui.themes import (
     INSERT_BACKGROUND_PATTERNS,
     TablePalette,
+    ThemePalette,
     ThemeSpec,
     apply_insert_cursor_color,
     set_ttk_caret_color,
     set_active_theme,
+)
+
+from .windows_theme import (
+    apply_menu_bar_colors,
+    apply_window_frame_colors,
+    is_dark_color,
+    schedule_window_frame_refresh,
 )
 
 
@@ -24,6 +35,18 @@ class ThemeMenuMixin:
     _theme_actions: Dict[str, Callable[[], None]]
     _applied_style_maps: Dict[str, List[str]]
     _fingering_table_style: str | None
+    _registered_menus: List[tk.Menu]
+    _menubar: tk.Menu | None
+    _menu_palette_snapshot: Dict[str, str] | None
+    _last_title_hwnd_attempt: int | None
+    _last_title_geometry_nudge: tuple[int, int] | None
+    _pending_title_geometry_nudge: bool
+    _pending_menubar_refresh: bool
+    _last_menubar_brush_color_attempt: str | None
+    _menubar_brush_handle: int | None
+    _windows_dark_mode_app_allowed: bool | None
+    _last_dark_mode_window_attempt: bool | None
+    _last_dark_mode_window_result: bool | None
 
     theme_id: tk.Variable
     theme_name: tk.Variable
@@ -54,6 +77,16 @@ class ThemeMenuMixin:
             set_active_theme(theme_id)
             return
         set_active_theme(theme_id)
+
+    def _register_menu(self, menu: tk.Menu, *, role: str = "submenu") -> tk.Menu:
+        registry = getattr(self, "_registered_menus", None)
+        if registry is None:
+            registry = []
+            self._registered_menus = registry
+        registry.append(menu)
+        if role == "menubar":
+            self._menubar = menu
+        return menu
 
     def activate_theme_menu(self, theme_id: str) -> None:
         """Invoke the theme menu command matching ``theme_id`` (for tests)."""
@@ -132,11 +165,8 @@ class ThemeMenuMixin:
                 continue
 
         apply_insert_cursor_color(self, insert_color)
-
-        try:
-            self.configure(background=palette.window_background)
-        except tk.TclError:
-            pass
+        self._apply_window_frame_palette(palette)
+        self._apply_menu_palette(theme.palette)
 
         for roll in (self.roll_orig, self.roll_arr):
             if roll is not None:
@@ -223,3 +253,175 @@ class ThemeMenuMixin:
         self._update_fingering_drop_indicator_palette(palette)
 
         return applied
+
+    def _apply_menu_palette(self, palette: ThemePalette) -> None:
+        if self._headless:
+            return
+
+        background = palette.window_background
+        foreground = palette.text_primary
+        selection_background = palette.table.selection_background
+        selection_foreground = palette.table.selection_foreground
+        disabled_foreground = palette.text_muted
+        indicator_foreground = palette.text_primary
+        select_color = _blend_colors(palette.window_background, palette.text_primary, 0.5)
+        if select_color is None:
+            select_color = palette.table.selection_background
+
+        colors = {
+            "background": background,
+            "foreground": foreground,
+            "activebackground": selection_background,
+            "activeforeground": selection_foreground,
+            "disabledforeground": disabled_foreground,
+            "selectcolor": select_color,
+            "indicatorforeground": indicator_foreground,
+        }
+        self._menu_palette_snapshot = colors.copy()
+
+        for pattern, value in (
+            ("*Menu.background", background),
+            ("*Menu.foreground", foreground),
+            ("*Menu.activeBackground", selection_background),
+            ("*Menu.activeForeground", selection_foreground),
+            ("*Menu.disabledForeground", disabled_foreground),
+            ("*Menu.selectColor", select_color),
+            ("*Menu.indicatorForeground", indicator_foreground),
+        ):
+            try:
+                self.option_add(pattern, value)
+            except tk.TclError:
+                continue
+
+        for menu in getattr(self, "_registered_menus", []):
+            self._configure_menu_widget(menu, colors)
+
+        # Style for custom menubar labels (if present).
+        if self._style is not None:
+            try:
+                self._style.configure(
+                    "MenuBar.TLabel",
+                    background=background,
+                    foreground=foreground,
+                )
+                self._style.map(
+                    "MenuBar.TLabel",
+                    background=[("active", selection_background)],
+                    foreground=[("active", selection_foreground)],
+                )
+            except tk.TclError:
+                pass
+
+        custom_bar = getattr(self, "_custom_menubar", None)
+        if custom_bar is not None:
+            try:
+                custom_bar.apply_palette(background)
+            except Exception:
+                pass
+
+    def _configure_menu_widget(self, menu: tk.Menu, colors: Dict[str, str]) -> None:
+        configure = getattr(menu, "configure", None)
+        if not callable(configure):
+            return
+        try:
+            configure(
+                background=colors["background"],
+                foreground=colors["foreground"],
+                activebackground=colors["activebackground"],
+                activeforeground=colors["activeforeground"],
+                disabledforeground=colors["disabledforeground"],
+                selectcolor=colors["selectcolor"],
+            )
+        except tk.TclError:
+            pass
+
+        try:
+            configure(indicatorforeground=colors["indicatorforeground"])
+        except (tk.TclError, TypeError):
+            # Older Tk builds do not expose indicator foreground controls.
+            pass
+
+        self._ensure_menu_cget_returns_strings(menu)
+
+    def _ensure_menu_cget_returns_strings(self, menu: tk.Menu) -> None:
+        if getattr(menu, "_theme_original_cget", None) is not None:
+            return
+
+        original = getattr(menu, "cget", None)
+        if not callable(original):
+            return
+
+        def _normalized_cget(self_menu: tk.Menu, option: str) -> object:
+            value = original(option)
+            if option in {
+                "background",
+                "foreground",
+                "activebackground",
+                "activeforeground",
+                "disabledforeground",
+                "selectcolor",
+                "indicatorforeground",
+            }:
+                if isinstance(value, str):
+                    return value
+                try:
+                    return str(value)
+                except Exception:
+                    return value
+            return value
+
+        menu._theme_original_cget = original  # type: ignore[attr-defined]
+        menu.cget = types.MethodType(_normalized_cget, menu)  # type: ignore[assignment]
+
+    def _apply_window_frame_palette(self, palette: ThemePalette) -> None:
+        if self._headless:
+            return
+
+        self._last_title_background_attempt = palette.window_background
+        self._last_title_color_attempt = palette.text_primary
+        self._last_title_dark_mode_attempt = is_dark_color(palette.window_background)
+        self._last_title_hwnd_attempt = None
+        self._last_title_geometry_nudge = None
+        self._pending_title_geometry_nudge = False
+        self._last_menubar_brush_color_attempt = None
+        self._pending_menubar_refresh = False
+        self._windows_dark_mode_app_allowed = None
+        self._last_dark_mode_window_attempt = None
+        self._last_dark_mode_window_result = None
+
+        try:
+            self.configure(background=palette.window_background)
+        except tk.TclError:
+            pass
+
+        try:
+            self.wm_attributes("-titlecolor", palette.text_primary)
+        except tk.TclError:
+            pass
+        try:
+            self.wm_attributes("-titlebgcolor", palette.window_background)
+        except tk.TclError:
+            pass
+
+        if sys.platform == "win32":
+            apply_window_frame_colors(self, palette)
+            # Only attempt native menubar coloring if we are actually using it.
+            if getattr(self, "_use_native_menubar", False):
+                apply_menu_bar_colors(self, palette)
+            else:
+                # Tests assert this attribute is set after applying a theme on Windows.
+                # When we use the custom (non-native) menubar there is no OS brush, but
+                # we still record the intended brush color for consistency.
+                self._last_menubar_brush_color_attempt = palette.window_background
+            schedule_window_frame_refresh(self)
+
+
+def _blend_colors(base: str, other: str, ratio: float) -> str | None:
+    try:
+        base_rgb = hex_to_rgb(base)
+        other_rgb = hex_to_rgb(other)
+    except ValueError:
+        return None
+    blended = mix_colors(base_rgb, other_rgb, ratio)
+    return rgb_to_hex(blended)
+
