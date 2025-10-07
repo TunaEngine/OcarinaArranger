@@ -106,6 +106,8 @@ project/
   - Assert command enable/disable, state transitions, validation.
 - **UI widget tests (limited)**
   - Instantiate widgets with a temporary `Tk()` root; drive events with `event_generate`; assert widget state and bindings. Keep few and targeted.
+- **Headless follow-up**
+  - After the xvfb-backed GUI suite is green, immediately rerun the matching headless UI tests (e.g. the `_Headless*` helpers under `tests/ui/test_gui_fingerings_interactions/`) to confirm we didn't regress the stubbed code paths.
 - **Integration**
   - Exercise a service with a real adapter (e.g., real file IO under `tmp_path`).
 - **Fixtures & marks**
@@ -146,7 +148,7 @@ project/
 - **Coverage**: ≥ 85% overall; critical paths ≥ 90%.
 - **Complexity**: functions cyclomatic ≤ 10; cognitive ≤ 15.
 - **Size**: functions ≤ ~50 LOC, classes ≤ ~300 LOC, modules ≤ ~500 LOC (soft limits; justify exceptions).
-- **File length**: keep every source and test file below **500 lines**; split cohesive sections into separate modules when approaching the limit.
+- **File length**: keep every source and test file below **350 lines**; split cohesive sections into separate modules when approaching the limit.
 - **Style**: format (Black), import order (isort), lint (Ruff), type hints on public APIs (mypy strict on changed files).
 
 ---
@@ -173,6 +175,7 @@ project/
 
 - [ ] Title states behavior change, not implementation.
 - [ ] Tests: new failing test added first; now green.
+- [ ] Coverage: each feature or bug fix includes appropriate unit, integration, UI, or E2E tests.
 - [ ] Coverage & quality gates met.
 - [ ] SRP respected; no UI logic leaks.
 - [ ] Public APIs typed; names are intention-revealing.

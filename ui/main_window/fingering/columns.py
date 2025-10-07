@@ -72,6 +72,32 @@ class FingeringColumnLayoutMixin:
                 column_id for column_id in normalized if column_id != "note"
             ]
 
+    def _horizontal_scroll_offset(
+        self,
+        table: ttk.Treeview,
+        display_columns: Sequence[str] | None = None,
+    ) -> float:
+        if display_columns is None:
+            display_columns = self._get_display_columns(table)
+        if not display_columns:
+            return 0.0
+        try:
+            first, _last = table.xview()
+        except (tk.TclError, AttributeError):
+            return 0.0
+        try:
+            first_fraction = float(first)
+        except (TypeError, ValueError):
+            return 0.0
+        total_width = 0.0
+        for column_id in display_columns:
+            width = self._get_column_width(table, column_id)
+            if width > 0:
+                total_width += float(width)
+        if total_width <= 0.0:
+            return 0.0
+        return first_fraction * total_width
+
     def _should_insert_after(
         self,
         event_x: int,
@@ -102,10 +128,12 @@ class FingeringColumnLayoutMixin:
         display_columns: Sequence[str],
         target_id: str,
         table: ttk.Treeview,
-    ) -> int:
-        total = 0
+    ) -> float:
+        total = 0.0
         for column_id in display_columns:
             if column_id == target_id:
                 break
-            total += self._get_column_width(table, column_id)
-        return total
+            total += float(self._get_column_width(table, column_id))
+        offset = self._horizontal_scroll_offset(table, display_columns)
+        position = total - offset
+        return position if position > 0.0 else 0.0
