@@ -1,9 +1,28 @@
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
+
+
+_TTK_BOOTSTRAP_SPEC = importlib.util.find_spec("ttkbootstrap")
+TTK_BOOTSTRAP_AVAILABLE = _TTK_BOOTSTRAP_SPEC is not None
+
+if not TTK_BOOTSTRAP_AVAILABLE:
+    collect_ignore_glob = [
+        "e2e/*",
+        "fingering/*",
+        "ui/*",
+        "unit/*",
+        "viewmodels/*",
+        "test_conversion_exports.py",
+        "test_note_values.py",
+        "test_pdf_export.py",
+        "test_preview.py",
+        "test_themes.py",
+    ]
 
 
 def _ensure_project_root_on_path() -> None:

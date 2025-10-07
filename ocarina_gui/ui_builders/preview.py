@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.resources as resources
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import TYPE_CHECKING
 
 from ..fingering import FingeringView
@@ -23,8 +23,8 @@ __all__ = ["build_preview_tabs"]
 def build_preview_tabs(app: "App", notebook: ttk.Notebook) -> None:
     side_width = 240
 
-    orig_tab = ttk.Frame(notebook)
-    arr_tab = ttk.Frame(notebook)
+    orig_tab = ttk.Frame(notebook, style="Panel.TFrame")
+    arr_tab = ttk.Frame(notebook, style="Panel.TFrame")
     notebook.add(orig_tab, text="Original")
     notebook.add(arr_tab, text="Arranged")
 
@@ -51,14 +51,14 @@ def _build_modern_preview_side(
     tab.grid_columnconfigure(1, weight=0)
     tab.grid_rowconfigure(0, weight=1)
 
-    main = ttk.Frame(tab)
+    main = ttk.Frame(tab, style="Panel.TFrame")
     main.grid(row=0, column=0, sticky="nsew", padx=(12, 8), pady=12)
     main.grid_columnconfigure(0, weight=1)
     main.grid_rowconfigure(0, weight=0)
     main.grid_rowconfigure(1, weight=0)
     main.grid_rowconfigure(2, weight=1)
 
-    layout_area = ttk.Frame(main)
+    layout_area = ttk.Frame(main, style="Panel.TFrame")
     layout_area.grid(row=2, column=0, sticky="nsew")
     layout_area.grid_columnconfigure(0, weight=1)
     layout_area.grid_rowconfigure(0, weight=1)
@@ -68,13 +68,13 @@ def _build_modern_preview_side(
     if isinstance(register_main, dict):
         register_main[side] = layout_area
 
-    transport = ttk.Frame(main, padding=(0, 4))
+    transport = ttk.Frame(main, padding=(0, 4), style="Panel.TFrame")
     transport.grid(row=0, column=0, sticky="ew")
     transport.grid_columnconfigure(0, weight=0)
     transport.grid_columnconfigure(1, weight=1)
     transport.grid_columnconfigure(2, weight=0)
 
-    zoom_frame = ttk.Frame(transport)
+    zoom_frame = ttk.Frame(transport, style="Panel.TFrame")
     zoom_frame.grid(row=0, column=0, sticky="w")
     ttk.Label(zoom_frame, text="Time Zoom").pack(side="left", padx=(0, 6))
     zoom_in_icon = _load_arranged_icon(app, "zoom_in")
@@ -102,7 +102,7 @@ def _build_modern_preview_side(
     zoom_out_btn = ttk.Button(zoom_frame, **zoom_out_kwargs)
     zoom_out_btn.pack(side="left")
 
-    playback_bar = ttk.Frame(transport)
+    playback_bar = ttk.Frame(transport, style="Panel.TFrame")
     playback_bar.grid(row=0, column=2, sticky="e")
     playback_bar.grid_columnconfigure(0, weight=0)
     playback_bar.grid_columnconfigure(1, weight=0)
@@ -127,6 +127,11 @@ def _build_modern_preview_side(
     else:
         play_kwargs["width"] = 8
     play_btn = ttk.Button(playback_bar, **play_kwargs)
+    if hasattr(app, "_apply_icon_button_style"):
+        try:
+            app._apply_icon_button_style(play_btn)
+        except Exception:
+            pass
     play_btn.grid(row=0, column=0)
 
     buttons = getattr(app, "_preview_play_buttons", None)
@@ -211,7 +216,7 @@ def _build_modern_preview_side(
         app.roll_arr = roll
         app.staff_arr = staff
 
-    side_panel = ttk.Frame(tab, width=side_width, padding=(12, 12))
+    side_panel = ttk.Frame(tab, width=side_width, padding=(12, 12), style="Panel.TFrame")
     side_panel.grid(row=0, column=1, sticky="ns", pady=12, padx=(0, 12))
     side_panel.grid_columnconfigure(0, weight=1)
     side_panel.grid_rowconfigure(2, weight=1)
@@ -223,7 +228,7 @@ def _build_modern_preview_side(
     heading = ttk.Label(side_panel, text="Fingering Preview", anchor="center")
     heading.grid(row=0, column=0, sticky="ew")
 
-    fingering_box = ttk.Frame(side_panel, padding=12, relief="groove", borderwidth=1)
+    fingering_box = ttk.Frame(side_panel, padding=12, relief="groove", borderwidth=1, style="Panel.TFrame")
     fingering_box.grid(row=1, column=0, sticky="ew", pady=(8, 16))
     fingering_box.grid_columnconfigure(0, weight=1)
 
@@ -234,7 +239,7 @@ def _build_modern_preview_side(
     else:
         app.side_fing_arr = fingering
 
-    control_container = ttk.Frame(side_panel)
+    control_container = ttk.Frame(side_panel, style="Panel.TFrame")
     control_container.grid(row=2, column=0, sticky="nsew")
     control_container.grid_columnconfigure(0, weight=1)
 

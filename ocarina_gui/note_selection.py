@@ -67,10 +67,10 @@ class _NoteSelectionDialog(simpledialog.Dialog):
         return listbox
 
     def buttonbox(self) -> None:
-        box = ttk.Frame(self)
+        box = ttk.Frame(self, style="Panel.TFrame")
         box.pack(fill="x", padx=4, pady=(0, 4))
 
-        controls = ttk.Frame(box)
+        controls = ttk.Frame(box, style="Panel.TFrame")
         controls.pack(side="right")
 
         ok_button = ttk.Button(controls, text="OK", command=self.ok)

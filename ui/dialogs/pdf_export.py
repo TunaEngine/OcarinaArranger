@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+
+from shared.ttk import ttk
 from typing import Optional
 
 from ocarina_gui.pdf_export.types import PdfExportOptions
@@ -25,14 +26,14 @@ class PdfExportOptionsDialog(tk.Toplevel):
 
         apply_theme_to_toplevel(self)
 
-        container = ttk.Frame(self, padding=16)
+        container = ttk.Frame(self, padding=16, style="Panel.TFrame")
         container.grid(row=0, column=0, sticky="nsew")
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
         ttk.Label(container, text="Page size:").grid(row=0, column=0, sticky="w")
         self._size_var = tk.StringVar(value="A4")
-        size_frame = ttk.Frame(container)
+        size_frame = ttk.Frame(container, style="Panel.TFrame")
         size_frame.grid(row=1, column=0, sticky="w", pady=(4, 12))
         for idx, size in enumerate(("A4", "A6")):
             ttk.Radiobutton(
@@ -45,7 +46,7 @@ class PdfExportOptionsDialog(tk.Toplevel):
 
         ttk.Label(container, text="Orientation:").grid(row=2, column=0, sticky="w")
         self._orientation_var = tk.StringVar(value="portrait")
-        orient_frame = ttk.Frame(container)
+        orient_frame = ttk.Frame(container, style="Panel.TFrame")
         orient_frame.grid(row=3, column=0, sticky="w", pady=(4, 12))
         orientations = ("portrait", "landscape")
         for idx, orientation in enumerate(orientations):
@@ -58,7 +59,7 @@ class PdfExportOptionsDialog(tk.Toplevel):
             ).grid(row=0, column=idx, padx=(0 if idx == 0 else 12, 0))
 
         ttk.Label(container, text="Fingering columns:").grid(row=4, column=0, sticky="w")
-        columns_frame = ttk.Frame(container)
+        columns_frame = ttk.Frame(container, style="Panel.TFrame")
         columns_frame.grid(row=5, column=0, sticky="w", pady=(4, 12))
         default_columns = PdfExportOptions.default_columns_for(
             self._size_var.get(), self._orientation_var.get()
@@ -75,7 +76,7 @@ class PdfExportOptionsDialog(tk.Toplevel):
         self._columns_spin.grid(row=0, column=0, sticky="w")
 
         ttk.Label(container, text="Include in PDF:").grid(row=6, column=0, sticky="w")
-        sections_frame = ttk.Frame(container)
+        sections_frame = ttk.Frame(container, style="Panel.TFrame")
         sections_frame.grid(row=7, column=0, sticky="w", pady=(4, 12))
 
         self._include_piano_roll_var = tk.BooleanVar(value=True)
@@ -103,7 +104,7 @@ class PdfExportOptionsDialog(tk.Toplevel):
                 pady=(0, 4 if row == 0 else 0),
             )
 
-        button_frame = ttk.Frame(container)
+        button_frame = ttk.Frame(container, style="Panel.TFrame")
         button_frame.grid(row=8, column=0, sticky="e")
         ttk.Button(button_frame, text="Cancel", command=self._on_cancel).grid(
             row=0, column=0, padx=(0, 8)

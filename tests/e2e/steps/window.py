@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from pytest_bdd import then, when
 
 from tests.e2e.harness import E2EHarness

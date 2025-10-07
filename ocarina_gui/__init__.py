@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from . import themes
-
 # Backwards compatibility: expose exporter helpers at the package root so tests
 # and legacy code can continue monkeypatching ocarina_gui.export_musicxml.
 from ocarina_tools import export_mxl, export_musicxml
@@ -31,4 +29,8 @@ def __getattr__(name: str) -> Any:
         from .app import App
 
         return App
+    if name == "themes":
+        from . import themes as _themes
+
+        return _themes
     raise AttributeError(f"module 'ocarina_gui' has no attribute {name!r}")

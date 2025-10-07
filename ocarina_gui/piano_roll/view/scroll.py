@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 
 from app.config import get_auto_scroll_config
 

@@ -1,13 +1,18 @@
 import json
 import os
 import tkinter as tk
-from tkinter import ttk
 from contextlib import suppress
 from pathlib import Path
 
 import pytest
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui import themes
+from shared.tk_style import apply_round_scrollbar_style, get_ttk_style
+from shared.ttk import ttk
 
 
 @pytest.fixture
@@ -143,6 +148,34 @@ def test_apply_theme_updates_existing_entries(reset_theme):
 
 
 @pytest.mark.gui
+def test_apply_round_scrollbar_style_uses_bootstrap_bootstyle(reset_theme):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter display is not available")
+
+    root.withdraw()
+
+    try:
+        get_ttk_style(root)
+        scrollbar = ttk.Scrollbar(root, orient="vertical")
+    except tk.TclError:
+        with suppress(Exception):
+            root.destroy()
+        pytest.skip("Tkinter scrollbars are unavailable")
+
+    try:
+        apply_round_scrollbar_style(scrollbar)
+        bootstyle = scrollbar.cget("bootstyle")
+        assert "round" in str(bootstyle)
+    finally:
+        with suppress(Exception):
+            scrollbar.destroy()
+        with suppress(Exception):
+            root.destroy()
+
+
+@pytest.mark.gui
 def test_apply_theme_sets_ttk_entry_caret_color(reset_theme):
     try:
         root = tk.Tk()
@@ -156,8 +189,9 @@ def test_apply_theme_sets_ttk_entry_caret_color(reset_theme):
     try:
         themes.set_active_theme("dark")
         window = tk.Toplevel(root)
+        get_ttk_style(root)
         entry = ttk.Entry(window)
-        style = ttk.Style(root)
+        style = get_ttk_style(root)
 
         palette = themes.apply_theme_to_toplevel(window)
         window.update_idletasks()

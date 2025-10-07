@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import tkinter as tk
-from tkinter import ttk
+
+from shared.ttk import ttk
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN

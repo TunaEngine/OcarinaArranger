@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import Callable, Dict
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 
+from shared.tk_style import apply_round_scrollbar_style
 
 class _LayoutEditorUIMixin:
     """Methods responsible purely for constructing and toggling UI widgets."""
@@ -293,6 +294,7 @@ class _LayoutEditorUIMixin:
         self._json_text.configure(state="disabled", font=("TkFixedFont", 9))
 
         scrollbar = ttk.Scrollbar(preview_frame, orient="vertical", command=self._json_text.yview)
+        apply_round_scrollbar_style(scrollbar)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self._json_text.configure(yscrollcommand=scrollbar.set)
 

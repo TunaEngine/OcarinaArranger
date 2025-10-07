@@ -23,6 +23,14 @@ if str(project_dir) not in sys.path:
 
 from pyinstaller_helpers.assets import list_arranged_preview_asset_datas
 
+import ttkbootstrap
+
+bootstrap_package = Path(ttkbootstrap.__file__).resolve().parent
+bootstrap_themes = bootstrap_package / "themes"
+_BOOTSTRAP_DATAS: list[tuple[str, str]] = []
+if bootstrap_themes.exists():
+    _BOOTSTRAP_DATAS = [(str(bootstrap_themes), "ttkbootstrap/themes")]
+
 arranged_asset_datas = list_arranged_preview_asset_datas(project_dir)
 
 analysis = Analysis(
@@ -45,6 +53,7 @@ analysis = Analysis(
             "ui/main_window/resources",
         ),
         *arranged_asset_datas,
+        *_BOOTSTRAP_DATAS,
     ],
     hiddenimports=[],
     hookspath=[],

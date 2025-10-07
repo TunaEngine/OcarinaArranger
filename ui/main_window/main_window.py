@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import tkinter as tk
 
 from adapters.file_dialog import FileDialogAdapter
@@ -7,6 +6,7 @@ from services.score_service import ScoreService
 
 from ocarina_gui.scrolling import normalize_auto_scroll_mode
 from ocarina_gui.themes import get_current_theme
+from shared.ttk import ttk
 from viewmodels.main_viewmodel import MainViewModel
 
 from ui.main_window.fingering import FingeringEditorMixin
@@ -20,6 +20,12 @@ from ui.main_window.state_sync import MainWindowStateSyncMixin
 from .dependencies import resolve_viewmodel
 
 
+if hasattr(ttk, "Window"):
+    _TkBase = ttk.Window  # type: ignore[attr-defined]
+else:
+    _TkBase = tk.Tk
+
+
 class MainWindow(
     MenuActionsMixin,
     FingeringEditorMixin,
@@ -28,7 +34,7 @@ class MainWindow(
     MainWindowStateSyncMixin,
     MainWindowRuntimeMixin,
     MainWindowInitialisationMixin,
-    tk.Tk,
+    _TkBase,
 ):
     """Tk-based desktop application for arranging scores for Alto C ocarina."""
 
@@ -43,15 +49,16 @@ class MainWindow(
         initial_auto_scroll_mode = normalize_auto_scroll_mode(
             getattr(preferences, "auto_scroll_mode", None)
         )
+        current_theme = get_current_theme()
 
-        self._headless = self._initialise_tk_root()
+        self._headless = self._initialise_tk_root(current_theme.ttk_theme)
 
         self._viewmodel = resolve_viewmodel(viewmodel, dialogs, score_service)
         state = self._viewmodel.state
 
         self._setup_instrument_attributes(state)
         self._create_convert_controls(state)
-        self._setup_theme_support(preferences)
+        self._setup_theme_support(preferences, current_theme)
         self._setup_auto_update_menu(preferences)
         self._setup_fingering_defaults()
         self._setup_preview_state(preferences, initial_auto_scroll_mode)

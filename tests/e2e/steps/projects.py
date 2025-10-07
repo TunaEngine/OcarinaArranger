@@ -3,6 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from pytest_bdd import given, parsers, then, when
 
 from services.project_service import ProjectPersistenceError

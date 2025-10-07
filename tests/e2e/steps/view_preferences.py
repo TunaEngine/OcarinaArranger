@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Dict
+
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
 
 from pytest_bdd import given, parsers, then, when
 
@@ -56,6 +61,19 @@ def assert_theme_preference_regex(arranger_app: E2EHarness, theme_id: str) -> No
 @then('the theme preference was saved as "dark"')
 def assert_theme_preference_dark(arranger_app: E2EHarness) -> None:
     _assert_theme_preference(arranger_app, "dark")
+
+
+@then(parsers.re(r'^a theme diagnostic log was emitted for "(?P<theme_id>[^"]+)"$'))
+def assert_theme_log(caplog, theme_id: str) -> None:
+    caplog.set_level(logging.INFO, logger="ui.main_window.menus.theme")
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "ui.main_window.menus.theme"
+    ]
+    assert any(theme_id in message for message in messages), (
+        f"No theme diagnostic log found for {theme_id!r}"
+    )
 
 
 @given("log verbosity changes are tracked")

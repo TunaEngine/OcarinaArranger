@@ -9,6 +9,8 @@ from typing import Callable, Dict, Sequence, Tuple
 from ocarina_gui.scrolling import AutoScrollMode
 from shared.logging_config import LogVerbosity
 
+from ._logger import logger
+
 
 class MenuBuilderMixin:
     _theme_choices: Sequence
@@ -180,10 +182,37 @@ class MenuBuilderMixin:
             try:
                 from .custom_bar import CustomMenuBar  # local import to avoid cycles
             except Exception:
-                CustomMenuBar = None  # type: ignore
+                CustomMenuBar = None  # type: ignore[assignment]
             if CustomMenuBar is not None:
                 try:
                     self._custom_menubar = CustomMenuBar(self, menubar)
                     self._custom_menubar.pack(side="top", fill="x")
                 except Exception:
+                    logger.warning(
+                        "Custom menu bar failed to initialise; falling back to native menu",
+                        exc_info=True,
+                    )
                     self._custom_menubar = None
+                    self._fallback_to_native_menubar(menubar)
+            else:
+                logger.warning(
+                    "Custom menu bar implementation unavailable; using native menu"
+                )
+                self._fallback_to_native_menubar(menubar)
+
+    def _fallback_to_native_menubar(self, menubar: tk.Menu) -> None:
+        """Ensure a native menubar is attached when the custom bar is unavailable."""
+
+        try:
+            registry = getattr(self, "_registered_menus", [])
+            if menubar in registry:
+                registry.remove(menubar)
+        except Exception:
+            pass
+
+        menubar = self._register_menu(menubar, role="menubar")
+        self._use_native_menubar = True
+        try:
+            self.config(menu=menubar)
+        except tk.TclError:
+            logger.debug("Unable to attach native menubar", exc_info=True)

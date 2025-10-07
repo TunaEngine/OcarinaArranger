@@ -4,6 +4,10 @@ import tkinter as tk
 
 import pytest
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from app.config import get_auto_scroll_config
 from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.staff import StaffView

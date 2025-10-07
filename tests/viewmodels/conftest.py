@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 import pytest
 
 from ocarina_gui.conversion import ConversionResult

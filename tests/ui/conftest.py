@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 import pytest
 
 from ocarina_gui import App, themes

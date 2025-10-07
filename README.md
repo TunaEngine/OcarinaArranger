@@ -9,6 +9,7 @@
 ### Option 2:
 
 ```bash
+python -m pip install ttkbootstrap
 python -m ocarina_gui.app
 ```
 

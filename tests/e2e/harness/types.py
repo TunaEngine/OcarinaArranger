@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Deque, Iterable, Union
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_gui.preferences import Preferences
 from ocarina_gui.preview import PreviewData

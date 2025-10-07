@@ -6,7 +6,7 @@ import copy
 from typing import Callable, Dict
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 
 from shared.tkinter_geometry import center_window_over_parent
 from ocarina_gui.themes import apply_theme_to_toplevel

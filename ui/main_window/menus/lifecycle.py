@@ -25,6 +25,25 @@ class LifecycleMixin:
             return
         super().update_idletasks()
         self._maybe_auto_render_selected_preview()
+        # Reapply Panel styles after widget updates to handle ttkbootstrap resets
+        self._reapply_panel_styles_if_needed()
+
+    def _reapply_panel_styles_if_needed(self) -> None:
+        """Reapply Panel styles if they may have been reset by ttkbootstrap."""
+        style = getattr(self, '_style', None)
+        if style is None:
+            return
+        
+        theme = getattr(self, '_theme', None)
+        if theme is None:
+            return
+            
+        try:
+            from shared.tk_style import configure_panel_styles
+            configure_panel_styles(style, theme.palette.window_background, theme.palette.text_primary)
+        except Exception:
+            # Don't fail if Panel style reapplication fails
+            pass
 
     def destroy(self) -> None:  # type: ignore[override]
         """Tear down subscriptions and playback before destroying the window."""

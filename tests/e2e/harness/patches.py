@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Callable, Deque
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 import pytest
 
 from ocarina_gui.pdf_export.types import PdfExportOptions
@@ -245,7 +249,7 @@ def install_audio_stub(monkeypatch) -> None:
 
 
 def install_headless_main_window(monkeypatch) -> None:
-    def _force_headless(self) -> bool:
+    def _force_headless(self, themename: str | None = None) -> bool:  # noqa: ARG001
         import tkinter as tk
 
         tk.Tk.__init__(self, useTk=False)

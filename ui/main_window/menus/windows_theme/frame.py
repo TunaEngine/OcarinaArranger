@@ -129,7 +129,11 @@ def schedule_window_frame_refresh(host: Any) -> None:
 
 
 def perform_window_frame_refresh_nudge(host: Any) -> None:
-    """Temporarily resize the window to force a redraw."""
+    """Temporarily resize the window to force a redraw.
+    
+    For maximized windows, we need a different approach since geometry changes
+    don't work the same way when the window is in zoomed state.
+    """
 
     host._pending_title_geometry_nudge = False
     host._last_title_geometry_nudge = None
@@ -137,6 +141,7 @@ def perform_window_frame_refresh_nudge(host: Any) -> None:
     try:
         width = host.winfo_width()
         height = host.winfo_height()
+        window_state = host.state()
     except tk.TclError:
         return
 
@@ -150,23 +155,60 @@ def perform_window_frame_refresh_nudge(host: Any) -> None:
                 host._pending_title_geometry_nudge = False
         return
 
-    try:
-        x = host.winfo_x()
-        y = host.winfo_y()
-    except tk.TclError:
-        x = None
-        y = None
+    # Handle maximized windows specially
+    if window_state == 'zoomed':
+        try:
+            # For maximized windows: temporarily restore, nudge, then re-maximize
+            # This forces a complete redraw including the title bar
+            host.state('normal')
+            host.update_idletasks()
+            
+            # Give the system a moment to process the state change
+            after = getattr(host, "after", None)
+            if callable(after):
+                def _complete_maximized_nudge():
+                    try:
+                        # Small geometry nudge while in normal state
+                        current_width = host.winfo_width()
+                        current_height = host.winfo_height()
+                        host.geometry(f"{current_width + 1}x{current_height + 1}")
+                        host.update_idletasks()
+                        host.geometry(f"{current_width}x{current_height}")
+                        host.update_idletasks()
+                        
+                        # Restore maximized state
+                        host.state('zoomed')
+                        host.update_idletasks()
+                        
+                        host._last_title_geometry_nudge = (width, height)
+                    except tk.TclError:
+                        pass
+                
+                after(50, _complete_maximized_nudge)  # Slightly longer delay for maximized windows
+            else:
+                # Fallback if after is not available
+                host.state('zoomed')
+                host._last_title_geometry_nudge = (width, height)
+        except tk.TclError:
+            return
+    else:
+        # Normal window handling - original geometry nudge approach
+        try:
+            x = host.winfo_x()
+            y = host.winfo_y()
+        except tk.TclError:
+            x = None
+            y = None
 
-    def _geometry_string(width_value: int, height_value: int) -> str:
-        if x is None or y is None:
-            return f"{width_value}x{height_value}"
-        return f"{width_value}x{height_value}+{x}+{y}"
+        def _geometry_string(width_value: int, height_value: int) -> str:
+            if x is None or y is None:
+                return f"{width_value}x{height_value}"
+            return f"{width_value}x{height_value}+{x}+{y}"
 
-    try:
-        host.geometry(_geometry_string(width + 1, height + 1))
-        host.update_idletasks()
-        host.geometry(_geometry_string(width, height))
-    except tk.TclError:
-        return
-
-    host._last_title_geometry_nudge = (width, height)
+        try:
+            host.geometry(_geometry_string(width + 1, height + 1))
+            host.update_idletasks()
+            host.geometry(_geometry_string(width, height))
+            host._last_title_geometry_nudge = (width, height)
+        except tk.TclError:
+            return

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from pytest_bdd import given, parsers, then, when
 
 from services.update.models import ReleaseInfo, UpdateError

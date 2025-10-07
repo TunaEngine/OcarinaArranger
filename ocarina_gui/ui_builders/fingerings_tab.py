@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import TYPE_CHECKING
 
 from ..fingering import (
@@ -12,6 +12,7 @@ from ..fingering import (
     get_available_instruments,
     get_current_instrument,
 )
+from shared.tk_style import apply_round_scrollbar_style
 
 if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
     from ..app import App
@@ -22,10 +23,10 @@ __all__ = ["build_fingerings_tab"]
 
 def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     pad = 8
-    tab = ttk.Frame(notebook)
+    tab = ttk.Frame(notebook, style="Panel.TFrame")
     notebook.add(tab, text="Fingerings")
 
-    header = ttk.Frame(tab)
+    header = ttk.Frame(tab, style="Panel.TFrame")
     header.pack(fill="x", padx=pad, pady=(pad, 0))
     ttk.Label(
         header,
@@ -33,7 +34,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
         style="Hint.TLabel",
     ).pack(side="left")
 
-    actions = ttk.Frame(header)
+    actions = ttk.Frame(header, style="Panel.TFrame")
     actions.pack(side="right")
     edit_button = ttk.Button(actions, text="Edit...", command=app.toggle_fingering_editing)
     edit_button.pack(side="right")
@@ -45,7 +46,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     choices = get_available_instruments()
     if choices:
         current = get_current_instrument()
-        selector_frame = ttk.Frame(actions)
+        selector_frame = ttk.Frame(actions, style="Panel.TFrame")
         selector_frame.pack(side="right", padx=(0, pad))
         ttk.Label(selector_frame, text="Instrument:").pack(side="left", padx=(0, 4))
         instrument_var = tk.StringVar(master=app, value=current.name)
@@ -69,7 +70,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
 
         combo.bind("<<ComboboxSelected>>", _on_instrument_change)
 
-    content = ttk.Frame(tab)
+    content = ttk.Frame(tab, style="Panel.TFrame")
     content.pack(fill="both", expand=True, padx=pad, pady=(pad, pad))
     content.columnconfigure(0, weight=1)
     content.rowconfigure(0, weight=1)
@@ -77,11 +78,11 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     panes = ttk.Panedwindow(content, orient="vertical")
     panes.grid(row=0, column=0, sticky="nsew")
 
-    top_section = ttk.Frame(panes)
+    top_section = ttk.Frame(panes, style="Panel.TFrame")
     top_section.columnconfigure(1, weight=1)
     top_section.rowconfigure(0, weight=1)
 
-    preview_frame = ttk.Frame(top_section)
+    preview_frame = ttk.Frame(top_section, style="Panel.TFrame")
     preview_frame.grid(row=0, column=0, sticky="n", padx=(0, pad))
     ttk.Label(preview_frame, text="Selected fingering").pack(anchor="w")
     preview = FingeringView(preview_frame)
@@ -92,7 +93,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     else:  # pragma: no cover - legacy path
         app.fingering_preview = preview
 
-    table_frame = ttk.Frame(top_section)
+    table_frame = ttk.Frame(top_section, style="Panel.TFrame")
     table_frame.grid(row=0, column=1, sticky="nsew")
     table_frame.columnconfigure(0, weight=1)
     table_frame.rowconfigure(0, weight=1)
@@ -105,9 +106,11 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     else:  # pragma: no cover - legacy path
         app.fingering_table = tree
     yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+    apply_round_scrollbar_style(yscroll)
     yscroll.grid(row=0, column=1, sticky="ns")
     tree.configure(yscrollcommand=yscroll.set)
     xscroll = ttk.Scrollbar(table_frame, orient="horizontal", command=tree.xview)
+    apply_round_scrollbar_style(xscroll)
     xscroll.grid(row=1, column=0, sticky="ew")
     tree.configure(xscrollcommand=xscroll.set)
 
@@ -120,7 +123,7 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
 
     panes.add(top_section, weight=3)
 
-    grid_section = ttk.LabelFrame(panes, text="All fingerings")
+    grid_section = ttk.LabelFrame(panes, text="All fingerings", style="Panel.TLabelframe")
     grid_section.columnconfigure(0, weight=1)
     grid_section.rowconfigure(0, weight=1)
 
@@ -132,13 +135,13 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     grid_section.configure(padding=(0, pad, 0, 0))
     panes.add(grid_section, weight=2)
 
-    controls = ttk.Frame(content)
+    controls = ttk.Frame(content, style="Panel.TFrame")
     controls.grid(row=1, column=0, sticky="ew", pady=(pad, 0))
     controls.columnconfigure(0, weight=1)
     controls.grid_remove()
     app._fingering_edit_controls = controls
 
-    buttons = ttk.Frame(controls)
+    buttons = ttk.Frame(controls, style="Panel.TFrame")
     buttons.grid(row=0, column=0, sticky="w", pady=(pad // 2, 0))
 
     ttk.Button(buttons, text="Add note", command=app.add_fingering_note).pack(side="left", padx=(0, pad))

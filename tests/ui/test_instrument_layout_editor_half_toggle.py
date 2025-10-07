@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import tkinter as tk
-from tkinter import ttk
-
 import pytest
+
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
+import tkinter as tk
+from shared.ttk import ttk
 
 from ocarina_gui.fingering import InstrumentSpec
 from ocarina_gui.fingering.half_holes import instrument_allows_half_holes

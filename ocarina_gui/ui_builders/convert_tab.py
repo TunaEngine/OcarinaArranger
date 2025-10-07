@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
@@ -32,7 +32,7 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     right_column.columnconfigure(0, weight=1)
 
     # 1. Instrument & Range
-    instrument_section = ttk.LabelFrame(left_column, text="1. Instrument & Range", padding=pad)
+    instrument_section = ttk.LabelFrame(left_column, text="1. Instrument & Range", padding=pad, style="Panel.TLabelframe")
     instrument_section.grid(row=0, column=0, sticky="nsew")
     instrument_section.columnconfigure(1, weight=1)
 
@@ -74,7 +74,7 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     # 2. Arranger Algorithm
-    algorithm_section = ttk.LabelFrame(left_column, text="2. Arranger Algorithm", padding=pad)
+    algorithm_section = ttk.LabelFrame(left_column, text="2. Arranger Algorithm", padding=pad, style="Panel.TLabelframe")
     algorithm_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
     algorithm_section.columnconfigure(0, weight=1)
 
@@ -134,7 +134,7 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     ).grid(row=4, column=0, sticky="w", pady=(4, 0))
 
     # Import & Export
-    import_section = ttk.LabelFrame(right_column, text="Import & Export", padding=pad)
+    import_section = ttk.LabelFrame(right_column, text="Import & Export", padding=pad, style="Panel.TLabelframe")
     import_section.grid(row=0, column=0, sticky="nsew")
     import_section.columnconfigure(0, weight=1)
 
@@ -172,7 +172,7 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     ).grid(row=3, column=0, sticky="ew", pady=(pad, 0))
 
     # Playback
-    playback_section = ttk.LabelFrame(right_column, text="Playback", padding=pad)
+    playback_section = ttk.LabelFrame(right_column, text="Playback", padding=pad, style="Panel.TLabelframe")
     playback_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
     playback_section.columnconfigure(0, weight=1)
 
@@ -199,3 +199,14 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
         style="Hint.TLabel",
     )
     footer.grid(row=1, column=0, columnspan=2, sticky="w", pady=(pad, 0))
+    
+    # Apply Panel styles after widgets are created to ensure proper theming
+    def _ensure_convert_tab_panel_styles():
+        from shared.tk_style import apply_theme_to_panel_widgets
+        try:
+            apply_theme_to_panel_widgets(app)
+        except Exception:
+            pass
+    
+    # Schedule Panel style application after widget creation
+    app.after(1, _ensure_convert_tab_panel_styles)

@@ -4,13 +4,14 @@ import logging
 import textwrap
 import tkinter as tk
 from tkinter import font as tkfont
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import Dict, List, Optional, Sequence
 
 from ocarina_gui.fingering import (
     collect_instrument_note_names,
     get_current_instrument,
 )
+from shared.tk_style import get_ttk_style
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +228,7 @@ class FingeringTableMixin:
             body_font_name = ""
 
         if not body_font_name:
-            style = self._style or ttk.Style(table)
+            style = self._style or get_ttk_style(table)
             body_font_name = style.lookup("Treeview", "font") or ""
 
         if not body_font_name:

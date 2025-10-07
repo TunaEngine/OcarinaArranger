@@ -1,0 +1,277 @@
+"""Helpers for working with :mod:`ttkbootstrap` styles."""
+
+from __future__ import annotations
+
+import logging
+import tkinter as tk
+from typing import Optional
+
+try:
+    from ttkbootstrap import Style as BootstrapStyle
+except ModuleNotFoundError as exc:  # pragma: no cover - triggered when dependency missing
+    BootstrapStyle = None  # type: ignore[assignment]
+    _IMPORT_ERROR = exc
+else:
+    _IMPORT_ERROR = None
+
+from shared.ttk import ttk
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_THEME = "litera"
+_STYLE: ttk.Style | None = None
+_STYLE_THEME: str | None = None
+_STYLE_ROOT: tk.Misc | None = None
+
+
+def _canonicalize(widget: Optional[tk.Misc]) -> Optional[tk.Misc]:
+    if widget is None:
+        return None
+    try:
+        return widget.winfo_toplevel()
+    except tk.TclError:
+        return widget
+
+
+def _default_root_exists(widget: Optional[tk.Misc]) -> bool:
+    if widget is None:
+        return False
+    try:
+        return bool(widget.winfo_exists())
+    except tk.TclError:
+        return False
+
+
+def _reset_cached_style(*_event: object) -> None:
+    global _STYLE, _STYLE_THEME, _STYLE_ROOT
+    _STYLE = None
+    _STYLE_THEME = None
+    _STYLE_ROOT = None
+
+
+def _ensure_default_root(master: Optional[tk.Misc]) -> tk.Misc:
+    global _STYLE_ROOT
+
+    candidates = (
+        _canonicalize(master),
+        _canonicalize(getattr(tk, "_default_root", None)),
+        _canonicalize(_STYLE_ROOT),
+    )
+
+    for candidate in candidates:
+        if _default_root_exists(candidate):
+            _STYLE_ROOT = candidate
+            return candidate  # type: ignore[return-value]
+
+    root = tk.Tk()
+    try:
+        root.withdraw()
+    except tk.TclError:
+        pass
+
+    try:
+        root.bind("<Destroy>", _reset_cached_style, add="+")
+    except tk.TclError:
+        pass
+
+    _STYLE_ROOT = root
+    return root
+
+
+def _create_style(theme: str, master: Optional[tk.Misc]) -> ttk.Style:
+    if BootstrapStyle is None:
+        raise _IMPORT_ERROR  # type: ignore[misc]
+    root = _ensure_default_root(master)
+    _ = root  # pragma: no cover - keep reference alive to prevent Tk GC
+    try:
+        style = BootstrapStyle(theme=theme)
+    except TypeError:
+        # Older ttkbootstrap releases accepted the theme as a positional arg.
+        style = BootstrapStyle(theme)
+    try:
+        if theme:
+            style.theme_use(theme)
+            # Log success/failure for debugging
+            current_theme = style.theme_use()
+            if current_theme == theme:
+                logger.debug("Successfully activated ttk theme '%s'", theme)
+            else:
+                logger.warning("Theme activation mismatch: requested '%s', got '%s'", theme, current_theme)
+    except tk.TclError as e:
+        logger.warning("Failed to activate ttk theme '%s' on initialisation: %s", theme, e)
+    try:
+        root.bind("<Destroy>", _reset_cached_style, add="+")
+    except tk.TclError:
+        pass
+    return style
+
+
+def get_ttk_style(master: Optional[tk.Misc] = None, *, theme: Optional[str] = None) -> ttk.Style:
+    """Return a shared ttkbootstrap :class:`Style` instance.
+
+    The helper recreates the global style when the requested theme changes or if
+    the underlying Tk interpreter has been destroyed.
+    """
+
+    if BootstrapStyle is None:
+        raise _IMPORT_ERROR  # type: ignore[misc]
+
+    global _STYLE, _STYLE_THEME
+
+    # If no theme is explicitly requested, try to preserve current theme
+    # Only use default theme for initial creation
+    desired_theme = theme
+    if desired_theme is None and _STYLE is not None:
+        try:
+            # Preserve the current theme instead of defaulting to _DEFAULT_THEME
+            desired_theme = str(_STYLE.theme_use())
+        except tk.TclError:
+            desired_theme = _DEFAULT_THEME
+    elif desired_theme is None:
+        desired_theme = _DEFAULT_THEME
+    
+    requested_root = _canonicalize(master)
+
+    if _STYLE is None:
+        logger.debug("Creating ttkbootstrap Style (theme=%s)", desired_theme)
+        _STYLE = _create_style(desired_theme, master)
+    else:
+        if (
+            requested_root is not None
+            and _STYLE_ROOT is not None
+            and _default_root_exists(_STYLE_ROOT)
+            and requested_root is not _STYLE_ROOT
+        ):
+            logger.debug(
+                "Requested root %s differs from cached ttk style root %s; recreating",
+                requested_root,
+                _STYLE_ROOT,
+            )
+            _STYLE = _create_style(desired_theme, requested_root)
+        try:
+            current_theme = str(_STYLE.theme_use())
+        except tk.TclError:
+            logger.debug(
+                "Cached ttkbootstrap Style is unusable; recreating", exc_info=True
+            )
+            _STYLE = _create_style(desired_theme, master)
+        else:
+            if desired_theme and current_theme != desired_theme:
+                try:
+                    _STYLE.theme_use(desired_theme)
+                    # Verify theme switch was successful
+                    actual_theme = _STYLE.theme_use()
+                    if actual_theme != desired_theme:
+                        logger.warning(
+                            "Theme switch verification failed: requested '%s', current is '%s'; recreating style",
+                            desired_theme, actual_theme
+                        )
+                        _STYLE = _create_style(desired_theme, master)
+                except tk.TclError as e:
+                    logger.warning(
+                        "Switching ttk theme to '%s' failed: %s; recreating style", desired_theme, e
+                    )
+                    _STYLE = _create_style(desired_theme, master)
+
+    try:
+        _STYLE_THEME = str(_STYLE.theme_use())
+    except tk.TclError:
+        _STYLE_THEME = desired_theme
+
+    return _STYLE
+
+
+def apply_round_scrollbar_style(scrollbar: ttk.Scrollbar) -> None:
+    """Give ``scrollbar`` the ttkbootstrap rounded appearance."""
+
+    if scrollbar is None:
+        return
+
+    # Check if ttkbootstrap style is available without potentially changing theme
+    try:
+        # Try to get existing style from the scrollbar's root first to preserve theme
+        root = scrollbar.winfo_toplevel()
+        if hasattr(root, '_style') and root._style is not None:
+            # Style exists, we can use ttkbootstrap features
+            pass
+        else:
+            # Fall back to getting style
+            get_ttk_style(scrollbar)
+    except (tk.TclError, AttributeError):
+        return
+
+    for token in ("info-round", ("info", "round"), "round"):
+        try:
+            scrollbar.configure(bootstyle=token)
+        except (tk.TclError, TypeError):
+            continue
+        else:
+            return
+
+
+def configure_style(style: ttk.Style, style_name: str, /, **options: object) -> bool:
+    """Configure ``style_name`` via ttkbootstrap."""
+
+    try:
+        style.configure(style_name, **options)
+    except tk.TclError:
+        logger.debug(
+            "Failed to configure style '%s' with %s", style_name, options, exc_info=True
+        )
+        return False
+    return True
+
+
+def map_style(style: ttk.Style, style_name: str, /, **option_map: object) -> bool:
+    """Map state-specific options for ``style_name`` via ttkbootstrap."""
+
+    try:
+        style.map(style_name, **option_map)
+    except tk.TclError:
+        logger.debug(
+            "Failed to map style '%s' with %s", style_name, option_map, exc_info=True
+        )
+        return False
+    return True
+
+
+def configure_panel_styles(style: ttk.Style, window_bg: str, text_fg: str) -> None:
+    """Configure Panel.TFrame and Panel.TLabelframe styles for themed containers.
+    
+    This ensures that Panel-styled widgets use the correct theme colors when
+    created in standalone windows or dialogs outside the main window.
+    """
+    configure_style(style, "Panel.TFrame", background=window_bg)
+    configure_style(style, "Panel.TLabelframe", background=window_bg, foreground=text_fg)
+    configure_style(style, "Panel.TLabelframe.Label", background=window_bg, foreground=text_fg)
+
+
+def apply_theme_to_panel_widgets(window: tk.Misc) -> None:
+    """Apply current theme's Panel styles to a standalone window.
+    
+    This function should be called after creating Panel-styled widgets in standalone
+    windows or after calling update_idletasks(), as ttkbootstrap may reset custom
+    Panel styles during widget hierarchy updates.
+    
+    This is primarily needed for standalone dialogs and windows that contain
+    Panel.TFrame or Panel.TLabelframe widgets outside the main application window.
+    """
+    from ocarina_gui.themes import get_current_theme
+    
+    try:
+        theme = get_current_theme()
+        palette = theme.palette
+        style = get_ttk_style(window, theme=theme.ttk_theme)
+        configure_panel_styles(style, palette.window_background, palette.text_primary)
+    except Exception:
+        logger.debug("Failed to apply Panel styles to window", exc_info=True)
+
+
+__all__ = [
+    "apply_round_scrollbar_style",
+    "apply_theme_to_panel_widgets",
+    "configure_panel_styles",
+    "configure_style",
+    "get_ttk_style",
+    "map_style",
+]

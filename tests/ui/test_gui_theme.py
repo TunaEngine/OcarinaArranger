@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tkinter as tk
 
 import pytest
 
@@ -23,6 +24,41 @@ def _lookup_state_value(style, style_name: str, option: str, state: str) -> str 
         if state in tokens:
             return value
     return None
+
+
+@pytest.mark.gui
+def test_runtime_theme_switch_uses_bootstrap_theme(gui_app):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Requires Tk display to inspect ttk theme usage")
+
+    style = getattr(gui_app, "_style", None)
+    if style is None:
+        pytest.skip("Requires Tk style information")
+
+    try:
+        initial_theme = str(style.theme_use())
+    except tk.TclError:
+        pytest.skip("Unable to query ttk theme")
+
+    gui_app.activate_theme_menu("dark")
+    gui_app.update_idletasks()
+
+    try:
+        dark_theme = str(style.theme_use())
+    except tk.TclError:
+        pytest.fail("Failed to query ttk theme after switching to dark")
+    assert dark_theme.lower() == "darkly"
+
+    gui_app.activate_theme_menu("light")
+    gui_app.update_idletasks()
+
+    try:
+        light_theme = str(style.theme_use())
+    except tk.TclError:
+        pytest.fail("Failed to query ttk theme after switching back to light")
+    assert light_theme.lower() == "litera"
+
+    assert initial_theme.lower() in {"litera", "darkly"}
 
 
 def test_theme_menu_switches_active_theme(gui_app):

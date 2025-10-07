@@ -4,215 +4,143 @@
     {
       "id": "light",
       "name": "Light",
-      "ttk_theme": "clam",
+      "ttk_theme": "litera",
       "palette": {
-        "window_background": "#f0f0f0",
-        "text_primary": "#111111",
-        "text_muted": "#555555",
-        "text_cursor": "#111111",
+        "window_background": "#f8f9fa",
+        "text_primary": "#212529",
+        "text_muted": "#6c757d",
+        "text_cursor": "#212529",
         "piano_roll": {
-          "background": "#f7f7fa",
-          "natural_row_fill": "#f7f7fa",
+          "background": "#f8f9fa",
+          "natural_row_fill": "#f8f9fa",
           "accidental_row_fill": "#ffffff",
-          "grid_line": "#e0e0e4",
-          "measure_line": "#888888",
-          "measure_number_text": "#555555",
-          "note_fill_sharp": "#9cccfb",
-          "note_fill_natural": "#b7dcff",
-          "note_outline": "#1e4f87",
-          "note_label_text": "#111111",
-          "placeholder_text": "#333333",
-          "header_text": "#333333",
-          "highlight_fill": "#d8ebff",
-          "loop_start_line": "#2e7d32",
-          "loop_end_line": "#c62828",
-          "cursor_primary": "#1e4f87"
+          "grid_line": "#dee2e6",
+          "measure_line": "#adb5bd",
+          "measure_number_text": "#6c757d",
+          "note_fill_sharp": "#74c0fc",
+          "note_fill_natural": "#91d5ff",
+          "note_outline": "#1d6fd1",
+          "note_label_text": "#212529",
+          "placeholder_text": "#495057",
+          "header_text": "#343a40",
+          "highlight_fill": "#cfe2ff",
+          "loop_start_line": "#198754",
+          "loop_end_line": "#dc3545",
+          "cursor_primary": "#0d6efd"
         },
         "staff": {
           "background": "#ffffff",
-          "outline": "#d0d0d0",
-          "staff_line": "#222222",
-          "measure_line": "#888888",
-          "measure_number_text": "#555555",
-          "accidental_text": "#000000",
-          "note_fill": "#000000",
-          "note_outline": "#000000",
-          "header_text": "#333333",
-          "cursor_primary": "#1e4f87",
-          "cursor_secondary": "#7a8aa5"
+          "outline": "#ced4da",
+          "staff_line": "#212529",
+          "measure_line": "#adb5bd",
+          "measure_number_text": "#6c757d",
+          "accidental_text": "#212529",
+          "note_fill": "#212529",
+          "note_outline": "#212529",
+          "header_text": "#343a40",
+          "cursor_primary": "#0d6efd",
+          "cursor_secondary": "#6c757d"
         },
         "listbox": {
           "background": "#ffffff",
-          "foreground": "#111111",
-          "select_background": "#cde4ff",
-          "select_foreground": "#000000"
+          "foreground": "#212529",
+          "select_background": "#cfe2ff",
+          "select_foreground": "#212529"
         },
         "table": {
           "background": "#ffffff",
-          "foreground": "#111111",
-          "heading_background": "#e6e6e6",
-          "heading_foreground": "#111111",
-          "row_stripe": "#f7f7f7",
-          "selection_background": "#cde4ff",
-          "selection_foreground": "#000000"
+          "foreground": "#212529",
+          "heading_background": "#e9ecef",
+          "heading_foreground": "#212529",
+          "row_stripe": "#f1f3f5",
+          "selection_background": "#cfe2ff",
+          "selection_foreground": "#212529"
         }
       },
-      "styles": {
-        "TFrame": {"background": "#f0f0f0"},
-        "TLabelframe": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TLabelframe.Label": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TLabel": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TButton": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TCheckbutton": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TRadiobutton": {"background": "#f0f0f0", "foreground": "#111111"},
-        "TNotebook": {"background": "#f0f0f0"},
-        "TNotebook.Tab": {"background": "#e6e6e6", "foreground": "#111111"},
-        "TCombobox": {"background": "#f0f0f0", "fieldbackground": "#ffffff", "foreground": "#111111"},
-        "TEntry": {"background": "#f0f0f0", "fieldbackground": "#ffffff", "foreground": "#111111"},
-        "TScrollbar": {"background": "#f0f0f0"}
-      },
-      "style_maps": {
-        "TButton": {
-          "foreground": [["disabled", "#8a8a8a"], ["!disabled", "#111111"]],
-          "background": [["disabled", "#d9d9d9"], ["active", "#e6e6e6"], ["pressed", "#d0d0d0"], ["!disabled", "#f0f0f0"]]
-        },
-        "TCheckbutton": {
-          "foreground": [["disabled", "#8a8a8a"], ["!disabled", "#111111"]],
-          "background": [["disabled", "#e2e2e2"], ["active", "#e8e8e8"], ["!disabled", "#f0f0f0"]]
-        },
-        "TCombobox": {
-          "foreground": [["disabled", "#8a8a8a"], ["!disabled", "#111111"]],
-          "fieldbackground": [["disabled", "#e3e3e3"], ["active", "#f6f6f6"], ["!disabled", "#ffffff"]],
-          "background": [["disabled", "#e0e0e0"], ["active", "#e6e6e6"], ["!disabled", "#f0f0f0"]]
-        },
-        "TEntry": {
-          "foreground": [["disabled", "#8a8a8a"], ["!disabled", "#111111"]],
-          "fieldbackground": [["disabled", "#e5e5e5"], ["!disabled", "#ffffff"]]
-        },
-        "TSpinbox": {
-          "foreground": [["disabled", "#8a8a8a"], ["!disabled", "#111111"]],
-          "fieldbackground": [["disabled", "#e5e5e5"], ["!disabled", "#ffffff"]],
-          "background": [["disabled", "#e0e0e0"], ["active", "#e6e6e6"], ["!disabled", "#f0f0f0"]]
-        },
-        "TNotebook.Tab": {
-          "foreground": [["selected", "#111111"], ["active", "#111111"], ["disabled", "#8a8a8a"], ["!selected", "#111111"]],
-          "background": [["selected", "#ffffff"], ["active", "#d8ebff"], ["disabled", "#e5e5e5"], ["!selected", "#e6e6e6"]]
-        }
-      },
+      "styles": {},
+      "style_maps": {},
       "options": {
         "*Listbox.background": "#ffffff",
-        "*Listbox.foreground": "#111111",
-        "*Listbox.selectBackground": "#cde4ff",
-        "*Listbox.selectForeground": "#000000"
+        "*Listbox.foreground": "#212529",
+        "*Listbox.selectBackground": "#cfe2ff",
+        "*Listbox.selectForeground": "#212529",
+        "*Text.background": "#f8f9fa",
+        "*Text.foreground": "#212529",
+        "*Text.selectBackground": "#cfe2ff",
+        "*Text.selectForeground": "#212529",
+        "*Frame.background": "#f8f9fa",
+        "*Label.background": "#f8f9fa"
       }
     },
     {
       "id": "dark",
       "name": "Dark",
-      "ttk_theme": "clam",
+      "ttk_theme": "darkly",
       "palette": {
-        "window_background": "#1e1e1e",
-        "text_primary": "#f5f5f5",
-        "text_muted": "#a0a0a0",
-        "text_cursor": "#ffe873",
+        "window_background": "#1c1f23",
+        "text_primary": "#f8f9fa",
+        "text_muted": "#adb5bd",
+        "text_cursor": "#0dcaf0",
         "piano_roll": {
-          "background": "#1f2430",
-          "natural_row_fill": "#1f2430",
-          "accidental_row_fill": "#282c34",
-          "grid_line": "#3c4254",
-          "measure_line": "#4d5568",
-          "measure_number_text": "#d8e1ff",
-          "note_fill_sharp": "#4d8ddb",
-          "note_fill_natural": "#3a7bd5",
-          "note_outline": "#6aa6ff",
-          "note_label_text": "#e6eefc",
-          "placeholder_text": "#c5d1eb",
-          "header_text": "#c5d1eb",
-          "highlight_fill": "#2d3b4f",
-          "loop_start_line": "#7bd88f",
-          "loop_end_line": "#ff6f61",
-          "cursor_primary": "#6aa6ff"
+          "background": "#212529",
+          "natural_row_fill": "#212529",
+          "accidental_row_fill": "#2c3034",
+          "grid_line": "#343a40",
+          "measure_line": "#495057",
+          "measure_number_text": "#dee2e6",
+          "note_fill_sharp": "#4dabf7",
+          "note_fill_natural": "#339af0",
+          "note_outline": "#74c0fc",
+          "note_label_text": "#f8f9fa",
+          "placeholder_text": "#ced4da",
+          "header_text": "#ced4da",
+          "highlight_fill": "#2b3036",
+          "loop_start_line": "#20c997",
+          "loop_end_line": "#e35d6a",
+          "cursor_primary": "#0dcaf0"
         },
         "staff": {
-          "background": "#262b36",
-          "outline": "#3a4050",
-          "staff_line": "#e6eefc",
-          "measure_line": "#4d5568",
-          "measure_number_text": "#d8e1ff",
-          "accidental_text": "#f5f5f5",
-          "note_fill": "#f5f5f5",
-          "note_outline": "#f5f5f5",
-          "header_text": "#c5d1eb",
-          "cursor_primary": "#6aa6ff",
-          "cursor_secondary": "#4d637f"
+          "background": "#1c1f23",
+          "outline": "#343a40",
+          "staff_line": "#f8f9fa",
+          "measure_line": "#495057",
+          "measure_number_text": "#ced4da",
+          "accidental_text": "#f8f9fa",
+          "note_fill": "#f8f9fa",
+          "note_outline": "#f8f9fa",
+          "header_text": "#dee2e6",
+          "cursor_primary": "#0dcaf0",
+          "cursor_secondary": "#6c757d"
         },
         "listbox": {
-          "background": "#252526",
-          "foreground": "#f5f5f5",
-          "select_background": "#094771",
-          "select_foreground": "#ffffff"
+          "background": "#2f2f2f",
+          "foreground": "#f8f9fa",
+          "select_background": "#1f6feb",
+          "select_foreground": "#f8f9fa"
         },
         "table": {
-          "background": "#252526",
-          "foreground": "#f5f5f5",
-          "heading_background": "#2d2d2d",
-          "heading_foreground": "#f5f5f5",
-          "row_stripe": "#1e1e1e",
-          "selection_background": "#094771",
-          "selection_foreground": "#ffffff"
+          "background": "#1c1f23",
+          "foreground": "#f8f9fa",
+          "heading_background": "#2c3034",
+          "heading_foreground": "#f8f9fa",
+          "row_stripe": "#1a1d20",
+          "selection_background": "#1f6feb",
+          "selection_foreground": "#f8f9fa"
         }
       },
-      "styles": {
-        "TFrame": {"background": "#1e1e1e"},
-        "TLabelframe": {"background": "#1e1e1e", "foreground": "#f5f5f5"},
-        "TLabelframe.Label": {"background": "#1e1e1e", "foreground": "#f5f5f5"},
-        "TLabel": {"background": "#1e1e1e", "foreground": "#f5f5f5"},
-        "TButton": {"background": "#2d2d2d", "foreground": "#f5f5f5"},
-        "TCheckbutton": {"background": "#1e1e1e", "foreground": "#f5f5f5"},
-        "TRadiobutton": {"background": "#1e1e1e", "foreground": "#f5f5f5"},
-        "TNotebook": {"background": "#1e1e1e"},
-        "TNotebook.Tab": {"background": "#2d2d2d", "foreground": "#c5d1eb"},
-        "TCombobox": {"background": "#1e1e1e", "fieldbackground": "#252526", "foreground": "#f5f5f5"},
-        "TEntry": {"background": "#1e1e1e", "fieldbackground": "#252526", "foreground": "#f5f5f5"},
-        "TScrollbar": {"background": "#1e1e1e"}
-      },
-      "style_maps": {
-        "TButton": {
-          "background": [["disabled", "#2a2a2a"], ["active", "#3a3f4b"], ["pressed", "#313540"], ["!disabled", "#2d2d2d"]],
-          "foreground": [["disabled", "#6f778a"], ["active", "#ffffff"], ["pressed", "#ffffff"], ["!disabled", "#f5f5f5"]]
-        },
-        "TCheckbutton": {
-          "background": [["disabled", "#252933"], ["active", "#2c313c"], ["!disabled", "#1e1e1e"]],
-          "foreground": [["disabled", "#6f778a"], ["active", "#ffffff"], ["!disabled", "#f5f5f5"]]
-        },
-        "TCombobox": {
-          "background": [["disabled", "#252933"], ["active", "#2c313c"], ["!disabled", "#1e1e1e"]],
-          "fieldbackground": [["disabled", "#1f222a"], ["active", "#303541"], ["!disabled", "#252526"]],
-          "foreground": [["disabled", "#6f778a"], ["active", "#ffffff"], ["!disabled", "#f5f5f5"]]
-        },
-        "TEntry": {
-          "foreground": [["disabled", "#6f778a"], ["!disabled", "#f5f5f5"]],
-          "fieldbackground": [["disabled", "#1f222a"], ["!disabled", "#252526"]]
-        },
-        "TSpinbox": {
-          "foreground": [["disabled", "#6f778a"], ["!disabled", "#f5f5f5"]],
-          "fieldbackground": [["disabled", "#1f222a"], ["!disabled", "#252526"]],
-          "background": [["disabled", "#252933"], ["active", "#2c313c"], ["!disabled", "#1e1e1e"]]
-        },
-        "TRadiobutton": {
-          "background": [["disabled", "#252933"], ["active", "#2c313c"], ["!disabled", "#1e1e1e"]],
-          "foreground": [["disabled", "#6f778a"], ["active", "#ffffff"], ["!disabled", "#f5f5f5"]]
-        },
-        "TNotebook.Tab": {
-          "foreground": [["selected", "#ffffff"], ["active", "#ffffff"], ["disabled", "#4e5665"], ["!selected", "#c5d1eb"]],
-          "background": [["selected", "#1e1e1e"], ["active", "#3a3f4b"], ["disabled", "#262a33"], ["!selected", "#2d2d2d"]]
-        }
-      },
+      "styles": {},
+      "style_maps": {},
       "options": {
-        "*Listbox.background": "#252526",
-        "*Listbox.foreground": "#f5f5f5",
-        "*Listbox.selectBackground": "#094771",
-        "*Listbox.selectForeground": "#ffffff"
+        "*Listbox.background": "#2f2f2f",
+        "*Listbox.foreground": "#f8f9fa",
+        "*Listbox.selectBackground": "#1f6feb",
+        "*Listbox.selectForeground": "#f8f9fa",
+        "*Text.background": "#1c1f23",
+        "*Text.foreground": "#f8f9fa",
+        "*Text.selectBackground": "#1f6feb",
+        "*Text.selectForeground": "#f8f9fa",
+        "*Frame.background": "#1c1f23",
+        "*Label.background": "#1c1f23"
       }
     }
   ]

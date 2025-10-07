@@ -9,6 +9,7 @@ from ocarina_gui.color_utils import hex_to_rgb
 from ocarina_gui.fingering import FingeringView
 from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.staff import StaffView
+from shared.ttk import ttk
 from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 
 
@@ -113,6 +114,7 @@ class PreviewPlaybackControlMixin:
                 play_btn.configure(image=image, compound="left")
             else:
                 play_btn.configure(image="", compound="none")
+            self._apply_icon_button_style(play_btn)
         position_var = getattr(self, "_preview_position_vars", {}).get(side)
         duration_var = getattr(self, "_preview_duration_vars", {}).get(side)
         if position_var is not None or duration_var is not None:
@@ -145,6 +147,26 @@ class PreviewPlaybackControlMixin:
             registry = {}
             self._arranged_icon_targets = registry
         registry.setdefault(name, []).append(widget)
+        self._apply_icon_button_style(widget)
+
+    def _apply_icon_button_style(self, widget: tk.Widget) -> None:
+        if not isinstance(widget, ttk.Button):
+            return
+
+        emphasize = False
+        play_buttons = getattr(self, "_preview_play_buttons", None)
+        if isinstance(play_buttons, dict) and widget in play_buttons.values():
+            emphasize = True
+
+        bootstyle = ("primary", "outline") if emphasize else ("info", "outline")
+
+        try:
+            widget.configure(bootstyle=bootstyle)
+        except (tk.TclError, TypeError):
+            try:
+                widget.configure(style="Toolbutton")
+            except tk.TclError:
+                return
 
     def _refresh_preview_theme_assets(self) -> None:
         self._refresh_arranged_icon_theme()

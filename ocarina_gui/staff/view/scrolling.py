@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import Optional, TYPE_CHECKING
 
 from app.config import get_auto_scroll_config

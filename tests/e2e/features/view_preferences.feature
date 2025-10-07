@@ -6,6 +6,7 @@ Feature: View and logging preferences
     When the user selects the "Dark" theme from the View menu
     Then the active theme is "Dark"
     And the theme preference was saved as "dark"
+    And a theme diagnostic log was emitted for "dark"
 
   Scenario: Selecting verbose log output persists the setting
     Given the arranger app is running

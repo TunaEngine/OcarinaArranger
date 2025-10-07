@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Callable
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui.preferences import Preferences
 from ocarina_gui.scrolling import AutoScrollMode
 

@@ -10,6 +10,7 @@ from ocarina_gui.fingering import (
     set_active_instrument,
 )
 from ocarina_gui.themes import get_current_theme
+from shared.tk_style import get_ttk_style
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class FingeringSetupMixin:
             return
 
         if self._style is None:
-            self._style = ttk.Style(tree)
+            self._style = get_ttk_style(tree)
 
         style = self._style
         style_name = "Fingerings.Treeview"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import Optional
 
 from ocarina_gui.fingering import FingeringGridView, FingeringView

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from pathlib import Path
 from pytest_bdd import given, then, when, parsers
 

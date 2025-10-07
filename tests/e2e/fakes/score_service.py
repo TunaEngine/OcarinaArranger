@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Deque, Iterable, Optional, Union
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_gui.preview import PreviewData

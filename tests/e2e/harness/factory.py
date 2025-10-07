@@ -4,6 +4,10 @@ from collections import deque
 from pathlib import Path
 from typing import Deque
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 import pytest
 
 from ocarina_gui import themes

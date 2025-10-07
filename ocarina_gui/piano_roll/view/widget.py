@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from shared.ttk import ttk
 from typing import Callable, Optional, Sequence, Tuple
 
 from ...fingering import FingeringView
 from ...scrolling import AutoScrollMode, normalize_auto_scroll_mode
-from ...themes import PianoRollPalette, ThemeSpec, get_current_theme, register_theme_listener
+from ...themes import (
+    PianoRollPalette,
+    ThemeSpec,
+    get_current_theme,
+    register_theme_listener,
+)
+from shared.tk_style import apply_round_scrollbar_style, get_ttk_style
 from ..events import Event, EventLike, normalize_events
 from ..geometry import RenderGeometry
 from ..notes import label_for_midi
@@ -35,6 +41,11 @@ class PianoRoll(
         super().__init__(master, **kwargs)
         self.label_width = 70
         self._palette = get_current_theme().palette.piano_roll
+        self._theme_unsubscribe: Optional[Callable[[], None]] = None
+        try:
+            get_ttk_style(self)
+        except tk.TclError:
+            pass
         self.labels = tk.Canvas(self, bg=self._palette.background, width=self.label_width, height=240, highlightthickness=0)
         self.canvas = tk.Canvas(self, bg=self._palette.background, height=240, highlightthickness=0)
         self.canvas.configure(xscrollincrement=1)
@@ -42,13 +53,15 @@ class PianoRoll(
         self._show_fingering = show_fingering
         self.fingering = FingeringView(self) if self._show_fingering else None
         self.hbar = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        apply_round_scrollbar_style(self.hbar)
         self.vbar = ttk.Scrollbar(self, orient="vertical", command=self._yview_both)
+        apply_round_scrollbar_style(self.vbar)
         self._hover_cb: Optional[Callable[[Optional[int]], None]] = None
         self._cursor_cb: Optional[Callable[[int], None]] = None
         self._cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
         self._cursor_drag_active = False
         self._label_highlight: Optional[int] = None
-        self._theme_unsubscribe: Optional[Callable[[], None]] = register_theme_listener(self._on_theme_changed)
+        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
 
         self._hbar_grid_kwargs: dict[str, object] | None = None
         self._vbar_grid_kwargs: dict[str, object] | None = None

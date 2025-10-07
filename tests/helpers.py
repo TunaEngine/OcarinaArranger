@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+import importlib.util
 import textwrap
 import xml.etree.ElementTree as ET
+
+import pytest
+
+
+def require_ttkbootstrap() -> None:
+    """Skip the current test module if :mod:`ttkbootstrap` is missing."""
+
+    if importlib.util.find_spec("ttkbootstrap") is None:
+        pytest.skip("ttkbootstrap is not installed", allow_module_level=True)
 
 
 def make_chord_score() -> tuple[ET.ElementTree, ET.Element]:

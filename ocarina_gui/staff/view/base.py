@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from tkinter import ttk
+
+from shared.ttk import ttk
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from ...scrolling import AutoScrollMode, normalize_auto_scroll_mode
 from ...themes import StaffPalette, ThemeSpec, get_current_theme, register_theme_listener
+from shared.tk_style import apply_round_scrollbar_style, get_ttk_style
 from ..cursor import CursorController
 from ..rendering import StaffRenderer
 from ..scrollbars import ScrollbarManager
@@ -22,13 +24,20 @@ class StaffViewBase(ttk.Frame):
 
     def __init__(self, master: tk.Misc, **kwargs) -> None:
         super().__init__(master, **kwargs)
+        self._theme_unsubscribe: Optional[Callable[[], None]] = None
         self._palette = get_current_theme().palette.staff
+        try:
+            get_ttk_style(self)
+        except tk.TclError:
+            pass
         self.canvas = tk.Canvas(self, bg=self._palette.background, height=180, highlightthickness=0)
         self.canvas.configure(xscrollincrement=1)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         self.hbar = ttk.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
+        apply_round_scrollbar_style(self.hbar)
         self.vbar = ttk.Scrollbar(self, orient="vertical")
-        self._theme_unsubscribe: Optional[Callable[[], None]] = register_theme_listener(self._on_theme_changed)
+        apply_round_scrollbar_style(self.vbar)
+        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
 
         self.canvas.grid(row=0, column=1, sticky="nsew")
         self.vbar.grid(row=0, column=2, sticky="ns")

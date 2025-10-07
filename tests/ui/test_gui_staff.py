@@ -4,6 +4,10 @@ import tkinter as tk
 
 import pytest
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui.note_values import describe_note_glyph
 from ocarina_gui.staff import StaffView
 

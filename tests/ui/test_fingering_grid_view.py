@@ -6,6 +6,10 @@ from typing import Callable
 
 import pytest
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from ocarina_gui.fingering import InstrumentSpec, get_instrument
 from ocarina_gui.fingering.grid import FingeringGridView
 

@@ -1,8 +1,13 @@
 import tkinter as tk
 from tkinter import font as tkfont
-from tkinter import ttk
 
 import pytest
+
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
+from shared.ttk import ttk
 
 from ocarina_gui import themes
 from ocarina_gui.fingering import (
@@ -10,6 +15,7 @@ from ocarina_gui.fingering import (
     get_current_instrument,
     get_current_instrument_id,
 )
+from shared.tk_style import get_ttk_style
 
 
 def test_fingering_table_populated_from_config(gui_app):
@@ -145,7 +151,7 @@ def test_fingering_table_columns_size_to_content(gui_app):
         body_font_name = ""
 
     if not body_font_name:
-        style = ttk.Style(table)
+        style = get_ttk_style(table)
         body_font_name = style.lookup("Treeview", "font") or ""
 
     if not body_font_name:
@@ -179,7 +185,7 @@ def test_fingering_table_columns_size_to_content(gui_app):
         )
         assert max_lines > 1
 
-        style = ttk.Style(gui_app)
+        style = get_ttk_style(gui_app)
         table_style = getattr(gui_app, "_fingering_table_style", None)
         heading_style = f"{table_style}.Heading" if table_style else "Treeview.Heading"
         padding_value = style.configure(heading_style, "padding") or style.configure("Treeview.Heading", "padding")
@@ -231,7 +237,7 @@ def test_fingering_table_applies_theme_palette(gui_app):
         pytest.skip("Fingerings table requires Tk widgets")
 
     table = gui_app.fingering_table
-    style = ttk.Style(gui_app)
+    style = get_ttk_style(gui_app)
     original_theme = themes.get_current_theme()
 
     choices = [choice.theme_id for choice in themes.get_available_themes() if choice.theme_id != original_theme.theme_id]

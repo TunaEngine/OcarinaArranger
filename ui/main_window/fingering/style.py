@@ -4,9 +4,10 @@ from typing import List, Optional, Tuple
 
 import tkinter as tk
 from tkinter import font as tkfont
-from tkinter import ttk
+from shared.ttk import ttk
 
 from ocarina_gui.themes import TablePalette
+from shared.tk_style import configure_style, get_ttk_style
 
 
 class FingeringStyleMixin:
@@ -26,12 +27,19 @@ class FingeringStyleMixin:
                 tokens = [value]
         numeric: List[int] = []
         for token in tokens:
-            if token in {"", None}:
+            if token is None:
                 continue
             try:
-                numeric.append(int(float(token)))
+                coerced = float(token)  # type: ignore[arg-type]
             except (TypeError, ValueError):
-                continue
+                text = str(token)
+                if not text.strip():
+                    continue
+                try:
+                    coerced = float(text)
+                except ValueError:
+                    continue
+            numeric.append(int(round(coerced)))
         if not numeric:
             return None
         if len(numeric) == 1:
@@ -54,7 +62,7 @@ class FingeringStyleMixin:
         if self._fingering_heading_font_name:
             candidates.append(self._fingering_heading_font_name)
 
-        style = self._style or ttk.Style(self)
+        style = self._style or get_ttk_style(self)
         style_name = self._fingering_table_style
         heading_style = f"{style_name}.Heading" if style_name else "Treeview.Heading"
         candidate = style.lookup(heading_style, "font")
@@ -87,7 +95,7 @@ class FingeringStyleMixin:
         lines = max(lines, 1)
         self._fingering_heading_lines = lines
 
-        style = self._style or ttk.Style(self)
+        style = self._style or get_ttk_style(self)
         style_name = self._fingering_table_style
         heading_style = f"{style_name}.Heading" if style_name else "Treeview.Heading"
 
@@ -123,7 +131,7 @@ class FingeringStyleMixin:
 
         new_padding = (left, top, right, bottom)
 
-        style.configure(heading_style, padding=new_padding)
+        configure_style(style, heading_style, padding=new_padding)
 
     def _refresh_fingering_heading_style(self) -> None:
         if self._headless or self.fingering_table is None:

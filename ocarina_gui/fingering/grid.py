@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from tkinter import ttk
+
+from shared.ttk import ttk
 from typing import Callable, Dict, Mapping, Optional, Sequence, Set, Tuple
 
 from .library import get_current_instrument, register_instrument_listener
-from .specs import InstrumentSpec, collect_instrument_note_names, parse_note_name_safe
+from .specs import (
+    InstrumentSpec,
+    collect_instrument_note_names,
+    parse_note_name_safe,
+)
 from .view import FingeringView
+from shared.tk_style import apply_round_scrollbar_style, get_ttk_style
 
 
 __all__ = ["calculate_grid_columns", "FingeringGridView"]
@@ -75,9 +81,14 @@ class FingeringGridView(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
+        try:
+            get_ttk_style(self)
+        except tk.TclError:
+            pass
         self._canvas = tk.Canvas(self, highlightthickness=0, borderwidth=0)
         self._canvas.grid(row=0, column=0, sticky="nsew")
         self._yscroll = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        apply_round_scrollbar_style(self._yscroll)
         self._yscroll.grid(row=0, column=1, sticky="ns")
         self._canvas.configure(yscrollcommand=self._yscroll.set)
 

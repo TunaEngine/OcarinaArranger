@@ -3,6 +3,10 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import then, when, parsers
 
+from tests.helpers import require_ttkbootstrap
+
+require_ttkbootstrap()
+
 from tests.e2e.harness import E2EHarness
 
 
