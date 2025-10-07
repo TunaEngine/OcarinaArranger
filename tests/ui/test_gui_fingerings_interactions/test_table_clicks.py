@@ -76,7 +76,7 @@ def test_cycle_skips_half_state_when_disabled() -> None:
             self.state.note_map[note] = list(pattern)
 
     app._fingering_edit_vm = DummyViewModel()
-    app._apply_fingering_editor_changes = lambda focus=None: None
+    app._apply_fingering_editor_changes = lambda focus=None, **_kwargs: None
     app._update_fingering_note_actions_state = lambda: None
 
     app._cycle_fingering_state("note", 0)
@@ -106,7 +106,7 @@ def test_cycle_allows_half_state_when_enabled() -> None:
             self.state.note_map[note] = list(pattern)
 
     app._fingering_edit_vm = DummyViewModel()
-    app._apply_fingering_editor_changes = lambda focus=None: None
+    app._apply_fingering_editor_changes = lambda focus=None, **_kwargs: None
     app._update_fingering_note_actions_state = lambda: None
 
     app._cycle_fingering_state("note", 0)
@@ -114,6 +114,57 @@ def test_cycle_allows_half_state_when_enabled() -> None:
 
     app._cycle_fingering_state("note", 0)
     assert app._fingering_edit_vm.state.note_map["note"] == [2]
+
+
+def test_cycle_round_trip_from_filled_logs_transitions(caplog) -> None:
+    app = MainWindow.__new__(MainWindow)
+    app._headless = True
+    app._fingering_edit_mode = True
+    app._fingering_half_notes_enabled = False
+    app._fingering_allow_half_var = None
+    state = SimpleNamespace(
+        holes=[object()],
+        windways=[],
+        note_map={"note": [2]},
+    )
+
+    class DummyViewModel:
+        def __init__(self) -> None:
+            self.state = state
+
+        def set_note_pattern(self, note: str, pattern) -> None:
+            self.state.note_map[note] = list(pattern)
+
+    app._fingering_edit_vm = DummyViewModel()
+    transitions: list[list[int]] = []
+
+    def _record_changes(_focus: str | None = None, **_kwargs) -> None:
+        transitions.append(list(app._fingering_edit_vm.state.note_map["note"]))
+
+    app._apply_fingering_editor_changes = _record_changes  # type: ignore[attr-defined]
+    app._update_fingering_note_actions_state = lambda: None
+
+    with caplog.at_level("DEBUG", logger="ui.main_window.fingering.events"):
+        app._cycle_fingering_state("note", 0)
+        app._cycle_fingering_state("note", 0)
+
+    assert app._fingering_edit_vm.state.note_map["note"] == [2]
+    assert transitions == [[0], [2]]
+
+    debug_records = [
+        (
+            getattr(record, "previous_state", None),
+            getattr(record, "next_state", None),
+            getattr(record, "pattern_before", None),
+        )
+        for record in caplog.records
+        if record.name == "ui.main_window.fingering.events"
+        and hasattr(record, "previous_state")
+    ]
+
+    assert len(debug_records) >= 2, f"debug_records={debug_records!r}"
+    assert debug_records[0][:2] == (2, 0)
+    assert debug_records[1][:2] == (0, 2)
 
 
 def test_fingering_cell_click_requires_active_row_after_switching() -> None:

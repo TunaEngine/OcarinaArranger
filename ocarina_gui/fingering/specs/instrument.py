@@ -1,142 +1,18 @@
-"""Specifications and note helpers for ocarina fingering instruments."""
+"""Instrument specification model and parsing helpers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name, parse_note_name
+from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name
 
+from .models import HoleSpec, OutlineSpec, StyleSpec, WindwaySpec
+from .pitch import parse_note_name_safe
 
-__all__ = [
-    "HoleSpec",
-    "WindwaySpec",
-    "OutlineSpec",
-    "StyleSpec",
-    "InstrumentSpec",
-    "InstrumentChoice",
-    "collect_instrument_note_names",
-    "preferred_note_window",
-    "parse_note_name_safe",
-]
-
+__all__ = ["InstrumentSpec"]
 
 _DEFAULT_HALF_HOLE_INSTRUMENT_IDS: frozenset[str] = frozenset({"alto_c_6"})
-
-
-@dataclass(frozen=True)
-class HoleSpec:
-    """Specification for a fingering hole."""
-
-    identifier: str
-    x: float
-    y: float
-    radius: float
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "HoleSpec":
-        return cls(
-            identifier=str(data.get("id", "")),
-            x=float(data["x"]),
-            y=float(data["y"]),
-            radius=float(data.get("radius", 8.0)),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.identifier,
-            "x": self.x,
-            "y": self.y,
-            "radius": self.radius,
-        }
-
-
-@dataclass(frozen=True)
-class WindwaySpec:
-    """Specification for an instrument windway."""
-
-    identifier: str
-    x: float
-    y: float
-    width: float
-    height: float
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WindwaySpec":
-        return cls(
-            identifier=str(data.get("id", "")),
-            x=float(data["x"]),
-            y=float(data["y"]),
-            width=float(data.get("width", 14.0)),
-            height=float(data.get("height", 10.0)),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.identifier,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-        }
-
-
-@dataclass(frozen=True)
-class OutlineSpec:
-    """Outline configuration for the ocarina body."""
-
-    points: List[Tuple[float, float]]
-    closed: bool
-
-    @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> Optional["OutlineSpec"]:
-        if not data:
-            return None
-        points = [tuple(map(float, point)) for point in data.get("points", [])]
-        if not points:
-            return None
-        closed = bool(data.get("closed", False))
-        return cls(points=points, closed=closed)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "points": [[x, y] for x, y in self.points],
-            "closed": self.closed,
-        }
-
-
-@dataclass(frozen=True)
-class StyleSpec:
-    """Visual style settings for a fingering view."""
-
-    background_color: str = "#ffffff"
-    outline_color: str = "#000000"
-    outline_width: float = 2.0
-    outline_smooth: bool = False
-    hole_outline_color: str = "#000000"
-    covered_fill_color: str = "#000000"
-
-    @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "StyleSpec":
-        data = data or {}
-        return cls(
-            background_color=str(data.get("background_color", "#ffffff")),
-            outline_color=str(data.get("outline_color", "#000000")),
-            outline_width=float(data.get("outline_width", 2.0)),
-            outline_smooth=bool(data.get("outline_smooth", False)),
-            hole_outline_color=str(data.get("hole_outline_color", "#000000")),
-            covered_fill_color=str(data.get("covered_fill_color", "#000000")),
-        )
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "background_color": self.background_color,
-            "outline_color": self.outline_color,
-            "outline_width": self.outline_width,
-            "outline_smooth": self.outline_smooth,
-            "hole_outline_color": self.hole_outline_color,
-            "covered_fill_color": self.covered_fill_color,
-        }
 
 
 @dataclass(frozen=True)
@@ -182,7 +58,7 @@ class InstrumentSpec:
         total_elements = hole_count + windway_count
         note_map: Dict[str, List[int]] = {}
         for note, pattern in note_map_raw.items():
-            sequence = []
+            sequence: List[int] = []
             for value in pattern:
                 if isinstance(value, bool):
                     number = 2 if value else 0
@@ -330,41 +206,6 @@ class InstrumentSpec:
             sequence = sequence[:total]
         return sequence
 
-    def to_dict(self) -> Dict[str, object]:
-        """Serialize the specification into a configuration dictionary."""
-
-        data: Dict[str, object] = {
-            "id": self.instrument_id,
-            "name": self.name,
-            "title": self.title,
-            "canvas": {
-                "width": int(self.canvas_size[0]),
-                "height": int(self.canvas_size[1]),
-            },
-            "style": self.style.to_dict(),
-            "holes": [hole.to_dict() for hole in self.holes],
-            "windways": [windway.to_dict() for windway in self.windways],
-            "note_order": list(self.note_order),
-            "note_map": {note: list(pattern) for note, pattern in self.note_map.items()},
-            "candidate_notes": list(self.candidate_notes),
-            "allow_half_holes": self.allow_half_holes,
-        }
-        if self.outline is not None:
-            data["outline"] = self.outline.to_dict()
-        if getattr(self, "_has_explicit_candidate_range", False) and (
-            self.candidate_range_min or self.candidate_range_max
-        ):
-            data["candidate_range"] = {
-                "min": self.candidate_range_min,
-                "max": self.candidate_range_max,
-            }
-        if self.preferred_range_min or self.preferred_range_max:
-            data["preferred_range"] = {
-                "min": self.preferred_range_min,
-                "max": self.preferred_range_max,
-            }
-        return data
-
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {
             "id": self.instrument_id,
@@ -398,89 +239,8 @@ class InstrumentSpec:
             }
         if self.outline is not None:
             data["outline"] = self.outline.to_dict()
+        if self.allow_half_holes != (
+            self.instrument_id in _DEFAULT_HALF_HOLE_INSTRUMENT_IDS
+        ):
+            data["allow_half_holes"] = self.allow_half_holes
         return data
-
-
-@dataclass(frozen=True)
-class InstrumentChoice:
-    """Simple value/name pair for UI selections."""
-
-    instrument_id: str
-    name: str
-
-
-def collect_instrument_note_names(instrument: InstrumentSpec) -> List[str]:
-    """Return the instrument's configured note names in pitch order."""
-
-    range_min = parse_note_name_safe(getattr(instrument, "candidate_range_min", ""))
-    range_max = parse_note_name_safe(getattr(instrument, "candidate_range_max", ""))
-
-    names: List[str] = []
-    seen: set[str] = set()
-
-    if range_min is not None and range_max is not None and range_min <= range_max:
-        for midi in range(range_min, range_max + 1):
-            name = pitch_midi_to_name(midi, flats=False)
-            if name not in seen:
-                names.append(name)
-                seen.add(name)
-
-    extra_sources = list(
-        dict.fromkeys(
-            list(getattr(instrument, "candidate_notes", ()))
-            + list(instrument.note_order)
-            + list(instrument.note_map.keys())
-        )
-    )
-    for name in extra_sources:
-        if name not in seen:
-            names.append(name)
-            seen.add(name)
-
-    def _sort_key(note_name: str) -> tuple[float, int, str]:
-        midi = parse_note_name_safe(note_name)
-        if midi is None:
-            return (float("inf"), 0, note_name)
-        sharp_name = pitch_midi_to_name(midi, flats=False)
-        preference = 0 if note_name == sharp_name else 1
-        return (float(midi), preference, note_name)
-
-    names.sort(key=_sort_key)
-    return names
-
-
-def preferred_note_window(instrument: InstrumentSpec) -> Tuple[str, str]:
-    """Return a preferred note window for ``instrument``."""
-
-    explicit_min = getattr(instrument, "preferred_range_min", "").strip()
-    explicit_max = getattr(instrument, "preferred_range_max", "").strip()
-    if explicit_min and explicit_max:
-        return explicit_min, explicit_max
-
-    ordered = collect_instrument_note_names(instrument)
-    if not ordered:
-        raise ValueError("Instrument must define at least one note.")
-
-    midi_pairs: List[Tuple[int, str]] = []
-    for name in ordered:
-        midi = parse_note_name_safe(name)
-        if midi is None:
-            continue
-        midi_pairs.append((midi, name))
-
-    if not midi_pairs:
-        return ordered[0], ordered[-1]
-
-    midi_pairs.sort(key=lambda item: item[0])
-    lowest_name = midi_pairs[0][1]
-    highest_name = midi_pairs[-1][1]
-    return lowest_name, highest_name
-
-
-def parse_note_name_safe(note_name: str) -> Optional[int]:
-    """Best-effort conversion of ``note_name`` to a MIDI integer."""
-
-    try:
-        return int(parse_note_name(note_name))
-    except Exception:
-        return None

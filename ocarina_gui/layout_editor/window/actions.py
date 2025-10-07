@@ -293,7 +293,7 @@ class _LayoutEditorActionsMixin:
         if selection is None or selection.kind != kind or selection.index != index:
             self._viewmodel.select_element(kind, index)
         self._viewmodel.set_selected_position(x, y)
-        self.canvas.render(self._viewmodel.state)
+        self.canvas.render(self._viewmodel.state, high_quality=False)
         self._update_selection_vars(self._viewmodel.state)
         self._update_dirty_indicator()
         self._refresh_json_preview()

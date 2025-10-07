@@ -17,6 +17,7 @@ _BASE_INSTRUMENT_ENTRY: dict[str, object] = {
         "outline_color": "#fafafa",
         "outline_width": 2.5,
         "outline_smooth": True,
+        "outline_spline_steps": 36,
         "hole_outline_color": "#cccccc",
         "covered_fill_color": "#333333",
     },
@@ -96,11 +97,18 @@ def test_style_spec_round_trip_preserves_colors():
         "outline_color": "#445566",
         "outline_width": 2.5,
         "outline_smooth": True,
+        "outline_spline_steps": 30,
         "hole_outline_color": "#223344",
         "covered_fill_color": "#556677",
     }
     spec = fingering.StyleSpec.from_dict(sample)
     assert spec.to_dict() == sample
+
+
+def test_style_spec_defaults_enable_smoothing():
+    spec = fingering.StyleSpec.from_dict({})
+    assert spec.outline_smooth is True
+    assert spec.to_dict()["outline_smooth"] is True
 
 
 def test_instrument_spec_round_trip_matches_source_config():
@@ -278,3 +286,19 @@ def test_update_library_persists_to_user_override(sample_library):
 
     assert sample_library["saved_configs"], "configuration should be persisted"
     assert sample_library["saved_configs"][-1] == updated
+
+
+def test_update_instrument_spec_refreshes_library_without_persist(sample_library):
+    original = sample_library["spec"]
+    updated = original.to_dict()
+    first_note = next(iter(updated["note_map"]))
+    updated_pattern = [0 if value >= 2 else 2 for value in updated["note_map"][first_note]]
+    updated["note_map"][first_note] = updated_pattern
+
+    spec = fingering.InstrumentSpec.from_dict(updated)
+
+    fingering.update_instrument_spec(spec)
+
+    current = fingering.get_instrument(spec.instrument_id)
+    assert current.note_map[first_note] == updated_pattern
+    assert sample_library["saved_configs"] == []

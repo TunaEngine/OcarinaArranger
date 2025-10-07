@@ -38,6 +38,7 @@ class EditableStyle:
     outline_color: str
     outline_width: float
     outline_smooth: bool
+    outline_spline_steps: int
     hole_outline_color: str
     covered_fill_color: str
 
@@ -48,6 +49,7 @@ class EditableStyle:
             outline_color=spec.outline_color,
             outline_width=spec.outline_width,
             outline_smooth=spec.outline_smooth,
+            outline_spline_steps=spec.outline_spline_steps,
             hole_outline_color=spec.hole_outline_color,
             covered_fill_color=spec.covered_fill_color,
         )
@@ -58,6 +60,7 @@ class EditableStyle:
             outline_color=self.outline_color,
             outline_width=self.outline_width,
             outline_smooth=self.outline_smooth,
+            outline_spline_steps=int(self.outline_spline_steps),
             hole_outline_color=self.hole_outline_color,
             covered_fill_color=self.covered_fill_color,
         )
@@ -68,6 +71,7 @@ class EditableStyle:
             "outline_color": self.outline_color,
             "outline_width": self.outline_width,
             "outline_smooth": self.outline_smooth,
+            "outline_spline_steps": int(self.outline_spline_steps),
             "hole_outline_color": self.hole_outline_color,
             "covered_fill_color": self.covered_fill_color,
         }
@@ -227,6 +231,7 @@ def clone_state(
             outline_color=template.style.outline_color,
             outline_width=template.style.outline_width,
             outline_smooth=template.style.outline_smooth,
+            outline_spline_steps=template.style.outline_spline_steps,
             hole_outline_color=template.style.hole_outline_color,
             covered_fill_color=template.style.covered_fill_color,
         )

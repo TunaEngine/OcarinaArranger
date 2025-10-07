@@ -143,7 +143,9 @@ def test_fingering_column_reorder_updates_viewmodel_order() -> None:
     applied: list[str | None] = []
 
     app._fingering_edit_vm = _FakeViewModel()
-    app._apply_fingering_editor_changes = lambda focus=None: applied.append(focus)  # type: ignore[attr-defined]
+    app._apply_fingering_editor_changes = (  # type: ignore[attr-defined]
+        lambda focus=None, **_kwargs: applied.append(focus)
+    )
 
     press = SimpleNamespace(x=140, y=0)
     table.set_click_target(note="target", column_ref="#3", region="heading")

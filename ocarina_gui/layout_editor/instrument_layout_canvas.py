@@ -13,6 +13,7 @@ from viewmodels.instrument_layout_editor_viewmodel import (
 
 from .canvas_tooltip import CanvasTooltip
 from .labels import friendly_label
+from ocarina_gui.fingering.outline_renderer import OutlineImage, render_outline_photoimage
 
 
 class InstrumentLayoutCanvas(tk.Canvas):
@@ -35,6 +36,8 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self._selection_indicator: Optional[int] = None
         self._drag: Optional[Tuple[SelectionKind, int, float, float]] = None
         self._tooltip = CanvasTooltip(self)
+        self._outline_image: OutlineImage | None = None
+        self._outline_cache_key: tuple | None = None
 
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_drag)
@@ -44,7 +47,7 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self.bind("<Destroy>", lambda _e: self._tooltip.close(), add="+")
 
     # ------------------------------------------------------------------
-    def render(self, state: InstrumentLayoutState) -> None:
+    def render(self, state: InstrumentLayoutState, *, high_quality: bool = True) -> None:
         self._state = state
         width = state.canvas_width + 2 * self._margin
         height = state.canvas_height + 2 * self._margin
@@ -60,20 +63,68 @@ class InstrumentLayoutCanvas(tk.Canvas):
 
         self._draw_background_grid(width, height)
 
+        outline_color = state.style.outline_color or "#4f4f4f"
+        spline_steps = max(1, int(getattr(state.style, "outline_spline_steps", 48)))
+
         if state.outline_points:
-            outline_coords = []
-            for point in state.outline_points:
-                outline_coords.extend([point.x + self._margin, point.y + self._margin])
-            if state.outline_closed and len(outline_coords) >= 4:
-                outline_coords.extend(outline_coords[:2])
-            if outline_coords:
-                outline_color = state.style.outline_color or "#4f4f4f"
-                self.create_line(
-                    *outline_coords,
-                    fill=outline_color,
-                    width=max(0.5, float(state.style.outline_width)),
-                    smooth=state.style.outline_smooth,
+            pixel_points = [
+                (point.x + self._margin, point.y + self._margin)
+                for point in state.outline_points
+            ]
+            if state.outline_closed and pixel_points and pixel_points[0] != pixel_points[-1]:
+                pixel_points = pixel_points + [pixel_points[0]]
+            if high_quality:
+                stroke_width = max(0.5, float(state.style.outline_width))
+                cache_key = (
+                    tuple((round(pt[0], 4), round(pt[1], 4)) for pt in pixel_points),
+                    int(width),
+                    int(height),
+                    round(stroke_width, 4),
+                    outline_color,
+                    state.style.background_color,
+                    bool(state.style.outline_smooth),
+                    bool(state.outline_closed),
+                    int(spline_steps),
                 )
+                if self._outline_image is None or self._outline_cache_key != cache_key:
+                    outline_image = render_outline_photoimage(
+                        self,
+                        pixel_points,
+                        canvas_size=(width, height),
+                        stroke_width=stroke_width,
+                        stroke_color=outline_color,
+                        background_color=state.style.background_color,
+                        smooth=state.style.outline_smooth,
+                        closed=state.outline_closed,
+                        spline_steps=spline_steps,
+                    )
+                    if outline_image is not None:
+                        self._outline_image = outline_image
+                        self._outline_cache_key = cache_key
+                    else:
+                        self._outline_image = None
+                        self._outline_cache_key = None
+                outline_image = self._outline_image
+                if outline_image is not None:
+                    self.create_image(
+                        0,
+                        0,
+                        image=outline_image.photo_image,
+                        anchor="nw",
+                    )
+            else:
+                outline_image = None
+                if len(pixel_points) >= 2:
+                    coords = []
+                    for point in pixel_points:
+                        coords.extend([point[0], point[1]])
+                    self.create_line(
+                        *coords,
+                        fill=outline_color,
+                        width=max(0.5, float(state.style.outline_width)),
+                        smooth=state.style.outline_smooth,
+                        splinesteps=spline_steps,
+                    )
             for index, point in enumerate(state.outline_points):
                 x = point.x + self._margin
                 y = point.y + self._margin
@@ -87,6 +138,10 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 )
                 self._item_lookup[handle] = (SelectionKind.OUTLINE, index)
                 self._tooltip_texts[handle] = f"Outline point #{index + 1}"
+
+        else:
+            self._outline_image = None
+            self._outline_cache_key = None
 
         for index, hole in enumerate(state.holes):
             x = hole.x + self._margin
@@ -234,7 +289,12 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self._on_move(kind, index, center_x - margin, center_y - margin)
 
     def _on_release(self, _event: tk.Event) -> None:
-        self._drag = None
+        if self._drag is not None and self._state is not None:
+            state = self._state
+            self._drag = None
+            self.render(state)
+        else:
+            self._drag = None
 
     def _on_motion(self, event: tk.Event) -> None:
         if not self._tooltip_texts:

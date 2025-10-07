@@ -13,6 +13,7 @@
         "outline_color": "#111111",
         "outline_width": 3.0,
         "outline_smooth": true,
+        "outline_spline_steps": 48,
         "hole_outline_color": "#111111",
         "covered_fill_color": "#111111"
       },
@@ -501,6 +502,7 @@
         "outline_color": "#111111",
         "outline_width": 3.0,
         "outline_smooth": true,
+        "outline_spline_steps": 48,
         "hole_outline_color": "#111111",
         "covered_fill_color": "#111111"
       },
@@ -800,6 +802,7 @@
         "outline_color": "#111111",
         "outline_width": 3.0,
         "outline_smooth": true,
+        "outline_spline_steps": 48,
         "hole_outline_color": "#111111",
         "covered_fill_color": "#111111"
       },

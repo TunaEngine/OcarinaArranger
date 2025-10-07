@@ -230,6 +230,52 @@ def test_text_page_uses_multiple_columns_when_space_allows() -> None:
     assert "0.00 -1.00 1.00 0.00" in command_blob
 
 
+def test_fingering_pdf_outline_uses_smoothed_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    layout = resolve_layout("A4", "portrait")
+    instrument = InstrumentSpec.from_dict(
+        {
+            "id": "smooth",
+            "name": "Smooth",
+            "title": "Smooth Instrument",
+            "canvas": {"width": 160, "height": 120},
+            "style": {"outline_smooth": True, "outline_spline_steps": 12},
+            "outline": {
+                "points": [[10, 30], [50, 20], [90, 25], [120, 80]],
+                "closed": False,
+            },
+            "holes": [{"id": "h1", "x": 40, "y": 40, "radius": 10}],
+            "note_order": ["C4"],
+            "note_map": {"C4": [2]},
+        }
+    )
+    pattern = PatternData(pattern=(2,), pattern_text="X", note_names=("C4",))
+
+    captured: list[list[tuple[float, float]]] = []
+
+    from ocarina_gui.pdf_export.writer import PageBuilder
+
+    original_draw = PageBuilder.draw_polygon
+
+    def _recording_draw(self, points, **kwargs):
+        captured.append(list(points))
+        return original_draw(self, points, **kwargs)
+
+    monkeypatch.setattr(PageBuilder, "draw_polygon", _recording_draw)
+
+    pages = build_fingering_pages(layout, [pattern], (), instrument, columns=1)
+    assert pages, "expected fingering page to be generated"
+
+    original_point_count = len(instrument.outline.points) if instrument.outline else 0
+    outline_points = None
+    for entry in captured:
+        if len(entry) > original_point_count:
+            outline_points = entry
+            break
+
+    assert outline_points is not None, "expected outline polygon to be recorded"
+    assert len(outline_points) > original_point_count
+
+
 def test_fingering_page_respects_requested_columns() -> None:
     instrument = InstrumentSpec.from_dict(
         {

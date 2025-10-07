@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Dict, Mapping, Optional, Sequence
+from typing import Callable, Dict, Mapping, Optional, Sequence, Set, Tuple
 
 from .library import get_current_instrument, register_instrument_listener
 from .specs import InstrumentSpec, collect_instrument_note_names, parse_note_name_safe
@@ -12,6 +13,9 @@ from .view import FingeringView
 
 
 __all__ = ["calculate_grid_columns", "FingeringGridView"]
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def calculate_grid_columns(
@@ -63,6 +67,8 @@ class FingeringGridView(ttk.Frame):
         )
         self._note_order: tuple[str, ...] = ()
         self._tiles: Dict[str, FingeringView] = {}
+        self._geometry_signature: tuple | None = None
+        self._last_patterns: Dict[str, Tuple[int, ...] | None] = {}
         self._empty_label: Optional[ttk.Label] = None
         self._unsubscribe = register_instrument_listener(self._on_instrument_changed)
 
@@ -105,9 +111,7 @@ class FingeringGridView(ttk.Frame):
     # ------------------------------------------------------------------
     def refresh(self) -> None:
         instrument = get_current_instrument()
-        note_names = collect_instrument_note_names(instrument)
-        midi_map = {note: parse_note_name_safe(note) for note in note_names}
-        self.set_notes(note_names, midi_map)
+        self._update_from_instrument(instrument, force_reconcile=True)
 
     def set_notes(
         self,
@@ -121,47 +125,187 @@ class FingeringGridView(ttk.Frame):
         order = tuple(unique_notes)
         if order != self._note_order:
             self._rebuild(order, midi_map)
-        else:
-            self._update_tiles(midi_map)
 
     # ------------------------------------------------------------------
     def _rebuild(
         self, order: tuple[str, ...], midi_map: Mapping[str, Optional[int]]
     ) -> None:
-        for view in self._tiles.values():
-            view.destroy()
-        self._tiles.clear()
+        created = self._reconcile_tiles(order)
+        if created:
+            for note in created:
+                view = self._tiles.get(note)
+                if view is None:
+                    continue
+                view.show_fingering(note, midi_map.get(note))
+
+    # ------------------------------------------------------------------
+    def _on_instrument_changed(self, instrument: InstrumentSpec) -> None:
+        self._update_from_instrument(instrument)
+
+    def _instrument_signature(self, instrument: InstrumentSpec) -> tuple:
+        return (
+            int(instrument.canvas_size[0]),
+            int(instrument.canvas_size[1]),
+            tuple(
+                (
+                    round(float(hole.x), 4),
+                    round(float(hole.y), 4),
+                    round(float(hole.radius), 4),
+                )
+                for hole in instrument.holes
+            ),
+            tuple(
+                (
+                    round(float(windway.x), 4),
+                    round(float(windway.y), 4),
+                    round(float(windway.width), 4),
+                    round(float(windway.height), 4),
+                )
+                for windway in instrument.windways
+            ),
+        )
+
+    def _snapshot_patterns(
+        self, instrument: InstrumentSpec, order: Sequence[str]
+    ) -> Dict[str, Tuple[int, ...] | None]:
+        hole_count = len(instrument.holes)
+        windway_count = len(instrument.windways)
+        total = hole_count + windway_count
+        patterns: Dict[str, Tuple[int, ...] | None] = {}
+
+        for note in order:
+            raw = instrument.note_map.get(note)
+            if raw is None:
+                patterns[note] = None
+                continue
+
+            values = list(raw)
+            if total:
+                if len(values) < total:
+                    values.extend([0] * (total - len(values)))
+                elif len(values) > total:
+                    values = values[:total]
+
+            normalized: list[int] = []
+            for index, value in enumerate(values[:total]):
+                number = int(value)
+                if index < hole_count:
+                    if number < 0:
+                        number = 0
+                    elif number > 2:
+                        number = 2
+                else:
+                    number = 0 if number <= 0 else 2
+                normalized.append(number)
+
+            patterns[note] = tuple(normalized)
+
+        return patterns
+
+    # ------------------------------------------------------------------
+    def _reconcile_tiles(self, order: tuple[str, ...]) -> Set[str]:
+        """Ensure the grid tiles match ``order`` and return notes that were created."""
+
+        created_notes: Set[str] = set()
+
+        # Clean up any placeholder label before reconciling real tiles.
         if self._empty_label is not None:
             self._empty_label.destroy()
             self._empty_label = None
 
-        self._note_order = order
+        existing = dict(self._tiles)
+        new_tiles: Dict[str, FingeringView] = {}
+        reused = 0
+        created = 0
 
         if not order:
+            for view in existing.values():
+                view.destroy()
+            self._tiles.clear()
+            self._note_order = ()
             label = ttk.Label(self._inner, text="No note mappings configured")
             label.grid(row=0, column=0, padx=self._padding, pady=self._padding, sticky="w")
             self._empty_label = label
             self._column_count = 0
             self._canvas.yview_moveto(0.0)
-            return
+            return created_notes
 
         for note in order:
-            view = self._view_factory(self._inner, self._scale)
-            self._tiles[note] = view
+            view = existing.pop(note, None)
+            if view is None:
+                view = self._view_factory(self._inner, self._scale)
+                created_notes.add(note)
+                created += 1
+            else:
+                view.grid_forget()
+                reused += 1
+            new_tiles[note] = view
+
+        destroyed = len(existing)
+        for view in existing.values():
+            view.destroy()
+
+        self._tiles = new_tiles
+        self._note_order = order
 
         target_columns = self._resolve_column_target(len(order))
         self._arrange_tiles(target_columns)
-        self._update_tiles(midi_map)
         self._canvas.yview_moveto(0.0)
 
-    def _update_tiles(self, midi_map: Mapping[str, Optional[int]]) -> None:
-        for note, view in self._tiles.items():
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Fingering grid reconciled tiles reused=%s created=%s destroyed=%s order_len=%s",
+                reused,
+                created,
+                destroyed,
+                len(order),
+            )
+
+        return created_notes
+
+    def _update_from_instrument(
+        self, instrument: InstrumentSpec, *, force_reconcile: bool = False
+    ) -> None:
+        note_names = collect_instrument_note_names(instrument)
+        order = tuple(dict.fromkeys(note_names))
+        midi_map = {note: parse_note_name_safe(note) for note in order}
+        geometry_signature = self._instrument_signature(instrument)
+        new_patterns = self._snapshot_patterns(instrument, order)
+
+        order_changed = force_reconcile or order != self._note_order
+        geometry_changed = force_reconcile or geometry_signature != self._geometry_signature
+
+        created_notes: Set[str] = set()
+        if order_changed or geometry_changed:
+            created_notes = self._reconcile_tiles(order)
+
+        if geometry_changed:
+            notes_to_update: Set[str] = set(order)
+        else:
+            notes_to_update = {
+                note
+                for note, pattern in new_patterns.items()
+                if force_reconcile or pattern != self._last_patterns.get(note)
+            }
+            notes_to_update |= created_notes
+
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Fingering grid update order_changed=%s geometry_changed=%s updated_tiles=%s",
+                order_changed,
+                geometry_changed,
+                len(notes_to_update),
+            )
+
+        for note in notes_to_update:
+            view = self._tiles.get(note)
+            if view is None:
+                continue
             midi = midi_map.get(note)
             view.show_fingering(note, midi)
 
-    # ------------------------------------------------------------------
-    def _on_instrument_changed(self, _instrument: InstrumentSpec) -> None:
-        self.refresh()
+        self._geometry_signature = geometry_signature
+        self._last_patterns = new_patterns
 
     # ------------------------------------------------------------------
     def _resolve_column_target(self, note_count: int) -> int:

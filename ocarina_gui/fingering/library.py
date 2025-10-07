@@ -21,6 +21,7 @@ __all__ = [
     "get_current_instrument_id",
     "get_instrument",
     "set_active_instrument",
+    "update_instrument_spec",
     "update_library_from_config",
     "register_instrument_listener",
 ]
@@ -78,6 +79,24 @@ class FingeringLibrary:
         instrument = self._instruments[self._current_id]
         for listener in list(self._listeners):
             listener(instrument)
+
+    def update_instrument(self, spec: InstrumentSpec) -> None:
+        instrument_id = spec.instrument_id
+        if instrument_id not in self._instruments:
+            raise ValueError(f"Unknown fingering instrument: {instrument_id}")
+
+        self._instruments[instrument_id] = spec
+
+        try:
+            index = self._order.index(instrument_id)
+        except ValueError:
+            self._order.append(instrument_id)
+        else:
+            self._order[index] = instrument_id
+
+        if instrument_id == self._current_id:
+            for listener in list(self._listeners):
+                listener(spec)
 
     # ------------------------------------------------------------------
     # Observer management
@@ -155,6 +174,12 @@ def update_library_from_config(
     _LIBRARY.replace(instruments, preferred_id)
 
     save_fingering_config(config)
+
+
+def update_instrument_spec(spec: InstrumentSpec) -> None:
+    """Replace a single instrument specification without persisting to disk."""
+
+    _LIBRARY.update_instrument(spec)
 
 
 def get_available_instruments() -> List[InstrumentChoice]:

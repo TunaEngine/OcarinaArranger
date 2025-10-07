@@ -5,6 +5,7 @@ import math
 from typing import List, Sequence
 
 from ...fingering import InstrumentSpec
+from ...fingering.outline_renderer import generate_outline_path
 from ..layouts import PdfLayout
 from ..notes import PatternData
 from ..writer import PageBuilder
@@ -155,11 +156,23 @@ def _render_fingering_block(
 
     outline = instrument.outline
     if outline and outline.points:
+        path = generate_outline_path(
+            outline.points,
+            smooth=instrument.style.outline_smooth,
+            closed=outline.closed,
+            spline_steps=getattr(instrument.style, "outline_spline_steps", 48),
+        )
         scaled_points = [
             (diagram_left + x * scale, diagram_top + y * scale)
-            for x, y in outline.points
+            for x, y in path
         ]
-        page.draw_polygon(scaled_points, stroke_gray=0.6, fill_gray=None, close=outline.closed, line_width=0.8)
+        page.draw_polygon(
+            scaled_points,
+            stroke_gray=0.6,
+            fill_gray=None,
+            close=outline.closed,
+            line_width=0.8,
+        )
 
     holes = instrument.holes
     states = list(entry.pattern)

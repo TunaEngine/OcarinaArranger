@@ -8,9 +8,11 @@ from tkinter import messagebox
 from typing import Iterable
 
 from ocarina_gui.fingering import (
+    InstrumentSpec,
     get_available_instruments,
     get_current_instrument_id,
     get_instrument,
+    update_instrument_spec,
     update_library_from_config,
 )
 from ocarina_gui.fingering.half_holes import (
@@ -54,6 +56,7 @@ class FingeringEditModeMixin:
         if self._headless:
             return
         if self._fingering_edit_mode:
+            self._finalize_fingering_edits()
             self._exit_fingering_edit_mode()
         else:
             self._enter_fingering_edit_mode()
@@ -82,6 +85,14 @@ class FingeringEditModeMixin:
 
         self._populate_fingering_table(current_selection)
         self._update_fingering_note_actions_state()
+
+    def _finalize_fingering_edits(self) -> None:
+        viewmodel = self._fingering_edit_vm
+        if viewmodel is None:
+            return
+
+        focus_note = self._selected_fingering_note()
+        self._apply_fingering_editor_changes(focus_note, persist=True)
 
     def _exit_fingering_edit_mode(self) -> None:
         current_selection = self._selected_fingering_note()
@@ -139,19 +150,36 @@ class FingeringEditModeMixin:
             return None
         return note
 
-    def _apply_fingering_editor_changes(self, focus_note: Optional[str] = None) -> None:
+    def _apply_fingering_editor_changes(
+        self, focus_note: Optional[str] = None, *, persist: bool = False
+    ) -> None:
         viewmodel = self._fingering_edit_vm
         if viewmodel is None:
             return
 
-        config = viewmodel.build_config()
         current_id = viewmodel.state.instrument_id
-        try:
-            update_library_from_config(config, current_instrument_id=current_id)
-        except ValueError as exc:
-            if not self._headless:
-                messagebox.showerror("Update fingering", str(exc), parent=self)
-            return
+        if persist:
+            config = viewmodel.build_config()
+            try:
+                update_library_from_config(config, current_instrument_id=current_id)
+            except ValueError as exc:
+                if not self._headless:
+                    messagebox.showerror("Update fingering", str(exc), parent=self)
+                return
+        else:
+            instrument_dict = viewmodel.current_instrument_dict()
+            try:
+                spec = InstrumentSpec.from_dict(copy.deepcopy(instrument_dict))
+            except Exception as exc:
+                if not self._headless:
+                    messagebox.showerror("Update fingering", str(exc), parent=self)
+                return
+            try:
+                update_instrument_spec(spec)
+            except ValueError as exc:
+                if not self._headless:
+                    messagebox.showerror("Update fingering", str(exc), parent=self)
+                return
 
         self._refresh_fingering_instrument_choices(current_id)
         self._populate_fingering_table(focus_note)

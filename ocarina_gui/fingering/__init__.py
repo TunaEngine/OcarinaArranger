@@ -19,7 +19,7 @@ from .config import (
     save_fingering_config,
 )
 from .grid import FingeringGridView, calculate_grid_columns
-from .library import FingeringLibrary
+from .library import FingeringLibrary, update_instrument_spec as _update_instrument_spec
 from .specs import (
     HoleSpec,
     InstrumentChoice,
@@ -91,6 +91,12 @@ def update_library_from_config(
     _sync_library_from_module()
 
 
+def update_instrument_spec(spec: InstrumentSpec) -> None:
+    _sync_library_to_module()
+    _update_instrument_spec(spec)
+    _sync_library_from_module()
+
+
 __all__ = [
     "_CONFIG_ENV_VAR",
     "_DEFAULT_CONFIG_FILENAME",
@@ -123,5 +129,6 @@ __all__ = [
     "register_instrument_listener",
     "save_fingering_config",
     "set_active_instrument",
+    "update_instrument_spec",
     "update_library_from_config",
 ]

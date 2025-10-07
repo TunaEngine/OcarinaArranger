@@ -8,6 +8,7 @@ import tkinter as tk
 
 from ..color_utils import hex_to_rgb, mix_colors, rgb_to_hex
 from viewmodels.instrument_layout_editor_viewmodel import InstrumentLayoutState
+from ocarina_gui.fingering.outline_renderer import OutlineImage, render_outline_photoimage
 
 
 class FingeringPatternCanvas(tk.Canvas):
@@ -24,6 +25,8 @@ class FingeringPatternCanvas(tk.Canvas):
         self._default_size = (280, 200)
         self.configure(width=self._default_size[0], height=self._default_size[1])
         self.bind("<ButtonPress-1>", self._on_click)
+        self._outline_image: OutlineImage | None = None
+        self._outline_cache_key: tuple | None = None
 
     def render(self, state: InstrumentLayoutState, pattern: Sequence[int]) -> None:
         self._state = state
@@ -40,18 +43,55 @@ class FingeringPatternCanvas(tk.Canvas):
         )
 
         if state.outline_points:
-            outline_coords: List[float] = []
-            for point in state.outline_points:
-                outline_coords.extend([point.x + self._margin, point.y + self._margin])
-            if state.outline_closed and len(outline_coords) >= 4:
-                outline_coords.extend(outline_coords[:2])
+            pixel_points = [
+                (point.x + self._margin, point.y + self._margin)
+                for point in state.outline_points
+            ]
+            if state.outline_closed and pixel_points and pixel_points[0] != pixel_points[-1]:
+                pixel_points = pixel_points + [pixel_points[0]]
             outline_color = state.style.outline_color or "#4f4f4f"
-            self.create_line(
-                *outline_coords,
-                fill=outline_color,
-                width=max(0.5, float(state.style.outline_width)),
-                smooth=state.style.outline_smooth,
+            spline_steps = max(1, int(getattr(state.style, "outline_spline_steps", 48)))
+            stroke_width = max(0.5, float(state.style.outline_width))
+            cache_key = (
+                tuple((round(pt[0], 4), round(pt[1], 4)) for pt in pixel_points),
+                int(width),
+                int(height),
+                round(stroke_width, 4),
+                outline_color,
+                background,
+                bool(state.style.outline_smooth),
+                bool(state.outline_closed),
+                int(spline_steps),
             )
+            if self._outline_image is None or self._outline_cache_key != cache_key:
+                outline_image = render_outline_photoimage(
+                    self,
+                    pixel_points,
+                    canvas_size=(width, height),
+                    stroke_width=stroke_width,
+                    stroke_color=outline_color,
+                    background_color=background,
+                    smooth=state.style.outline_smooth,
+                    closed=state.outline_closed,
+                    spline_steps=spline_steps,
+                )
+                if outline_image is not None:
+                    self._outline_image = outline_image
+                    self._outline_cache_key = cache_key
+                else:
+                    self._outline_image = None
+                    self._outline_cache_key = None
+            outline_image = self._outline_image
+            if outline_image is not None:
+                self.create_image(
+                    0,
+                    0,
+                    image=outline_image.photo_image,
+                    anchor="nw",
+                )
+        else:
+            self._outline_image = None
+            self._outline_cache_key = None
 
         if not state.holes:
             self.create_text(
