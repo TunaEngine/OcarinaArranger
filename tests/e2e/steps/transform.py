@@ -7,14 +7,15 @@ require_ttkbootstrap()
 from pytest_bdd import given, parsers, then, when
 
 from ocarina_gui.preview import PreviewData
+from ocarina_tools import NoteEvent
 
 from tests.e2e.harness import E2EHarness
 
 
 def _sample_preview() -> PreviewData:
     return PreviewData(
-        original_events=[(0, 480, 60, 1)],
-        arranged_events=[(0, 480, 72, 1)],
+        original_events=[NoteEvent(0, 480, 60, 1)],
+        arranged_events=[NoteEvent(0, 480, 72, 1)],
         pulses_per_quarter=480,
         beats=4,
         beat_type=4,

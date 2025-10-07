@@ -8,9 +8,10 @@ from shared.ttk import ttk
 from ocarina_gui.audio import build_preview_audio_renderer
 from ocarina_gui.fingering import FingeringGridView, FingeringView
 from ocarina_gui.piano_roll import PianoRoll
-from ocarina_gui.preview import Event, PreviewData
+from ocarina_gui.preview import PreviewData
 from ocarina_gui.preferences import PREVIEW_LAYOUT_MODES
 from ocarina_gui.staff import StaffView
+from ocarina_tools import NoteEvent
 from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 
 
@@ -133,7 +134,7 @@ class PreviewInitialisationMixin:
         self._preview_tab_builders: Dict[str, Callable[[], None]] = {}
         self._preview_tab_initialized: set[str] = set()
         self._pending_preview_playback: dict[
-            str, tuple[tuple[Event, ...], int, float | None, int, int]
+            str, tuple[tuple[NoteEvent, ...], int, float | None, int, int]
         ] = {}
         self._preview_frames_by_side: Dict[str, ttk.Frame] = {}
         self._preview_sides_by_frame: dict[tk.Widget, str] = {}
@@ -141,7 +142,7 @@ class PreviewInitialisationMixin:
         self._input_path_trace_id: str | None = None
         self._preview_applied_settings: dict[str, dict[str, object]] = {}
         self._preview_settings_seeded: set[str] = set()
-        self._preview_events: dict[str, tuple[Event, ...]] = {
+        self._preview_events: dict[str, tuple[NoteEvent, ...]] = {
             "original": (),
             "arranged": (),
         }

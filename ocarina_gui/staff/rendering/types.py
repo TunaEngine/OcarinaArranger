@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+from ocarina_tools import NoteEvent
 
-Event = Tuple[int, int, int, int]
+Event = NoteEvent
 
 __all__ = ["Event"]

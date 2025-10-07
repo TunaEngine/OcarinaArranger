@@ -7,8 +7,9 @@ from typing import Dict, Optional, Sequence, Tuple
 
 from ocarina_gui.fingering import FingeringView
 from ocarina_gui.piano_roll import PianoRoll
-from ocarina_gui.preview import Event, PreviewData
+from ocarina_gui.preview import PreviewData
 from ocarina_gui.staff import StaffView
+from ocarina_tools import NoteEvent
 from services.project_service import PreviewPlaybackSnapshot
 from viewmodels.preview_playback_viewmodel import LoopRegion
 
@@ -109,7 +110,9 @@ class PreviewRenderingMixin:
             self._preview_settings_seeded.add(side)
         self._set_preview_initial_loading(side, False)
 
-    def _set_preview_events(self, side: str, events: Sequence[Event]) -> tuple[Event, ...]:
+    def _set_preview_events(
+        self, side: str, events: Sequence[NoteEvent]
+    ) -> tuple[NoteEvent, ...]:
         normalized = tuple(events)
         self._preview_events[side] = normalized
         self._preview_event_starts[side] = tuple(
@@ -120,7 +123,7 @@ class PreviewRenderingMixin:
         return normalized
 
     def _prepare_preview_playback(
-        self, side: str, events: tuple[Event, ...], data: PreviewData
+        self, side: str, events: tuple[NoteEvent, ...], data: PreviewData
     ) -> None:
         playback = self._preview_playback.get(side)
         if playback is None:
@@ -186,7 +189,9 @@ class PreviewRenderingMixin:
             )
             self._viewmodel.update_preview_settings(updated_settings)
         initialized = side in getattr(self, "_preview_tab_initialized", set())
-        pending: Dict[str, Tuple[tuple[Event, ...], int, float | None, int, int]] = getattr(
+        pending: Dict[
+            str, Tuple[tuple[NoteEvent, ...], int, float | None, int, int]
+        ] = getattr(
             self, "_pending_preview_playback", {}
         )
         if initialized:
@@ -217,7 +222,9 @@ class PreviewRenderingMixin:
         self._update_preview_render_progress(side)
 
     def _load_pending_preview_playback(self, side: str) -> None:
-        pending: Dict[str, Tuple[tuple[Event, ...], int, float | None, int, int]] = getattr(
+        pending: Dict[
+            str, Tuple[tuple[NoteEvent, ...], int, float | None, int, int]
+        ] = getattr(
             self, "_pending_preview_playback", {}
         )
         spec = pending.pop(side, None)

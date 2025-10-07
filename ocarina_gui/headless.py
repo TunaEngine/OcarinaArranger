@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence, Tuple
 
-Event = Tuple[int, int, int, int]
+from ocarina_tools import NoteEvent
 
 
 class HeadlessListbox:
@@ -173,7 +173,7 @@ class HeadlessPianoRoll:
     label_width: int = 70
     LEFT_PAD: int = 10
     canvas: HeadlessCanvas = field(default_factory=HeadlessCanvas)
-    _cached: Optional[Tuple[Sequence[Event], int, int, int]] = None
+    _cached: Optional[Tuple[Sequence[NoteEvent], int, int, int]] = None
     _fingering_cb: Optional[Callable[[Optional[int]], None]] = None
     _cursor_cb: Optional[Callable[[int], None]] = None
     _cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
@@ -265,7 +265,13 @@ class HeadlessStaffView:
         else:
             self.px_per_tick = new_px
 
-    def render(self, events: Sequence[Event], pulses_per_quarter: int, beats: int, beat_type: int) -> None:
+    def render(
+        self,
+        events: Sequence[NoteEvent],
+        pulses_per_quarter: int,
+        beats: int,
+        beat_type: int,
+    ) -> None:
         self._cached = (events, pulses_per_quarter, beats, beat_type)
 
     def set_cursor(self, tick: int, allow_autoscroll: bool = True) -> None:

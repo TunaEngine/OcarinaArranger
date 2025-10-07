@@ -3,7 +3,7 @@ from .key_analysis import analyze_key, compute_transpose_semitones
 from .pitch import midi_to_name, midi_to_pitch, parse_note_name, pitch_to_midi
 from .adaptation import collect_used_pitches, favor_lower_register, transform_to_ocarina
 from .exporters import export_midi, export_midi_poly, export_musicxml, export_mxl
-from .events import detect_tempo_bpm, get_note_events, get_time_signature
+from .events import NoteEvent, detect_tempo_bpm, get_note_events, get_time_signature
 
 __all__ = [
     "load_score",
@@ -18,9 +18,10 @@ __all__ = [
     "collect_used_pitches",
     "export_musicxml",
     "export_mxl",
-    "export_midi",
-    "export_midi_poly",
-    "get_note_events",
+    "export_midi", 
+    "export_midi_poly", 
+    "NoteEvent", 
+    "get_note_events", 
     "get_time_signature",
     "detect_tempo_bpm",
 ]

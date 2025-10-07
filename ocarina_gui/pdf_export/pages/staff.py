@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import DefaultDict, List, Sequence
 
+from ..header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ..layouts import PdfLayout
 from ..header import (
     build_header_lines,
@@ -197,6 +203,9 @@ def _draw_staff_page(
             tick += ticks_per_measure
 
         system_end = system_start + system_span
+        system_right_x = staff_left + 10 + system_span * scale_x
+        system_left_x = staff_left + 10
+
         system_events = [
             event
             for event in events
@@ -206,68 +215,123 @@ def _draw_staff_page(
         if not system_events:
             continue
 
-        for onset, duration, midi, _program in system_events:
-            local_onset = max(0, onset - system_start)
-            if local_onset >= system_span:
-                continue
-
-            pos = _staff_pos(midi)
+        for event in system_events:
+            pos = _staff_pos(event.midi)
             y_center = _staff_y(staff_top, pos, staff_spacing)
-            x_center = staff_left + 10 + local_onset * scale_x
             note_radius = max(3.0, staff_spacing * 0.45)
-            _draw_staff_ledger_lines(
-                page,
-                x_center,
-                note_radius,
-                staff_top,
-                pos,
-                staff_spacing,
-            )
+            drawn_segments: list[tuple[int, float, bool, bool]] = []
+            segment_offsets = (0, *event.tie_offsets)
+            system_end = system_start + system_span
 
-            glyph = describe_note_glyph(int(duration), pulses_per_quarter)
-            if glyph is not None:
-                _shade_note_head(page, x_center, y_center, note_radius, glyph)
-            else:
-                page.draw_circle(
-                    x_center,
-                    y_center,
-                    note_radius,
-                    fill_gray=0.1,
-                    stroke_gray=0.05,
-                    line_width=0.8,
+            for segment_index, (segment_duration, offset) in enumerate(
+                zip(event.tied_durations, segment_offsets)
+            ):
+                segment_start = event.onset + offset
+                segment_end = segment_start + max(1, segment_duration)
+                if segment_end <= system_start or segment_start >= system_end:
+                    continue
+                local_onset = max(0.0, segment_start - system_start)
+                if local_onset >= system_span:
+                    continue
+
+                x_center = staff_left + 10 + local_onset * scale_x
+                has_incoming = False
+                if segment_index > 0:
+                    prev_start = event.onset + segment_offsets[segment_index - 1]
+                    prev_duration = max(1, event.tied_durations[segment_index - 1])
+                    prev_end = prev_start + prev_duration
+                    has_incoming = prev_end <= system_start
+
+                has_outgoing = False
+                if segment_index < len(event.tied_durations) - 1:
+                    next_offset = event.tie_offsets[segment_index]
+                    next_start = event.onset + next_offset
+                    has_outgoing = next_start >= system_end
+
+                drawn_segments.append(
+                    (segment_index, x_center, has_incoming, has_outgoing)
                 )
-
-            if midi % 12 in SHARP_SEMITONES:
-                page.draw_text(
-                    x_center - note_radius - 6,
-                    y_center + staff_spacing * 0.25,
-                    "#",
-                    size=layout.font_size - 2,
-                )
-
-            if glyph is not None:
-                _draw_pdf_stem_and_flags(
+                _draw_staff_ledger_lines(
                     page,
                     x_center,
-                    y_center,
                     note_radius,
-                    glyph,
+                    staff_top,
                     pos,
                     staff_spacing,
                 )
-                _draw_pdf_dots(page, x_center, y_center, note_radius, glyph)
 
-            octave = midi // 12 - 1
-            if pos >= 8:
-                octave_y = y_center - staff_spacing * 1.6
-            else:
-                octave_y = y_center + staff_spacing * 1.6
-            page.draw_text(
-                x_center,
-                octave_y,
-                str(octave),
-                size=layout.font_size - 2,
-            )
+                glyph = describe_note_glyph(int(segment_duration), pulses_per_quarter)
+                if glyph is not None:
+                    _shade_note_head(page, x_center, y_center, note_radius, glyph)
+                else:
+                    page.draw_circle(
+                        x_center,
+                        y_center,
+                        note_radius,
+                        fill_gray=0.1,
+                        stroke_gray=0.05,
+                        line_width=0.8,
+                    )
+
+                if segment_index == 0 and event.midi % 12 in SHARP_SEMITONES:
+                    page.draw_text(
+                        x_center - note_radius - 6,
+                        y_center + staff_spacing * 0.25,
+                        "#",
+                        size=layout.font_size - 2,
+                    )
+
+                if glyph is not None:
+                    _draw_pdf_stem_and_flags(
+                        page,
+                        x_center,
+                        y_center,
+                        note_radius,
+                        glyph,
+                        pos,
+                        staff_spacing,
+                    )
+                    _draw_pdf_dots(page, x_center, y_center, note_radius, glyph)
+
+                if segment_index == 0:
+                    octave = event.midi // 12 - 1
+                    if pos >= 8:
+                        octave_y = y_center - staff_spacing * 1.6
+                    else:
+                        octave_y = y_center + staff_spacing * 1.6
+                    page.draw_text(
+                        x_center,
+                        octave_y,
+                        str(octave),
+                        size=layout.font_size - 2,
+                    )
+
+            if len(drawn_segments) > 1:
+                for (left_index, left_center, _, _), (
+                    right_index,
+                    right_center,
+                    _,
+                    _,
+                ) in zip(drawn_segments, drawn_segments[1:]):
+                    if right_index != left_index + 1:
+                        continue
+                    start_x = left_center + note_radius * 0.9
+                    end_x = right_center - note_radius * 0.9
+                    if end_x <= start_x:
+                        continue
+                    _draw_pdf_tie(page, start_x, end_x, y_center, staff_spacing, pos)
+
+            for segment_index, center, has_incoming, has_outgoing in drawn_segments:
+                if has_incoming:
+                    start_x = max(staff_left, system_left_x - note_radius * 3.0)
+                    end_x = center - note_radius * 0.9
+                    if end_x > start_x:
+                        _draw_pdf_tie(page, start_x, end_x, y_center, staff_spacing, pos)
+                if has_outgoing:
+                    start_x = center + note_radius * 0.9
+                    end_x = min(staff_right, system_right_x + note_radius * 3.0)
+                    if end_x > start_x:
+                        _draw_pdf_tie(page, start_x, end_x, y_center, staff_spacing, pos)
 
 
 def _shade_note_head(
@@ -384,6 +448,44 @@ def _draw_pdf_dots(
         x += gap
 
 
+def _draw_pdf_tie(
+    page: PageBuilder,
+    start_x: float,
+    end_x: float,
+    y_center: float,
+    spacing: float,
+    pos: int,
+) -> None:
+    if end_x - start_x <= 1.0:
+        return
+
+    direction = 1 if pos < 6 else -1
+    base_offset = spacing * 0.55
+    curve_offset = spacing * 0.95
+    thickness = max(0.5, spacing * 0.18)
+    base_y = y_center + direction * base_offset
+    control_y = y_center + direction * curve_offset
+    outer_base_y = base_y + direction * thickness
+    outer_control_y = control_y + direction * thickness
+    ts = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+    inner_points = [
+        (
+            start_x + (end_x - start_x) * t,
+            _quadratic_point(base_y, control_y, base_y, t),
+        )
+        for t in ts
+    ]
+    outer_points = [
+        (
+            end_x - (end_x - start_x) * t,
+            _quadratic_point(outer_base_y, outer_control_y, outer_base_y, t),
+        )
+        for t in ts
+    ]
+    page.draw_polygon(inner_points + outer_points, fill_gray=0.0, stroke_gray=None)
+
+
 def _staff_pos(midi: int) -> int:
     return int(round((midi - 64) * 7 / 12))
 
@@ -411,6 +513,10 @@ def _draw_staff_ledger_lines(
         for ledger_pos in range(10, pos + 1, 2):
             y = _staff_y(staff_top, ledger_pos, spacing)
             page.draw_line(left, y, right, y, gray=0.4, line_width=0.6)
+
+
+def _quadratic_point(start: float, control: float, end: float, t: float) -> float:
+    return (1 - t) * (1 - t) * start + 2 * (1 - t) * t * control + t * t * end
 
 
 __all__ = ["build_staff_pages"]

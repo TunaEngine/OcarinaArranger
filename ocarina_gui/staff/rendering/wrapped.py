@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
-from typing import Tuple, TYPE_CHECKING
+from typing import List, Tuple, TYPE_CHECKING
 
 from ...note_values import describe_note_glyph
 from .note_painter import NotePainter
@@ -140,79 +140,121 @@ class WrappedRenderer:
 
             start_index = bisect_left(view._event_onsets, line_start)
             while start_index > 0:
-                prev_onset, prev_duration, _prev_midi, _prev_program = view._events[start_index - 1]
-                if prev_onset + prev_duration <= line_start:
+                prev_event = view._events[start_index - 1]
+                if prev_event.onset + prev_event.duration <= line_start:
                     break
                 start_index -= 1
             width_note, height_note = 12, 9
             pulses_per_quarter_value = view._cached[1] if view._cached else pulses_per_quarter
             idx = start_index
             while idx < len(view._events):
-                onset, duration, midi, _program = view._events[idx]
+                event = view._events[idx]
+                onset = event.onset
+                duration = event.duration
                 if onset >= line_end:
                     break
                 if onset + duration <= line_start:
                     idx += 1
                     continue
-                x0 = view.LEFT_PAD + int(round((max(onset, line_start) - line_start) * view.px_per_tick))
+                midi = event.midi
                 pos = self._note_painter.staff_pos(midi)
                 y = self._note_painter.y_for_pos(y_top, pos, view.staff_spacing)
-                x_center = x0 + width_note / 2
-                self._note_painter.draw_ledger_lines(
-                    y_top,
-                    pos,
-                    x_center,
-                    width_note,
-                    ("wrapped_ledger",),
-                    state="normal",
-                )
-                if midi % 12 in (1, 3, 6, 8, 10):
-                    view.canvas.create_text(
-                        x0 - 10,
-                        y,
-                        text="#",
-                        fill=palette.accidental_text,
-                        font=("TkDefaultFont", 10),
+                segment_offsets = (0, *event.tie_offsets)
+                visible_segments: List[float] = []
+
+                for segment_index, (segment_duration, offset) in enumerate(
+                    zip(event.tied_durations, segment_offsets)
+                ):
+                    segment_onset = onset + offset
+                    segment_end = segment_onset + max(1, segment_duration)
+                    if segment_end <= line_start or segment_onset >= line_end:
+                        continue
+                    if segment_onset < line_start:
+                        continue
+                    x0 = view.LEFT_PAD + int(
+                        round((segment_onset - line_start) * view.px_per_tick)
                     )
-                glyph = describe_note_glyph(int(duration), pulses_per_quarter_value)
-                fill_color = palette.note_fill
-                if glyph is not None and glyph.base in {"whole", "half"}:
-                    fill_color = palette.background
-                view.canvas.create_oval(
-                    x0,
-                    y - height_note / 2,
-                    x0 + width_note,
-                    y + height_note / 2,
-                    outline=palette.note_outline,
-                    fill=fill_color,
-                )
-                if glyph is not None:
-                    self._note_painter.draw_note_stem_and_flags(
-                        x0,
-                        y,
-                        width_note,
-                        glyph,
+                    x_center = x0 + width_note / 2
+                    visible_segments.append(x_center)
+                    self._note_painter.draw_ledger_lines(
+                        y_top,
                         pos,
-                        ("wrapped_stem",),
-                        state="normal",
-                    )
-                    self._note_painter.draw_dots(
-                        x0,
-                        y,
+                        x_center,
                         width_note,
-                        glyph,
-                        ("wrapped_dot",),
+                        ("wrapped_ledger",),
                         state="normal",
                     )
-                octave = midi // 12 - 1
-                octave_y = y - view.staff_spacing * 1.6 if pos >= 8 else y + view.staff_spacing * 1.6
-                view.canvas.create_text(
-                    x_center,
-                    octave_y,
-                    text=str(octave),
-                    fill=palette.header_text,
-                    font=("TkDefaultFont", 9),
-                )
+
+                    if segment_index == 0 and midi % 12 in (1, 3, 6, 8, 10):
+                        view.canvas.create_text(
+                            x0 - 10,
+                            y,
+                            text="#",
+                            fill=palette.accidental_text,
+                            font=("TkDefaultFont", 10),
+                        )
+
+                    glyph = describe_note_glyph(int(segment_duration), pulses_per_quarter_value)
+                    fill_color = palette.note_fill
+                    if glyph is not None and glyph.base in {"whole", "half"}:
+                        fill_color = palette.background
+                    view.canvas.create_oval(
+                        x0,
+                        y - height_note / 2,
+                        x0 + width_note,
+                        y + height_note / 2,
+                        outline=palette.note_outline,
+                        fill=fill_color,
+                    )
+
+                    if glyph is not None:
+                        self._note_painter.draw_note_stem_and_flags(
+                            x0,
+                            y,
+                            width_note,
+                            glyph,
+                            pos,
+                            ("wrapped_stem",),
+                            state="normal",
+                        )
+                        self._note_painter.draw_dots(
+                            x0,
+                            y,
+                            width_note,
+                            glyph,
+                            ("wrapped_dot",),
+                            state="normal",
+                        )
+
+                    if segment_index == 0:
+                        octave = midi // 12 - 1
+                        octave_y = (
+                            y - view.staff_spacing * 1.6
+                            if pos >= 8
+                            else y + view.staff_spacing * 1.6
+                        )
+                        view.canvas.create_text(
+                            x_center,
+                            octave_y,
+                            text=str(octave),
+                            fill=palette.header_text,
+                            font=("TkDefaultFont", 9),
+                        )
+
+                if len(visible_segments) > 1:
+                    for start_center, end_center in zip(
+                        visible_segments, visible_segments[1:]
+                    ):
+                        if end_center <= start_center:
+                            continue
+                        self._note_painter.draw_tie(
+                            y_top,
+                            pos,
+                            start_center + width_note * 0.45,
+                            end_center - width_note * 0.45,
+                            ("wrapped_tie",),
+                            state="normal",
+                        )
                 idx += 1
 
         view.cursor.create_cursor_lines(total_height)

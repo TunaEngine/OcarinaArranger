@@ -6,7 +6,7 @@ import logging
 import tkinter as tk
 
 from shared.ttk import ttk
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from ...scrolling import AutoScrollMode, normalize_auto_scroll_mode
 from ...themes import StaffPalette, ThemeSpec, get_current_theme, register_theme_listener
@@ -15,6 +15,7 @@ from ..cursor import CursorController
 from ..rendering import StaffRenderer
 from ..scrollbars import ScrollbarManager
 from .types import Event
+from ocarina_tools import NoteEvent
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class StaffViewBase(ttk.Frame):
         self.LEFT_PAD = 10
         self.RIGHT_PAD = 120
         self.staff_spacing = 8
-        self._cached: Optional[Tuple[Sequence[Event], int, int, int]] = None
+        self._cached: Optional[Tuple[Sequence[Event | Tuple[int, int, int, int]], int, int, int]] = None
         self._x_targets: List[tk.Canvas] = []
         self._cursor_line: Optional[int] = None
         self._secondary_cursor_line: Optional[int] = None
@@ -168,7 +169,7 @@ class StaffViewBase(ttk.Frame):
 
     def render(
         self,
-        events: Sequence[Event],
+        events: Sequence[Event | Tuple[int, int, int, int]],
         pulses_per_quarter: int,
         beats: int = 4,
         beat_type: int = 4,
@@ -180,15 +181,16 @@ class StaffViewBase(ttk.Frame):
         self._active_virtual_tag_index = 0
         self._scrollbars.reset_scroll_fraction()
 
-        sorted_events = tuple(sorted(events, key=lambda item: item[0]))
+        normalized_events = tuple(self._normalize_events(events))
+        sorted_events = tuple(sorted(normalized_events, key=lambda item: item[0]))
         total_ticks = (
-            max((onset + duration) for (onset, duration, _midi, _program) in sorted_events)
+            max((event.onset + event.duration) for event in sorted_events)
             if sorted_events
             else 0
         )
         self._total_ticks = total_ticks
         self._events = sorted_events
-        self._event_onsets = tuple(event[0] for event in sorted_events)
+        self._event_onsets = tuple(event.onset for event in sorted_events)
 
         ticks_per_beat = int(pulses_per_quarter * (4 / beat_type))
         self._ticks_per_measure = max(1, beats * ticks_per_beat)
@@ -197,6 +199,16 @@ class StaffViewBase(ttk.Frame):
             return
 
         self._renderer.render_horizontal(sorted_events, beats, beat_type)
+
+    def _normalize_events(
+        self, events: Sequence[Event | Tuple[int, int, int, int]]
+    ) -> Iterable[Event]:
+        for event in events:
+            if isinstance(event, NoteEvent):
+                yield event
+            else:
+                onset, duration, midi, program = event  # type: ignore[misc]
+                yield NoteEvent(onset, duration, midi, program)
 
     def _on_canvas_configure(self, _event: tk.Event) -> None:
         if self._layout_mode == "wrapped":

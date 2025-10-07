@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional
 
 
 DEFAULT_COLUMNS = {
@@ -91,6 +91,6 @@ class PdfExportOptions:
         return 2 if size == "A6" else 4
 
 
-NoteEvent = Tuple[int, int, int, int]
+from ocarina_tools import NoteEvent
 
 __all__ = ["DEFAULT_COLUMNS", "NoteEvent", "PdfExportOptions"]

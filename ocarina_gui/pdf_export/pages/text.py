@@ -1,4 +1,4 @@
-"""Textual presentation page for the arranged PDF."""
+"""Rendering helpers for the arranged text-only pages."""
 
 from __future__ import annotations
 
@@ -195,3 +195,4 @@ def _fingering_column_offset(
 
 
 __all__ = ["build_text_page"]
+

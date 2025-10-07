@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Sequence, Tuple
 
 from ocarina_tools import (
+    NoteEvent,
     detect_tempo_bpm,
     favor_lower_register,
     get_note_events,
@@ -18,13 +19,10 @@ from ocarina_tools import (
 
 from .settings import TransformSettings
 
-Event = Tuple[int, int, int, int]
-
-
 @dataclass(frozen=True)
 class PreviewData:
-    original_events: Sequence[Event]
-    arranged_events: Sequence[Event]
+    original_events: Sequence[NoteEvent]
+    arranged_events: Sequence[NoteEvent]
     pulses_per_quarter: int
     beats: int
     beat_type: int
@@ -76,24 +74,20 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
     )
 
 
-def _calculate_range(events: Sequence[Event], default_range: Tuple[int, int]) -> Tuple[int, int]:
+def _calculate_range(events: Sequence[NoteEvent], default_range: Tuple[int, int]) -> Tuple[int, int]:
     if not events:
         return default_range
-    lowest = min(midi for (_, _, midi, _program) in events)
-    highest = max(midi for (_, _, midi, _program) in events)
+    lowest = min(event.midi for event in events)
+    highest = max(event.midi for event in events)
     return lowest, highest
 
 
-def _trim_leading_silence(events: Sequence[Event]) -> list[Event]:
+def _trim_leading_silence(events: Sequence[NoteEvent]) -> list[NoteEvent]:
     if not events:
         return list(events)
 
-    earliest_onset = min(onset for onset, _duration, _midi, _program in events)
+    earliest_onset = min(event.onset for event in events)
     if earliest_onset <= 0:
         return list(events)
 
-    offset_events = [
-        (onset - earliest_onset, duration, midi, program)
-        for onset, duration, midi, program in events
-    ]
-    return offset_events
+    return [event.shift(-earliest_onset) for event in events]

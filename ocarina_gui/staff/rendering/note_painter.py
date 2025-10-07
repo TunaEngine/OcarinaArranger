@@ -156,6 +156,50 @@ class NotePainter:
             )
             x += gap
 
+    def draw_tie(
+        self,
+        y_top: int,
+        pos: int,
+        start_x: float,
+        end_x: float,
+        tags: Tuple[str, ...],
+        *,
+        state: str = "hidden",
+    ) -> None:
+        """Draw a curved tie between two note heads."""
+
+        if end_x - start_x < 1.0:
+            return
+
+        view = self._view
+        y_center = self.y_for_pos(y_top, pos, view.staff_spacing)
+        direction = 1 if pos < 6 else -1
+        base_offset = view.staff_spacing * 0.55
+        curve_offset = view.staff_spacing * 0.95
+        base_y = y_center + direction * base_offset
+        control_y = y_center + direction * curve_offset
+        width = max(1.1, view.staff_spacing * 0.14)
+        span = end_x - start_x
+        control_dx = span * 0.35
+        points = (
+            start_x,
+            base_y,
+            start_x + control_dx,
+            control_y,
+            end_x - control_dx,
+            control_y,
+            end_x,
+            base_y,
+        )
+        view.canvas.create_line(
+            *points,
+            smooth=True,
+            width=width,
+            fill=view._palette.note_outline,
+            tags=tags,
+            state=state,
+        )
+
     def _ledger_line(
         self,
         y_top: int,

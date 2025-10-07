@@ -160,89 +160,129 @@ class HorizontalRenderer:
             start_index = bisect_left(view._event_onsets, tick_left)
             while start_index > 0:
                 prev_event = view._events[start_index - 1]
-                if prev_event[0] + prev_event[1] < tick_left:
+                if prev_event.onset + prev_event.duration < tick_left:
                     break
                 start_index -= 1
             visible_events = []
             for idx in range(start_index, len(view._events)):
-                onset, duration, midi, program = view._events[idx]
+                event = view._events[idx]
+                onset = event.onset
                 if onset > tick_right:
                     break
-                if onset + duration < tick_left:
+                if onset + event.duration < tick_left:
                     continue
-                visible_events.append((onset, duration, midi, program))
+                visible_events.append(event)
 
         width_note, height_note = 12, 9
         pulses_per_quarter = view._cached[1] if view._cached else 480
-        for onset, duration, midi, _program in visible_events:
-            x0 = view.LEFT_PAD + int(onset * view.px_per_tick)
-            pos = self._note_painter.staff_pos(midi)
+        for event in visible_events:
+            onset = event.onset
+            pos = self._note_painter.staff_pos(event.midi)
             y = self._note_painter.y_for_pos(y_top, pos, view.staff_spacing)
-            x_center = x0 + width_note / 2
-            ledger_tags = (new_tag, "virtualized", "ledger_line")
-            self._note_painter.draw_ledger_lines(
-                y_top,
-                pos,
-                x_center,
-                width_note,
-                ledger_tags,
-            )
-            if midi % 12 in (1, 3, 6, 8, 10):
-                view.canvas.create_text(
-                    x0 - 10,
-                    y,
-                    text="#",
-                    fill=palette.accidental_text,
-                    font=("TkDefaultFont", 10),
-                    state="hidden",
-                    tags=(new_tag, "virtualized", "accidental"),
-                )
+            segment_offsets = (0, *event.tie_offsets)
+            segment_count = len(event.tied_durations)
+            segment_data: List[tuple[int, int, float]] = []
 
-            glyph = describe_note_glyph(int(duration), pulses_per_quarter)
-            fill_color = palette.note_fill
-            if glyph is not None and glyph.base in {"whole", "half"}:
-                fill_color = palette.background
-            view.canvas.create_oval(
-                x0,
-                y - height_note / 2,
-                x0 + width_note,
-                y + height_note / 2,
-                outline=palette.note_outline,
-                fill=fill_color,
-                state="hidden",
-                tags=(new_tag, "virtualized", "staff_note"),
-            )
+            for segment_index, (segment_duration, offset) in enumerate(
+                zip(event.tied_durations, segment_offsets)
+            ):
+                segment_onset = onset + offset
+                if segment_onset + max(1, segment_duration) < tick_left:
+                    continue
+                x0 = view.LEFT_PAD + int(segment_onset * view.px_per_tick)
+                x_center = x0 + width_note / 2
+                segment_data.append((segment_duration, segment_index, x_center))
 
-            if glyph is not None:
-                stem_tags = (new_tag, "virtualized", "note_stem")
-                self._note_painter.draw_note_stem_and_flags(
-                    x0,
-                    y,
-                    width_note,
-                    glyph,
-                    pos,
-                    stem_tags,
-                )
-                dot_tags = (new_tag, "virtualized", "note_dot")
-                self._note_painter.draw_dots(
-                    x0,
-                    y,
-                    width_note,
-                    glyph,
-                    dot_tags,
-                )
+                if segment_onset <= tick_right:
+                    ledger_tags = (new_tag, "virtualized", "ledger_line")
+                    self._note_painter.draw_ledger_lines(
+                        y_top,
+                        pos,
+                        x_center,
+                        width_note,
+                        ledger_tags,
+                    )
 
-            octave = midi // 12 - 1
-            octave_y = y - view.staff_spacing * 1.6 if pos >= 8 else y + view.staff_spacing * 1.6
-            view.canvas.create_text(
-                x_center,
-                octave_y,
-                text=str(octave),
-                fill=palette.header_text,
-                font=("TkDefaultFont", 9),
-                state="hidden",
-                tags=(new_tag, "virtualized", "octave_label"),
-            )
+                    if segment_index == 0 and event.midi % 12 in (1, 3, 6, 8, 10):
+                        view.canvas.create_text(
+                            x0 - 10,
+                            y,
+                            text="#",
+                            fill=palette.accidental_text,
+                            font=("TkDefaultFont", 10),
+                            state="hidden",
+                            tags=(new_tag, "virtualized", "accidental"),
+                        )
+
+                    glyph = describe_note_glyph(int(segment_duration), pulses_per_quarter)
+                    fill_color = palette.note_fill
+                    if glyph is not None and glyph.base in {"whole", "half"}:
+                        fill_color = palette.background
+                    view.canvas.create_oval(
+                        x0,
+                        y - height_note / 2,
+                        x0 + width_note,
+                        y + height_note / 2,
+                        outline=palette.note_outline,
+                        fill=fill_color,
+                        state="hidden",
+                        tags=(new_tag, "virtualized", "staff_note"),
+                    )
+
+                    if glyph is not None:
+                        stem_tags = (new_tag, "virtualized", "note_stem")
+                        self._note_painter.draw_note_stem_and_flags(
+                            x0,
+                            y,
+                            width_note,
+                            glyph,
+                            pos,
+                            stem_tags,
+                        )
+                        dot_tags = (new_tag, "virtualized", "note_dot")
+                        self._note_painter.draw_dots(
+                            x0,
+                            y,
+                            width_note,
+                            glyph,
+                            dot_tags,
+                        )
+
+                    if segment_index == 0:
+                        octave = event.midi // 12 - 1
+                        octave_y = (
+                            y - view.staff_spacing * 1.6
+                            if pos >= 8
+                            else y + view.staff_spacing * 1.6
+                        )
+                        view.canvas.create_text(
+                            x_center,
+                            octave_y,
+                            text=str(octave),
+                            fill=palette.header_text,
+                            font=("TkDefaultFont", 9),
+                            state="hidden",
+                            tags=(new_tag, "virtualized", "octave_label"),
+                        )
+
+            if segment_count > 1 and segment_data:
+                tie_tags = (new_tag, "virtualized", "note_tie")
+                for idx in range(len(segment_data) - 1):
+                    _, _, start_center = segment_data[idx]
+                    _, _, end_center = segment_data[idx + 1]
+                    start_x = start_center + width_note * 0.45
+                    end_x = end_center - width_note * 0.45
+                    if end_x <= start_x:
+                        continue
+                    if end_x < draw_left - width_note or start_x > draw_right + width_note:
+                        continue
+                    self._note_painter.draw_tie(
+                        y_top,
+                        pos,
+                        start_x,
+                        end_x,
+                        tie_tags,
+                    )
 
         view.canvas.itemconfigure(new_tag, state="normal")
         if view.canvas.find_withtag("overlay"):

@@ -18,7 +18,7 @@ from ocarina_gui.pdf_export.pages.fingering import build_fingering_pages
 from ocarina_gui.pdf_export.pages.piano_roll import build_piano_roll_pages
 from ocarina_gui.pdf_export.pages.staff import build_staff_pages
 from ocarina_gui.pdf_export.pages.text import build_text_page
-from ocarina_gui.pdf_export.types import PdfExportOptions
+from ocarina_gui.pdf_export.types import NoteEvent, PdfExportOptions
 from ocarina_gui.pdf_export.writer import PageBuilder
 from tests.helpers import make_linear_score
 
@@ -108,9 +108,9 @@ def test_header_link_draws_blue_hyperlink() -> None:
 def test_staff_pdf_includes_measure_numbers() -> None:
     layout = resolve_layout("A4", "portrait")
     events = [
-        (0, 240, 60, 0),
-        (1920, 240, 62, 0),
-        (3840, 240, 64, 0),
+        NoteEvent(0, 240, 60, 0),
+        NoteEvent(1920, 240, 62, 0),
+        NoteEvent(3840, 240, 64, 0),
     ]
 
     pages = build_staff_pages(layout, events, pulses_per_quarter=480)
@@ -130,9 +130,9 @@ def test_staff_pdf_includes_measure_numbers() -> None:
 def test_piano_roll_pdf_includes_measure_numbers() -> None:
     layout = resolve_layout("A4", "portrait")
     events = [
-        (0, 240, 60, 0),
-        (1920, 240, 62, 0),
-        (3840, 240, 64, 0),
+        NoteEvent(0, 240, 60, 0),
+        NoteEvent(1920, 240, 62, 0),
+        NoteEvent(3840, 240, 64, 0),
     ]
 
     pages = build_piano_roll_pages(layout, events, pulses_per_quarter=480, prefer_flats=False)
@@ -430,8 +430,8 @@ def test_group_patterns_handles_mixed_accidentals_and_octaves() -> None:
 def test_staff_page_draws_ledger_lines_and_octave_labels() -> None:
     layout = resolve_layout("A4", "portrait")
     events = [
-        (0, 120, 52, 0),
-        (480, 120, 84, 0),
+        NoteEvent(0, 120, 52, 0),
+        NoteEvent(480, 120, 84, 0),
     ]
 
     pages = build_staff_pages(layout, events, pulses_per_quarter=480)
