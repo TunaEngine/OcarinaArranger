@@ -82,9 +82,27 @@ def load_real_module(module_name: str) -> Optional[ModuleType]:
             sys.modules[module_name] = shim_module
     else:
         # ``import_module`` already placed the genuine module into
-        # ``sys.modules``. We deliberately do *not* restore the shim entry so
-        # subsequent imports resolve to the real package when available.
-        pass
+        # ``sys.modules``. Make sure the shim stays discoverable as the
+        # ``pytest_bdd._shim`` submodule so call-sites (and our tests) can
+        # import it even when the real dependency exists locally.
+        shim_module = sys.modules.get(__name__)
+        if shim_module is not None:
+            sys.modules[f"{module_name}._shim"] = shim_module
+
+            # Allow ``importlib`` to locate the shim by adding the shim's
+            # directory to the real package's ``__path__``.  ``module.__path__``
+            # may be a non-list (e.g. ``_NamespacePath``), so normalise it to a
+            # list before appending the new entry.
+            package_path = getattr(module, "__path__", None)
+            if package_path is not None:
+                extra_path = str(_SHIM_ROOT / module_name.replace(".", "/"))
+                if extra_path not in package_path:
+                    try:
+                        new_path = list(package_path)
+                    except TypeError:
+                        new_path = list(package_path._path)  # pragma: no cover - defensive
+                    new_path.append(extra_path)
+                    module.__path__ = new_path
     finally:
         sys.path = original_sys_path
 

@@ -4,6 +4,21 @@ from __future__ import annotations
 
 from .resources import MAIN_WINDOW_RESOURCE_PACKAGE, get_main_window_resource
 
+# Backwards compatibility re-exports used by tests and legacy callers.
+from app.version import get_app_version as _get_app_version
+from ocarina_gui.fingering import (
+    FingeringGridView as _FingeringGridView,
+    FingeringView as _FingeringView,
+)
+from ocarina_gui.preferences import load_preferences as _load_preferences
+from shared.logging_config import ensure_app_logging as _ensure_app_logging
+
+ensure_app_logging = _ensure_app_logging
+get_app_version = _get_app_version
+load_preferences = _load_preferences
+FingeringView = _FingeringView
+FingeringGridView = _FingeringGridView
+
 _IMPORT_ERROR: Exception | None = None
 
 try:
@@ -62,6 +77,11 @@ __all__ = [
     "MainWindowInitialisationMixin",
     "MAIN_WINDOW_RESOURCE_PACKAGE",
     "get_main_window_resource",
+    "ensure_app_logging",
+    "get_app_version",
+    "load_preferences",
+    "FingeringView",
+    "FingeringGridView",
     "_get_main_window_resource",
 ]
 

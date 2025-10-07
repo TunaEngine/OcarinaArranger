@@ -14,13 +14,20 @@ pytestmark = pytest.mark.usefixtures("ensure_original_preview")
 
 def _lookup_state_value(style, style_name: str, option: str, state: str) -> str | None:
     entries = style.map(style_name, query_opt=option)
-    for statespec, value in entries:
-        if isinstance(statespec, str):
-            tokens = statespec.split()
-        else:
-            tokens = []
-            for token in statespec:
-                tokens.extend(str(token).split())
+    for entry in entries:
+        if not entry:
+            continue
+
+        *statespec_parts, value = entry
+        tokens: list[str] = []
+        if not statespec_parts:
+            tokens.append("")
+        for spec in statespec_parts:
+            if isinstance(spec, str):
+                tokens.extend(spec.split())
+            else:
+                for token in spec:
+                    tokens.extend(str(token).split())
         if state in tokens:
             return value
     return None

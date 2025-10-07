@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from ocarina_gui import themes
+
 
 class PreviewTabManagementMixin:
     """Ensure preview tabs are created lazily and track selection."""
@@ -14,6 +16,17 @@ class PreviewTabManagementMixin:
         builder = self._preview_tab_builders.pop(side, None)
         if builder is not None:
             builder()
+            if side == "original":
+                target = getattr(self, "roll_orig", None)
+            elif side == "arranged":
+                target = getattr(self, "roll_arr", None)
+            else:
+                target = None
+            if target is not None:
+                try:
+                    target.apply_palette(themes.get_current_theme().palette.piano_roll)
+                except Exception:
+                    pass
         self._preview_tab_initialized.add(side)
         self._load_pending_preview_playback(side)
         pending = getattr(self, "_pending_preview_data", None)

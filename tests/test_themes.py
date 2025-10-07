@@ -35,6 +35,13 @@ def test_default_theme_is_loaded(reset_theme):
     assert palette.piano_roll.background.startswith("#")
     assert palette.piano_roll.cursor_primary.startswith("#")
     assert palette.staff.background.startswith("#")
+    assert palette.layout_editor.workspace_background.startswith("#")
+    assert palette.layout_editor.instrument_surface.startswith("#")
+    assert palette.layout_editor.instrument_outline.startswith("#")
+    assert palette.layout_editor.hole_outline.startswith("#")
+    assert palette.layout_editor.covered_fill.startswith("#")
+    assert palette.layout_editor.grid_line.startswith("#")
+    assert palette.layout_editor.selection_outline.startswith("#")
 
 
 def test_available_themes_includes_dark(reset_theme):
@@ -53,6 +60,9 @@ def test_can_switch_to_dark_theme(reset_theme):
     assert palette.text_primary != palette.text_muted
     assert palette.text_cursor != palette.text_primary
     assert palette.piano_roll.accidental_row_fill != palette.piano_roll.natural_row_fill
+    assert palette.layout_editor.workspace_background != "#f8f9fa"
+    assert palette.layout_editor.handle_fill != palette.layout_editor.handle_outline
+    assert palette.layout_editor.instrument_surface != palette.layout_editor.hole_fill
 
 
 def test_set_active_theme_persists_selection(reset_theme):

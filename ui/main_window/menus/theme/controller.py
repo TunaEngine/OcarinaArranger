@@ -272,6 +272,12 @@ class ThemeMenuMixin(ThemePaletteMixin):
             except tk.TclError:
                 continue
 
+        try:
+            self.option_add("*Canvas.background", palette.piano_roll.background, 100)
+            self.option_add("*Canvas.highlightBackground", palette.piano_roll.background, 100)
+        except tk.TclError:
+            logger.debug("Unable to register canvas palette defaults", exc_info=True)
+
         set_ttk_caret_color(style, insert_color)
         for pattern in INSERT_BACKGROUND_PATTERNS:
             try:
@@ -284,8 +290,24 @@ class ThemeMenuMixin(ThemePaletteMixin):
         self._apply_menu_palette(theme.palette)
 
         for roll in (self.roll_orig, self.roll_arr):
-            if roll is not None:
+            if roll is None:
+                continue
+            try:
                 roll.apply_palette(palette.piano_roll)
+            except Exception:
+                logger.debug("Failed to apply piano roll palette", exc_info=True)
+            else:
+                canvas = getattr(roll, "canvas", None)
+                if canvas is not None:
+                    try:
+                        canvas.configure(background=palette.piano_roll.background)
+                    except tk.TclError:
+                        logger.debug("Unable to enforce piano roll canvas background", exc_info=True)
+                    else:
+                        try:
+                            canvas.tk.call(canvas._w, "configure", "-background", palette.piano_roll.background)
+                        except tk.TclError:
+                            logger.debug("Tk refused direct canvas background update", exc_info=True)
 
         for staff in (self.staff_orig, self.staff_arr):
             if staff is not None:

@@ -178,7 +178,7 @@ def test_half_hole_instrument_preview_handles_repeated_clicks():
 
 
 @pytest.mark.gui
-def test_fingering_view_swaps_colors_in_dark_theme():
+def test_fingering_view_uses_theme_palette_colors():
     try:
         root = tk.Tk()
     except tk.TclError:
@@ -192,8 +192,13 @@ def test_fingering_view_swaps_colors_in_dark_theme():
         themes.set_active_theme("light")
         default_view = FingeringView(root)
         root.update_idletasks()
-        style = default_view._instrument.style  # type: ignore[attr-defined]
-        assert default_view.cget("background").lower() == style.background_color.lower()
+        palette = themes.get_current_theme().palette.layout_editor
+        colors = default_view._resolve_canvas_colors()  # type: ignore[attr-defined]
+        assert default_view.cget("background").lower() == palette.instrument_surface.lower()
+        assert colors.background.lower() == palette.instrument_surface.lower()
+        assert colors.outline.lower() == palette.instrument_outline.lower()
+        assert colors.hole_outline.lower() == palette.hole_outline.lower()
+        assert colors.covered_fill.lower() == palette.covered_fill.lower()
 
         default_view.destroy()
         default_view = None
@@ -201,10 +206,13 @@ def test_fingering_view_swaps_colors_in_dark_theme():
         themes.set_active_theme("dark")
         dark_view = FingeringView(root)
         root.update_idletasks()
+        palette = themes.get_current_theme().palette.layout_editor
         colors = dark_view._resolve_canvas_colors()  # type: ignore[attr-defined]
-        assert dark_view.cget("background").lower() == colors.background.lower()
-        assert colors.background.lower() == style.hole_outline_color.lower()
-        assert colors.hole_outline.lower() == style.background_color.lower()
+        assert dark_view.cget("background").lower() == palette.instrument_surface.lower()
+        assert colors.background.lower() == palette.instrument_surface.lower()
+        assert colors.outline.lower() == palette.instrument_outline.lower()
+        assert colors.hole_outline.lower() == palette.hole_outline.lower()
+        assert colors.covered_fill.lower() == palette.covered_fill.lower()
     finally:
         themes.set_active_theme(original_theme)
         if default_view is not None:

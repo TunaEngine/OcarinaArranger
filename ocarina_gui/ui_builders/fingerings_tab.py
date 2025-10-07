@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import tkinter as tk
-from shared.ttk import ttk
 from typing import TYPE_CHECKING
+
+from shared.ttk import ttk
 
 from ..fingering import (
     FingeringGridView,
@@ -12,13 +13,32 @@ from ..fingering import (
     get_available_instruments,
     get_current_instrument,
 )
-from shared.tk_style import apply_round_scrollbar_style
+from shared.tk_style import apply_round_scrollbar_style, configure_style, get_ttk_style
 
 if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
     from ..app import App
 
 
 __all__ = ["build_fingerings_tab"]
+
+_PANED_STYLE_NAME = "Fingerings.Vertical.TPanedwindow"
+
+
+def _resolve_paned_style(master: tk.Misc) -> str | None:
+    """Return a panedwindow style with a wider sash when supported."""
+
+    try:
+        style = get_ttk_style(master)
+    except Exception:
+        return None
+
+    if configure_style(style, _PANED_STYLE_NAME, sashrelief="flat", sashthickness=12):
+        return _PANED_STYLE_NAME
+
+    # Some ttk variants may not expose ``sashthickness``; fall back to
+    # configuring only the relief so the call succeeds without raising.
+    configure_style(style, _PANED_STYLE_NAME, sashrelief="flat")
+    return None
 
 
 def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
@@ -75,7 +95,11 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     content.columnconfigure(0, weight=1)
     content.rowconfigure(0, weight=1)
 
-    panes = ttk.Panedwindow(content, orient="vertical")
+    style_name = _resolve_paned_style(content)
+    if style_name:
+        panes = ttk.Panedwindow(content, orient="vertical", style=style_name)
+    else:
+        panes = ttk.Panedwindow(content, orient="vertical")
     panes.grid(row=0, column=0, sticky="nsew")
 
     top_section = ttk.Frame(panes, style="Panel.TFrame")

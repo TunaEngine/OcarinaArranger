@@ -1,4 +1,4 @@
-"""Canvas widget that toggles fingering patterns for a note."""
+"""Canvas widget that visualises and edits fingering patterns."""
 
 from __future__ import annotations
 
@@ -9,38 +9,59 @@ import tkinter as tk
 from ..color_utils import hex_to_rgb, mix_colors, rgb_to_hex
 from viewmodels.instrument_layout_editor_viewmodel import InstrumentLayoutState
 from ocarina_gui.fingering.outline_renderer import OutlineImage, render_outline_photoimage
+from ocarina_gui.themes import (
+    LayoutEditorPalette,
+    ThemeSpec,
+    get_current_theme,
+    register_theme_listener,
+)
 
 
 class FingeringPatternCanvas(tk.Canvas):
     """Interactive canvas that toggles fingering patterns for a note."""
 
     def __init__(self, master: tk.Misc, *, on_toggle: Callable[[int, int], bool]) -> None:
-        super().__init__(master, background="#f7f7f7", highlightthickness=0)
+        theme = get_current_theme()
+        palette = theme.palette.layout_editor
+        super().__init__(
+            master,
+            background=palette.workspace_background,
+            highlightthickness=0,
+        )
         self._on_toggle = on_toggle
         self._margin = 24
         self._state: InstrumentLayoutState | None = None
         self._pattern: List[int] = []
         self._hole_items: List[int] = []
-        self._half_fill_color = "#b0b0b0"
+        self._palette: LayoutEditorPalette = palette
+        self._text_muted = theme.palette.text_muted
+        self._workspace_background = palette.workspace_background
+        self._instrument_surface = palette.instrument_surface
+        self._instrument_outline = palette.instrument_outline
+        self._hole_outline = palette.hole_outline
+        self._hole_fill = palette.hole_fill
+        self._covered_fill = palette.covered_fill
+        self._half_fill_color = self._compute_half_fill_color(
+            self._hole_fill, self._covered_fill
+        )
         self._default_size = (280, 200)
         self.configure(width=self._default_size[0], height=self._default_size[1])
         self.bind("<ButtonPress-1>", self._on_click)
         self._outline_image: OutlineImage | None = None
         self._outline_cache_key: tuple | None = None
+        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
 
     def render(self, state: InstrumentLayoutState, pattern: Sequence[int]) -> None:
         self._state = state
         self._pattern = [max(0, min(2, int(value))) for value in pattern]
         width = state.canvas_width + 2 * self._margin
         height = state.canvas_height + 2 * self._margin
-        background = state.style.background_color or "#ffffff"
+        background = self._instrument_surface
+        covered = self._covered_fill
         self.configure(width=width, height=height, background=background)
         self.delete("all")
         self._hole_items = []
-        self._half_fill_color = self._compute_half_fill_color(
-            background,
-            state.style.covered_fill_color or "#000000",
-        )
+        self._half_fill_color = self._compute_half_fill_color(background, covered)
 
         if state.outline_points:
             pixel_points = [
@@ -49,7 +70,7 @@ class FingeringPatternCanvas(tk.Canvas):
             ]
             if state.outline_closed and pixel_points and pixel_points[0] != pixel_points[-1]:
                 pixel_points = pixel_points + [pixel_points[0]]
-            outline_color = state.style.outline_color or "#4f4f4f"
+            outline_color = self._instrument_outline
             spline_steps = max(1, int(getattr(state.style, "outline_spline_steps", 48)))
             stroke_width = max(0.5, float(state.style.outline_width))
             cache_key = (
@@ -98,7 +119,7 @@ class FingeringPatternCanvas(tk.Canvas):
                 width / 2,
                 height / 2,
                 text="Add holes to edit fingerings",
-                fill="#666666",
+                fill=self._text_muted,
                 font=("TkDefaultFont", 9),
                 width=max(100, width - 40),
             )
@@ -109,17 +130,13 @@ class FingeringPatternCanvas(tk.Canvas):
             y = hole.y + self._margin
             radius = hole.radius
             value = self._pattern[index] if index < len(self._pattern) else 0
-            fill, stipple = self._fill_for_value(
-                value,
-                background,
-                state.style.covered_fill_color or "#000000",
-            )
+            fill, stipple = self._fill_for_value(value, background, covered)
             item = self.create_oval(
                 x - radius,
                 y - radius,
                 x + radius,
                 y + radius,
-                outline=state.style.hole_outline_color,
+                outline=self._hole_outline,
                 width=1,
                 fill=fill,
                 stipple=stipple,
@@ -130,11 +147,13 @@ class FingeringPatternCanvas(tk.Canvas):
         self._state = None
         self._pattern = []
         self._hole_items = []
-        self._half_fill_color = "#b0b0b0"
+        self._half_fill_color = self._compute_half_fill_color(
+            self._hole_fill, self._covered_fill
+        )
         self.configure(
             width=self._default_size[0],
             height=self._default_size[1],
-            background="#f7f7f7",
+            background=self._workspace_background,
         )
         self.delete("all")
         if message:
@@ -142,7 +161,7 @@ class FingeringPatternCanvas(tk.Canvas):
                 self._default_size[0] / 2,
                 self._default_size[1] / 2,
                 text=message,
-                fill="#666666",
+                fill=self._text_muted,
                 font=("TkDefaultFont", 9),
                 width=self._default_size[0] - 24,
             )
@@ -153,8 +172,8 @@ class FingeringPatternCanvas(tk.Canvas):
         state = self._state
         if state is None:
             return
-        background = state.style.background_color or "#ffffff"
-        covered = state.style.covered_fill_color or "#000000"
+        background = self._instrument_surface
+        covered = self._covered_fill
         fill, stipple = self._fill_for_value(value, background, covered)
         self.itemconfigure(self._hole_items[index], fill=fill, stipple=stipple)
         if index >= len(self._pattern):
@@ -199,6 +218,41 @@ class FingeringPatternCanvas(tk.Canvas):
             return base_covered
         mixed = mix_colors(covered_rgb, bg_rgb, 0.5)
         return rgb_to_hex(mixed)
+
+    # ------------------------------------------------------------------
+    def _apply_palette(self, theme: ThemeSpec) -> None:
+        palette = theme.palette.layout_editor
+        self._palette = palette
+        self._text_muted = theme.palette.text_muted
+        self._workspace_background = palette.workspace_background
+        self._instrument_surface = palette.instrument_surface
+        self._instrument_outline = palette.instrument_outline
+        self._hole_outline = palette.hole_outline
+        self._hole_fill = palette.hole_fill
+        self._covered_fill = palette.covered_fill
+        self._half_fill_color = self._compute_half_fill_color(
+            self._hole_fill, self._covered_fill
+        )
+        if self._state is None:
+            self.configure(background=self._workspace_background)
+
+    def _on_theme_changed(self, theme: ThemeSpec) -> None:
+        self._apply_palette(theme)
+        state = self._state
+        if state is not None:
+            try:
+                self.render(state, self._pattern)
+            except Exception:
+                pass
+
+    def destroy(self) -> None:  # type: ignore[override]
+        if self._theme_unsubscribe is not None:
+            try:
+                self._theme_unsubscribe()
+            except Exception:
+                pass
+            self._theme_unsubscribe = None
+        super().destroy()
 
 
 __all__ = ["FingeringPatternCanvas"]

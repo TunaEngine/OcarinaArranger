@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict
+from typing import Callable
 
 import tkinter as tk
 from shared.ttk import ttk
@@ -12,7 +12,6 @@ from shared.tk_style import apply_round_scrollbar_style
 class _LayoutEditorUIMixin:
     """Methods responsible purely for constructing and toggling UI widgets."""
 
-    _style_entries: Dict[str, tk.StringVar]
     _remove_button: ttk.Button | None
     _preferred_min_combo: ttk.Combobox | None
     _preferred_max_combo: ttk.Combobox | None
@@ -237,27 +236,6 @@ class _LayoutEditorUIMixin:
         ttk.Button(nudge_row, text="→", width=2, command=lambda: self._nudge_selection(1, 0)).pack(side="left", padx=2)
         ttk.Button(nudge_row, text="↑", width=2, command=lambda: self._nudge_selection(0, -1)).pack(side="left", padx=2)
         ttk.Button(nudge_row, text="↓", width=2, command=lambda: self._nudge_selection(0, 1)).pack(side="left", padx=2)
-
-    def _build_style_panel(self, parent: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(parent, text="Style")
-        frame.grid(row=3, column=0, sticky="ew", pady=(0, 8))
-        frame.columnconfigure(1, weight=1)
-
-        self._style_entries = {}
-        fields = [
-            ("background_color", "Background"),
-            ("outline_color", "Outline"),
-            ("hole_outline_color", "Hole outline"),
-            ("covered_fill_color", "Covered fill"),
-        ]
-        for row, (attr, label) in enumerate(fields):
-            ttk.Label(frame, text=f"{label}:").grid(row=row, column=0, sticky="w", padx=4, pady=2)
-            var = tk.StringVar(master=self)
-            entry = ttk.Entry(frame, textvariable=var)
-            entry.grid(row=row, column=1, sticky="ew", padx=4, pady=2)
-            entry.bind("<FocusOut>", lambda _e, key=attr, var=var: self._apply_style_field(key, var.get()))
-            entry.bind("<Return>", lambda _e, key=attr, var=var: self._apply_style_field(key, var.get()))
-            self._style_entries[attr] = var
 
     def _build_export_panel(self) -> None:
         footer = ttk.Frame(self)

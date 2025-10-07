@@ -108,6 +108,33 @@ def test_layout_editor_exposes_half_toggle(layout_editor_specs) -> None:
 
 
 @pytest.mark.gui
+def test_layout_editor_sidebar_uses_vertical_scrollbar(layout_editor_specs) -> None:
+    root: tk.Tk | None = None
+    editor: InstrumentLayoutEditor | None = None
+    try:
+        try:
+            root = tk.Tk()
+        except tk.TclError:
+            pytest.skip("Tkinter display is not available")
+        root.withdraw()
+        viewmodel = InstrumentLayoutEditorViewModel(layout_editor_specs)
+        editor = InstrumentLayoutEditor(root, viewmodel=viewmodel)
+        root.update_idletasks()
+
+        sidebar_canvas = getattr(editor, "_sidebar_canvas", None)
+        sidebar_scrollbar = getattr(editor, "_sidebar_scrollbar", None)
+        assert isinstance(sidebar_canvas, tk.Canvas)
+        assert isinstance(sidebar_scrollbar, ttk.Scrollbar)
+        assert sidebar_scrollbar.cget("orient") == "vertical"
+        assert sidebar_canvas.cget("yscrollcommand")
+    finally:
+        if editor is not None:
+            editor.destroy()
+        if root is not None:
+            root.destroy()
+
+
+@pytest.mark.gui
 def test_switching_instruments_updates_half_toggle(layout_editor_switch_specs) -> None:
     root: tk.Tk | None = None
     editor: InstrumentLayoutEditor | None = None

@@ -55,10 +55,37 @@
           "row_stripe": "#f1f3f5",
           "selection_background": "#cfe2ff",
           "selection_foreground": "#212529"
+        },
+        "layout_editor": {
+          "workspace_background": "#f8f9fa",
+          "instrument_surface": "#ffffff",
+          "instrument_outline": "#495057",
+          "hole_outline": "#343a40",
+          "hole_fill": "#ffffff",
+          "windway_fill": "#e9ecef",
+          "windway_outline": "#343a40",
+          "covered_fill": "#343a40",
+          "grid_line": "#dee2e6",
+          "selection_outline": "#ff8800",
+          "handle_fill": "#ffffff",
+          "handle_outline": "#2c7be5"
         }
       },
       "styles": {},
-      "style_maps": {},
+      "style_maps": {
+        "TNotebook.Tab": {
+          "foreground": [
+            ["selected", "#111111"],
+            ["active", "#111111"],
+            ["!selected", "#111111"]
+          ],
+          "background": [
+            ["selected", "#ffffff"],
+            ["active", "#d8ebff"],
+            ["!selected", "#e6e6e6"]
+          ]
+        }
+      },
       "options": {
         "*Listbox.background": "#ffffff",
         "*Listbox.foreground": "#212529",
@@ -126,10 +153,57 @@
           "row_stripe": "#1a1d20",
           "selection_background": "#1f6feb",
           "selection_foreground": "#f8f9fa"
+        },
+        "layout_editor": {
+          "workspace_background": "#1c1f23",
+          "instrument_surface": "#2c3034",
+          "instrument_outline": "#f8f9fa",
+          "hole_outline": "#f8f9fa",
+          "hole_fill": "#1c1f23",
+          "windway_fill": "#343a40",
+          "windway_outline": "#f8f9fa",
+          "covered_fill": "#f8f9fa",
+          "grid_line": "#343a40",
+          "selection_outline": "#ffb347",
+          "handle_fill": "#0d6efd",
+          "handle_outline": "#f8f9fa"
         }
       },
       "styles": {},
-      "style_maps": {},
+      "style_maps": {
+        "TButton": {
+          "background": [
+            ["!disabled active", "#3a3f4b"]
+          ]
+        },
+        "TCheckbutton": {
+          "background": [
+            ["!disabled active", "#2c313c"]
+          ]
+        },
+        "TCombobox": {
+          "fieldbackground": [
+            ["!disabled active", "#303541"]
+          ]
+        },
+        "TRadiobutton": {
+          "background": [
+            ["!disabled active", "#2c313c"]
+          ]
+        },
+        "TNotebook.Tab": {
+          "foreground": [
+            ["selected", "#ffffff"],
+            ["active", "#ffffff"],
+            ["!selected", "#c5d1eb"]
+          ],
+          "background": [
+            ["selected", "#1e1e1e"],
+            ["active", "#3a3f4b"],
+            ["!selected", "#2d2d2d"]
+          ]
+        }
+      },
       "options": {
         "*Listbox.background": "#2f2f2f",
         "*Listbox.foreground": "#f8f9fa",

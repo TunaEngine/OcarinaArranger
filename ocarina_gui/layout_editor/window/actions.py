@@ -205,12 +205,6 @@ class _LayoutEditorActionsMixin:
             return
         self._refresh_state()
 
-    def _apply_style_field(self, key: str, value: str) -> None:
-        if self._updating:
-            return
-        self._viewmodel.update_style(**{key: value})
-        self._refresh_state()
-
     def _nudge_selection(self, dx: float, dy: float) -> None:
         if self._viewmodel.state.selection is None:
             return

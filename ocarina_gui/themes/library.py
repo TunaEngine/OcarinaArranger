@@ -6,7 +6,7 @@ import json
 from importlib import resources
 from typing import Callable, Dict, Iterable, List, Optional
 
-from ocarina_gui.preferences import load_preferences, save_preferences
+from ocarina_gui import preferences as _preferences
 from .spec import ThemeChoice, ThemeSpec
 
 
@@ -93,7 +93,7 @@ def _load_library() -> ThemeLibrary:
     default_theme_id = str(raw.get("default_theme", themes[0].theme_id))
     library = ThemeLibrary(themes, default_theme_id)
 
-    preferences = load_preferences()
+    preferences = _preferences.load_preferences()
     if preferences.theme_id and preferences.theme_id in {t.theme_id for t in themes}:
         try:
             library.set_current(preferences.theme_id)
@@ -128,9 +128,9 @@ def get_theme(theme_id: str) -> ThemeSpec:
 
 def set_active_theme(theme_id: str) -> ThemeSpec:
     theme = _get_library().set_current(theme_id)
-    preferences = load_preferences()
+    preferences = _preferences.load_preferences()
     preferences.theme_id = theme.theme_id
-    save_preferences(preferences)
+    _preferences.save_preferences(preferences)
     return theme
 
 

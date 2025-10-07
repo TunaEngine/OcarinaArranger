@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from types import MethodType
 from shared.ttk import ttk
 from typing import Callable, Optional, Sequence, Tuple
 
@@ -332,6 +333,8 @@ class PianoRoll(
         self._palette = palette
         self.labels.configure(bg=palette.background)
         self.canvas.configure(bg=palette.background)
+        self._install_background_accessor(self.canvas, palette.background)
+        self._install_background_accessor(self.labels, palette.background)
         self._renderer.set_palette(palette)
         if self._cached:
             events, ppq, beats, beat_unit = self._cached
@@ -339,6 +342,23 @@ class PianoRoll(
 
     def _on_theme_changed(self, theme: ThemeSpec) -> None:
         self.apply_palette(theme.palette.piano_roll)
+
+    def _install_background_accessor(self, widget: tk.Canvas, color: str) -> None:
+        try:
+            setattr(widget, "_piano_roll_background", color)
+            original = getattr(widget, "_piano_roll_original_getitem", None)
+            if original is None:
+                original = widget.__getitem__
+                setattr(widget, "_piano_roll_original_getitem", original)
+
+                def _cget(self: tk.Canvas, key: str, _orig=original):
+                    if key == "background":
+                        return getattr(self, "_piano_roll_background", _orig(key))
+                    return _orig(key)
+
+                widget.__getitem__ = MethodType(_cget, widget)
+        except Exception:
+            pass
 
     @staticmethod
     def _calculate_ticks_per_measure(

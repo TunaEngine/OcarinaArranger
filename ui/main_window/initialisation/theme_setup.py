@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from importlib import resources
 from typing import Callable, Dict, List
@@ -35,6 +36,12 @@ class ThemeInitialisationMixin:
         self.theme_id = tk.StringVar(master=self, value=current_theme.theme_id)
         self.theme_name = tk.StringVar(master=self, value=current_theme.name)
         self._theme_choices = get_available_themes()
+        # Ensure diagnostic logs from the theme menu are emitted during headless
+        # tests. The logger defaults to ``WARNING`` which would otherwise
+        # suppress the informational messages our behaviour checks assert.
+        LOGGER_THEME = logging.getLogger("ui.main_window.menus.theme")
+        if LOGGER_THEME.level == logging.NOTSET:
+            LOGGER_THEME.setLevel(logging.INFO)
         self._log_verbosity = tk.StringVar(master=self, value=get_file_log_verbosity().value)
         self._log_verbosity_choices = LOG_VERBOSITY_CHOICES
         self._restore_log_verbosity_preference(preferences)

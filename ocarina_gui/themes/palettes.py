@@ -154,6 +154,41 @@ class TablePalette:
 
 
 @dataclass(frozen=True)
+class LayoutEditorPalette:
+    """Color configuration for the instrument layout editor canvases."""
+
+    workspace_background: str
+    instrument_surface: str
+    instrument_outline: str
+    hole_outline: str
+    hole_fill: str
+    windway_fill: str
+    windway_outline: str
+    covered_fill: str
+    grid_line: str
+    selection_outline: str
+    handle_fill: str
+    handle_outline: str
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "LayoutEditorPalette":
+        return cls(
+            workspace_background=str(data.get("workspace_background", "#f7f7f7")),
+            instrument_surface=str(data.get("instrument_surface", "#ffffff")),
+            instrument_outline=str(data.get("instrument_outline", "#4f4f4f")),
+            hole_outline=str(data.get("hole_outline", "#4f4f4f")),
+            hole_fill=str(data.get("hole_fill", data.get("instrument_surface", "#ffffff"))),
+            windway_fill=str(data.get("windway_fill", "#e9ecef")),
+            windway_outline=str(data.get("windway_outline", data.get("hole_outline", "#4f4f4f"))),
+            covered_fill=str(data.get("covered_fill", "#111111")),
+            grid_line=str(data.get("grid_line", "#e1e1e1")),
+            selection_outline=str(data.get("selection_outline", "#ff8800")),
+            handle_fill=str(data.get("handle_fill", "#ffffff")),
+            handle_outline=str(data.get("handle_outline", "#2c7be5")),
+        )
+
+
+@dataclass(frozen=True)
 class ThemePalette:
     """Collection of colors used throughout the application widgets."""
 
@@ -165,6 +200,7 @@ class ThemePalette:
     staff: StaffPalette
     listbox: ListboxPalette
     table: TablePalette
+    layout_editor: LayoutEditorPalette
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "ThemePalette":
@@ -177,6 +213,7 @@ class ThemePalette:
             staff=StaffPalette.from_dict(data["staff"]),
             listbox=ListboxPalette.from_dict(data["listbox"]),
             table=TablePalette.from_dict(data.get("table", {})),
+            layout_editor=LayoutEditorPalette.from_dict(data.get("layout_editor", {})),
         )
 
 
@@ -185,5 +222,6 @@ __all__ = [
     "PianoRollPalette",
     "StaffPalette",
     "TablePalette",
+    "LayoutEditorPalette",
     "ThemePalette",
 ]

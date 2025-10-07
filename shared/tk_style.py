@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
+from types import MethodType
 from typing import Optional
 
 try:
@@ -24,6 +25,20 @@ _STYLE_THEME: str | None = None
 _STYLE_ROOT: tk.Misc | None = None
 
 
+def _reset_bootstrap_instance() -> None:
+    """Clear ttkbootstrap's global ``Style.instance`` cache."""
+
+    if BootstrapStyle is None:
+        return
+
+    try:
+        if getattr(BootstrapStyle, "instance", None) is not None:
+            logger.debug("Resetting ttkbootstrap Style.instance cache")
+            BootstrapStyle.instance = None  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - defensive safety net
+        logger.debug("Failed to reset ttkbootstrap Style.instance", exc_info=True)
+
+
 def _canonicalize(widget: Optional[tk.Misc]) -> Optional[tk.Misc]:
     if widget is None:
         return None
@@ -42,11 +57,25 @@ def _default_root_exists(widget: Optional[tk.Misc]) -> bool:
         return False
 
 
-def _reset_cached_style(*_event: object) -> None:
+def _reset_cached_style(event: Optional[tk.Event] = None) -> None:
     global _STYLE, _STYLE_THEME, _STYLE_ROOT
+    if event is not None and _STYLE_ROOT is not None:
+        widget = getattr(event, "widget", None)
+        if widget is not _STYLE_ROOT:
+            return
+
+    logger.debug("Resetting cached ttk style (event=%s)", event)
     _STYLE = None
     _STYLE_THEME = None
     _STYLE_ROOT = None
+    _reset_bootstrap_instance()
+    if BootstrapStyle is not None:
+        try:
+            from ttkbootstrap import publisher
+
+            publisher.Publisher.clear_subscribers()
+        except Exception:
+            logger.debug("Failed to clear ttkbootstrap publisher subscribers", exc_info=True)
 
 
 def _ensure_default_root(master: Optional[tk.Misc]) -> tk.Misc:
@@ -69,25 +98,86 @@ def _ensure_default_root(master: Optional[tk.Misc]) -> tk.Misc:
     except tk.TclError:
         pass
 
+    setattr(root, "_tk_style_managed", True)
+    _STYLE_ROOT = root
+
     try:
         root.bind("<Destroy>", _reset_cached_style, add="+")
     except tk.TclError:
         pass
 
-    _STYLE_ROOT = root
     return root
+
+
+def _instantiate_bootstrap_style(
+    root: tk.Misc, theme: str
+) -> ttk.Style:
+    """Create a ttkbootstrap ``Style`` bound to ``root``.
+
+    ttkbootstrap has evolved its ``Style`` signature over time. Prefer the
+    modern ``master=`` keyword but gracefully fall back to the positional
+    invocation used by older releases.
+    """
+
+    last_type_error: TypeError | None = None
+
+    for constructor in (
+        lambda: BootstrapStyle(master=root, theme=theme),
+        lambda: BootstrapStyle(master=root),
+        lambda: BootstrapStyle(theme=theme),
+        lambda: BootstrapStyle(theme),
+        lambda: BootstrapStyle(),
+    ):
+        try:
+            style = constructor()
+        except TypeError as exc:
+            last_type_error = exc
+            continue
+        else:
+            return style
+
+    if last_type_error is not None:
+        raise last_type_error
+
+    # Should be unreachable, but keep mypy satisfied.
+    raise TypeError("Unable to construct ttkbootstrap Style")
 
 
 def _create_style(theme: str, master: Optional[tk.Misc]) -> ttk.Style:
     if BootstrapStyle is None:
         raise _IMPORT_ERROR  # type: ignore[misc]
-    root = _ensure_default_root(master)
-    _ = root  # pragma: no cover - keep reference alive to prevent Tk GC
-    try:
-        style = BootstrapStyle(theme=theme)
-    except TypeError:
-        # Older ttkbootstrap releases accepted the theme as a positional arg.
-        style = BootstrapStyle(theme)
+
+    attempts = 0
+    last_error: tk.TclError | None = None
+
+    while attempts < 2:
+        attempts += 1
+        root = _ensure_default_root(master)
+        managed_root = bool(getattr(root, "_tk_style_managed", False))
+        _ = root  # pragma: no cover - keep reference alive to prevent Tk GC
+        try:
+            style = _instantiate_bootstrap_style(root, theme)
+        except tk.TclError as exc:
+            last_error = exc
+            logger.debug(
+                "ttkbootstrap Style creation failed on attempt %s: %s", attempts, exc, exc_info=True
+            )
+            try:
+                if managed_root:
+                    root.destroy()
+            except tk.TclError:
+                pass
+            _reset_cached_style()
+            master = None
+            continue
+        except TypeError as exc:
+            raise exc
+        else:
+            break
+    else:
+        assert last_error is not None
+        raise last_error
+
     try:
         if theme:
             style.theme_use(theme)
@@ -96,7 +186,9 @@ def _create_style(theme: str, master: Optional[tk.Misc]) -> ttk.Style:
             if current_theme == theme:
                 logger.debug("Successfully activated ttk theme '%s'", theme)
             else:
-                logger.warning("Theme activation mismatch: requested '%s', got '%s'", theme, current_theme)
+                logger.warning(
+                    "Theme activation mismatch: requested '%s', got '%s'", theme, current_theme
+                )
     except tk.TclError as e:
         logger.warning("Failed to activate ttk theme '%s' on initialisation: %s", theme, e)
     try:
@@ -117,6 +209,13 @@ def get_ttk_style(master: Optional[tk.Misc] = None, *, theme: Optional[str] = No
         raise _IMPORT_ERROR  # type: ignore[misc]
 
     global _STYLE, _STYLE_THEME
+
+    bootstrap_instance = getattr(BootstrapStyle, "instance", None)
+    if bootstrap_instance is not None:
+        master = getattr(bootstrap_instance, "master", None)
+        if not _default_root_exists(master):
+            logger.debug("Bootstrap Style.instance root is gone; resetting cache")
+            _reset_cached_style()
 
     # If no theme is explicitly requested, try to preserve current theme
     # Only use default theme for initial creation
@@ -200,12 +299,53 @@ def apply_round_scrollbar_style(scrollbar: ttk.Scrollbar) -> None:
     except (tk.TclError, AttributeError):
         return
 
+    def _install_bootstyle_accessor(value: object) -> None:
+        try:
+            setattr(scrollbar, "_bootstrap_bootstyle", value)
+            original = getattr(scrollbar, "_bootstrap_original_cget", None)
+            if original is None:
+                original = scrollbar.cget
+                setattr(scrollbar, "_bootstrap_original_cget", original)
+
+                def _cget(self: ttk.Scrollbar, key: str, _orig=original):
+                    if key == "bootstyle":
+                        return getattr(self, "_bootstrap_bootstyle", "")
+                    result = _orig(key)
+                    if key != "bootstyle" and not isinstance(result, str):
+                        try:
+                            return str(result)
+                        except Exception:
+                            return result
+                    return result
+
+                scrollbar.cget = MethodType(_cget, scrollbar)
+        except Exception:  # pragma: no cover - defensive
+            logger.debug("Failed to install bootstyle accessor", exc_info=True)
+
     for token in ("info-round", ("info", "round"), "round"):
         try:
             scrollbar.configure(bootstyle=token)
         except (tk.TclError, TypeError):
-            continue
+            ttkstyle = None
+            if BootstrapStyle is not None:
+                try:
+                    from ttkbootstrap.style import Bootstyle
+
+                    ttkstyle = Bootstyle.update_ttk_widget_style(scrollbar, token)
+                except Exception:
+                    logger.debug(
+                        "Failed to update scrollbar bootstyle using ttkbootstrap", exc_info=True
+                    )
+            if not ttkstyle:
+                continue
+            try:
+                scrollbar.configure(style=ttkstyle)
+            except tk.TclError:
+                continue
+            _install_bootstyle_accessor(token)
+            return
         else:
+            _install_bootstyle_accessor(token)
             return
 
 

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Dict
-
 import tkinter as tk
 
 from ocarina_gui.fingering.half_holes import instrument_allows_half_holes
@@ -15,7 +13,6 @@ class _LayoutEditorStateMixin:
     """Shared behaviour for synchronising the UI with the view model."""
 
     canvas: object
-    _style_entries: Dict[str, tk.StringVar]
 
     def _refresh_all(self) -> None:
         self._populate_instrument_choices()
@@ -73,8 +70,6 @@ class _LayoutEditorStateMixin:
                 self._hole_identifier_var.set("")
             else:
                 self._update_selection_vars(state)
-            for key, var in self._style_entries.items():
-                var.set(getattr(state.style, key))
         finally:
             self._updating = False
 

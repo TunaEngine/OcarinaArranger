@@ -14,6 +14,12 @@ from viewmodels.instrument_layout_editor_viewmodel import (
 from .canvas_tooltip import CanvasTooltip
 from .labels import friendly_label
 from ocarina_gui.fingering.outline_renderer import OutlineImage, render_outline_photoimage
+from ocarina_gui.themes import (
+    LayoutEditorPalette,
+    ThemeSpec,
+    get_current_theme,
+    register_theme_listener,
+)
 
 
 class InstrumentLayoutCanvas(tk.Canvas):
@@ -26,7 +32,13 @@ class InstrumentLayoutCanvas(tk.Canvas):
         on_select: Callable[[SelectionKind, Optional[int]], None],
         on_move: Callable[[SelectionKind, int, float, float], None],
     ) -> None:
-        super().__init__(master, background="#f7f7f7", highlightthickness=0)
+        palette = get_current_theme().palette.layout_editor
+        super().__init__(
+            master,
+            background=palette.workspace_background,
+            highlightthickness=0,
+            borderwidth=0,
+        )
         self._on_select = on_select
         self._on_move = on_move
         self._margin = 24
@@ -38,6 +50,20 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self._tooltip = CanvasTooltip(self)
         self._outline_image: OutlineImage | None = None
         self._outline_cache_key: tuple | None = None
+        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        self._palette: LayoutEditorPalette = palette
+        self._workspace_background = palette.workspace_background
+        self._instrument_surface = palette.instrument_surface
+        self._instrument_outline = palette.instrument_outline
+        self._hole_fill = palette.hole_fill
+        self._hole_outline = palette.hole_outline
+        self._windway_fill = palette.windway_fill
+        self._windway_outline = palette.windway_outline
+        self._grid_color = palette.grid_line
+        self._handle_fill = palette.handle_fill
+        self._handle_outline = palette.handle_outline
+        self._selection_outline = palette.selection_outline
+        self._last_high_quality = True
 
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_drag)
@@ -51,19 +77,28 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self._state = state
         width = state.canvas_width + 2 * self._margin
         height = state.canvas_height + 2 * self._margin
+        instrument_background = self._instrument_surface
         self.configure(
             width=width,
             height=height,
-            background=state.style.background_color,
+            background=self._workspace_background,
         )
         self.delete("all")
         self._item_lookup.clear()
         self._tooltip_texts.clear()
         self._selection_indicator = None
+        self.create_rectangle(
+            self._margin,
+            self._margin,
+            width - self._margin,
+            height - self._margin,
+            fill=instrument_background,
+            outline="",
+        )
 
         self._draw_background_grid(width, height)
 
-        outline_color = state.style.outline_color or "#4f4f4f"
+        outline_color = self._instrument_outline
         spline_steps = max(1, int(getattr(state.style, "outline_spline_steps", 48)))
 
         if state.outline_points:
@@ -81,7 +116,7 @@ class InstrumentLayoutCanvas(tk.Canvas):
                     int(height),
                     round(stroke_width, 4),
                     outline_color,
-                    state.style.background_color,
+                    instrument_background,
                     bool(state.style.outline_smooth),
                     bool(state.outline_closed),
                     int(spline_steps),
@@ -93,7 +128,7 @@ class InstrumentLayoutCanvas(tk.Canvas):
                         canvas_size=(width, height),
                         stroke_width=stroke_width,
                         stroke_color=outline_color,
-                        background_color=state.style.background_color,
+                        background_color=instrument_background,
                         smooth=state.style.outline_smooth,
                         closed=state.outline_closed,
                         spline_steps=spline_steps,
@@ -133,8 +168,8 @@ class InstrumentLayoutCanvas(tk.Canvas):
                     y - 4,
                     x + 4,
                     y + 4,
-                    outline="#2c7be5",
-                    fill="#ffffff",
+                    outline=self._handle_outline,
+                    fill=self._handle_fill,
                 )
                 self._item_lookup[handle] = (SelectionKind.OUTLINE, index)
                 self._tooltip_texts[handle] = f"Outline point #{index + 1}"
@@ -152,9 +187,9 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 y - radius,
                 x + radius,
                 y + radius,
-                outline=state.style.hole_outline_color,
+                outline=self._hole_outline,
                 width=1,
-                fill=state.style.background_color,
+                fill=self._hole_fill,
             )
             self._item_lookup[item] = (SelectionKind.HOLE, index)
             self._tooltip_texts[item] = friendly_label(hole.identifier, f"Hole {index + 1}")
@@ -169,9 +204,9 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 center_y - half_height,
                 center_x + half_width,
                 center_y + half_height,
-                outline=state.style.hole_outline_color,
+                outline=self._windway_outline,
                 width=1,
-                fill=state.style.background_color,
+                fill=self._windway_fill,
             )
             self._item_lookup[item] = (SelectionKind.WINDWAY, index)
             self._tooltip_texts[item] = friendly_label(
@@ -180,11 +215,12 @@ class InstrumentLayoutCanvas(tk.Canvas):
 
         self._draw_selection_indicator()
         self._tooltip.hide()
+        self._last_high_quality = high_quality
 
     # ------------------------------------------------------------------
     def _draw_background_grid(self, width: int, height: int) -> None:
         step = 20
-        color = "#e1e1e1"
+        color = self._grid_color
         for x in range(self._margin, width - self._margin + 1, step):
             self.create_line(x, self._margin, x, height - self._margin, fill=color)
         for y in range(self._margin, height - self._margin + 1, step):
@@ -211,7 +247,7 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 y - radius,
                 x + radius,
                 y + radius,
-                outline="#ff8800",
+                outline=self._selection_outline,
                 width=2,
                 dash=(4, 2),
             )
@@ -226,7 +262,7 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 y - half_height,
                 x + half_width,
                 y + half_height,
-                outline="#ff8800",
+                outline=self._selection_outline,
                 width=2,
                 dash=(4, 2),
             )
@@ -239,9 +275,12 @@ class InstrumentLayoutCanvas(tk.Canvas):
                 y - 6,
                 x + 6,
                 y + 6,
-                outline="#ff8800",
+                outline=self._selection_outline,
                 width=2,
             )
+
+        if self._selection_indicator is not None:
+            self.itemconfigure(self._selection_indicator, fill="")
 
     # ------------------------------------------------------------------
     def _on_press(self, event: tk.Event) -> None:
@@ -315,6 +354,42 @@ class InstrumentLayoutCanvas(tk.Canvas):
 
     def _on_leave(self, _event: tk.Event) -> None:
         self._tooltip.hide()
+
+    # ------------------------------------------------------------------
+    def _apply_palette(self, palette: LayoutEditorPalette) -> None:
+        self._palette = palette
+        self._workspace_background = palette.workspace_background
+        self._instrument_surface = palette.instrument_surface
+        self._instrument_outline = palette.instrument_outline
+        self._hole_fill = palette.hole_fill
+        self._hole_outline = palette.hole_outline
+        self._windway_fill = palette.windway_fill
+        self._windway_outline = palette.windway_outline
+        self._grid_color = palette.grid_line
+        self._handle_fill = palette.handle_fill
+        self._handle_outline = palette.handle_outline
+        self._selection_outline = palette.selection_outline
+        if self._state is None:
+            self.configure(background=self._workspace_background)
+
+    def _on_theme_changed(self, theme: ThemeSpec) -> None:
+        self._apply_palette(theme.palette.layout_editor)
+        state = self._state
+        if state is not None:
+            try:
+                self.render(state, high_quality=self._last_high_quality)
+            except Exception:
+                pass
+
+    def destroy(self) -> None:  # type: ignore[override]
+        if self._theme_unsubscribe is not None:
+            try:
+                self._theme_unsubscribe()
+            except Exception:
+                pass
+            self._theme_unsubscribe = None
+        self._tooltip.close()
+        super().destroy()
 
 
 __all__ = ["InstrumentLayoutCanvas"]
