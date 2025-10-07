@@ -44,7 +44,12 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller simpleaudio
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Refresh third-party license manifest
+        run: |
+          python -m scripts.build_third_party_licenses
 
       - name: Stamp application version
         run: |

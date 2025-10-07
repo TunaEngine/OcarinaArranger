@@ -140,6 +140,70 @@ def test_preview_hover_ignored_while_dragging(gui_app, tmp_path):
     assert current_midi() == first_event[2] + 12
 
 
+def test_preview_cursor_drag_pauses_and_resumes_playback(
+    gui_app, tmp_path, monkeypatch
+):
+    tree, _ = make_linear_score()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    playback = gui_app._preview_playback["original"]
+    assert not playback.state.is_playing
+
+    gui_app._on_preview_play_toggle("original")
+    gui_app.update_idletasks()
+    assert playback.state.is_playing
+
+    calls: list[float] = []
+
+    def _fake_perf_counter() -> float:
+        value = 1000.0 + len(calls)
+        calls.append(value)
+        return value
+
+    monkeypatch.setattr("time.perf_counter", _fake_perf_counter)
+
+    gui_app._on_preview_cursor_drag_state("original", True)
+    gui_app.update_idletasks()
+    assert not playback.state.is_playing
+
+    gui_app._on_preview_cursor_drag_state("original", False)
+    gui_app.update_idletasks()
+    assert playback.state.is_playing
+    assert calls, "expected fake perf counter to be invoked"
+    assert gui_app._playback_last_ts == pytest.approx(calls[-1])
+
+
+def test_preview_cursor_seek_pauses_before_rewind(gui_app, tmp_path, monkeypatch):
+    tree, _ = make_linear_score()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    playback = gui_app._preview_playback["original"]
+    gui_app._on_preview_play_toggle("original")
+    gui_app.update_idletasks()
+    assert playback.state.is_playing
+
+    observed: list[bool] = []
+    original_seek_to = playback.seek_to
+
+    def _tracked_seek_to(tick: int) -> None:
+        observed.append(playback.state.is_playing)
+        original_seek_to(tick)
+
+    monkeypatch.setattr(playback, "seek_to", _tracked_seek_to)
+
+    gui_app._on_preview_cursor_seek("original", 0)
+    gui_app.update_idletasks()
+
+    assert observed, "expected cursor seek to invoke playback seek"
+    assert observed[0] is False
+
+
 def test_transpose_cancel_restores_previous_value(gui_app, tmp_path, monkeypatch):
     tree, _ = make_linear_score()
     path = write_score(tmp_path, tree)

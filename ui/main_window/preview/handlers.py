@@ -96,6 +96,7 @@ class PreviewInputHandlersMixin:
         playback = self._preview_playback.get(side)
         if playback is None:
             return
+        self._pause_preview_playback_for_cursor_seek(side)
         self._handle_loop_range_click(side, tick)
         playback.seek_to(tick)
         force_flags = getattr(self, "_force_autoscroll_once", None)

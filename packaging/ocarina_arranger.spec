@@ -52,6 +52,7 @@ analysis = Analysis(
             str(project_dir / "ui" / "main_window" / "resources" / "app_icon.ico"),
             "ui/main_window/resources",
         ),
+        (str(project_dir / "LICENSE"), "."),
         (str(project_dir / "THIRD-PARTY-LICENSES"), "."),
         *arranged_asset_datas,
         *_BOOTSTRAP_DATAS,

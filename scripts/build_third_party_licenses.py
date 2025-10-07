@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import pathlib
 import re
 from collections.abc import Iterable
@@ -10,6 +11,8 @@ from importlib import metadata
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
+
+from app.version import get_app_version
 
 _AND_CONTRIBUTORS_LINE = re.compile(
     r"\n[ \t]*and contributors(?=\s*(?:\n|$))", re.IGNORECASE
@@ -88,7 +91,7 @@ def _resolve_distribution_names(package_names: Iterable[str]) -> list[str]:
     return sorted(resolved, key=str.casefold)
 
 
-def _normalise_license_text(text: str) -> str:
+def _normalise_license_text(text: str, dist_name: str | None = None) -> str:
     """Eliminate environment-specific wrapping in known license footers."""
 
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -96,7 +99,14 @@ def _normalise_license_text(text: str) -> str:
     def _merge_and_contributors(match: re.Match[str]) -> str:
         return " " + match.group(0).strip()
 
-    return _AND_CONTRIBUTORS_LINE.sub(_merge_and_contributors, text)
+    normalised = _AND_CONTRIBUTORS_LINE.sub(_merge_and_contributors, text)
+
+    if dist_name and canonicalize_name(dist_name) == "pillow":
+        vendor_split = re.search(r"\n\s*-{4,}\s*\n", normalised)
+        if vendor_split:
+            normalised = normalised[: vendor_split.start()].rstrip()
+
+    return normalised
 
 
 def _should_include_license_file(relative_path: str) -> bool:
@@ -129,7 +139,7 @@ def _collect_license_entries(dist_name: str) -> list[tuple[str, str]]:
         if not path.is_file():
             continue
         raw_text = path.read_text(encoding="utf-8", errors="replace").strip()
-        text = _normalise_license_text(raw_text)
+        text = _normalise_license_text(raw_text, dist.metadata.get("Name"))
         if not text:
             continue
         entries.append((str(entry), text))
@@ -180,35 +190,113 @@ def _normalise_license_path(
     return "/".join(collapsed)
 
 
+def _license_identifier(dist: metadata.Distribution) -> str:
+    """Return a human-readable license identifier for the distribution."""
+
+    classifiers = dist.metadata.get_all("Classifier") or []
+    license_classifiers = [classifier for classifier in classifiers if classifier.startswith("License ::")]
+    if license_classifiers:
+        candidate = license_classifiers[-1].split("::")[-1].strip()
+        if candidate:
+            return candidate
+
+    license_field = dist.metadata.get("License")
+    if license_field:
+        compact = " ".join(license_field.split())
+        if compact:
+            return compact
+
+    return "Unknown"
+
+
+def _extract_copyright_lines(entries: list[tuple[str, str]]) -> list[str]:
+    """Derive copyright statements from the collected license texts."""
+
+    statements: list[str] = []
+    for _, text in entries:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            lower = stripped.lower()
+            if stripped.startswith("©"):
+                pass
+            elif lower.startswith("copyright"):
+                if "(c" not in lower and "©" not in stripped and not any(ch.isdigit() for ch in stripped):
+                    continue
+            else:
+                continue
+            normalised = re.sub(r"\s+", " ", stripped)
+            if normalised not in statements:
+                statements.append(normalised)
+    if statements:
+        return statements
+    return ["Unknown"]
+
+
+def _indent_block(text: str, prefix: str) -> list[str]:
+    lines = text.splitlines() or [""]
+    return [f"{prefix}{line}" if line else prefix.rstrip() for line in lines]
+
+
 def build_license_file(requirements: pathlib.Path, output: pathlib.Path) -> None:
     runtime_packages = _read_runtime_requirements(requirements)
     distributions = _resolve_distribution_names(runtime_packages)
-    sections: list[str] = ["=" * 80]
+    today = datetime.date.today().isoformat()
+    version = get_app_version()
+
+    header_lines = [
+        "THIRD-PARTY LICENSES",
+        f"for: Ocarina Arranger v{version}",
+        f"Generated on: {today}",
+        "This file lists third-party components included in this distribution and their licenses.",
+        "",
+        "TABLE OF CONTENTS",
+    ]
+
+    table_of_contents: list[str] = []
+    formatted_sections: list[list[str]] = []
+
     for name in distributions:
         dist = metadata.distribution(name)
         entries = _collect_license_entries(name)
         if not entries:
             continue
         homepage = _normalise_homepage(dist.metadata.get("Home-page"), dist)
-        header = [
-            f"Package: {canonicalize_name(dist.metadata['Name'])}",
-            f"Homepage: {homepage}".rstrip(),
+        display_name = dist.metadata["Name"].strip()
+        license_id = _license_identifier(dist)
+        toc_entry = f"{len(formatted_sections) + 1}) {display_name} {dist.version} — {license_id}"
+        table_of_contents.append(toc_entry)
+
+        section_lines: list[str] = [
+            "----------------------------------------------------------------------",
+            f"{len(formatted_sections) + 1}) {display_name} {dist.version}",
+            f"   Homepage: <{homepage}>",
+            f"   License: {license_id}",
+            "   Copyright:",
         ]
-        license_str = dist.metadata.get("License")
-        if license_str:
-            header.append(f"Declared License: {license_str.strip()}")
-        sections.extend(header)
+
+        for statement in _extract_copyright_lines(entries):
+            section_lines.append(f"     {statement}")
+
         for relative_path, text in entries:
             normalised_path = _normalise_license_path(relative_path, dist)
-            sections.append("-" * 80)
-            sections.append(f"Source: {normalised_path}")
-            sections.append("")
-            sections.append(text)
-            sections.append("")
-        sections.append("=" * 80)
-    if sections[-1] != "=" * 80:
-        sections.append("=" * 80)
-    output.write_text("\n".join(sections).rstrip() + "\n", encoding="utf-8")
+            section_lines.append("")
+            section_lines.append(f"   Source: {normalised_path}")
+            section_lines.append("   ---- BEGIN LICENSE TEXT ----")
+            section_lines.extend(_indent_block(text, "   "))
+            section_lines.append("   ---- END LICENSE TEXT ----")
+
+        formatted_sections.append(section_lines)
+
+    contents: list[str] = header_lines + table_of_contents
+    if contents[-1] != "":
+        contents.append("")
+    for section in formatted_sections:
+        contents.extend(section)
+        contents.append("")
+
+    output.write_text("\n".join(line.rstrip() for line in contents).rstrip() + "\n", encoding="utf-8")
 
 
 def main() -> None:

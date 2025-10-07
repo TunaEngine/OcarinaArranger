@@ -12,6 +12,10 @@ from ocarina_gui.themes import apply_theme_to_toplevel
 from shared.ttk import ttk
 
 _LICENSE_FILENAME = "THIRD-PARTY-LICENSES"
+_APP_LICENSE_PREAMBLE = (
+    "This application is © Tuna Engine, licensed under MIT.\n"
+    "Full license text is included in the distribution (see “LICENSE”)."
+)
 
 
 def _license_file_candidates() -> list[Path]:
@@ -56,6 +60,15 @@ def _load_license_text() -> str:
     raise FileNotFoundError(_LICENSE_FILENAME)
 
 
+def _compose_license_display(third_party_text: str) -> str:
+    """Return the full license text shown in the dialog."""
+
+    stripped = third_party_text.strip()
+    if not stripped:
+        return _APP_LICENSE_PREAMBLE
+    return f"{_APP_LICENSE_PREAMBLE}\n\n{stripped}"
+
+
 class AboutMenuMixin:
     """Provide commands for About menu actions."""
 
@@ -82,6 +95,7 @@ class AboutMenuMixin:
             )
             return
 
+        display_text = _compose_license_display(license_text)
         window = getattr(self, "_licenses_window", None)
         text_widget = getattr(self, "_licenses_text_widget", None)
         if isinstance(window, tk.Toplevel) and window.winfo_exists() and isinstance(
@@ -89,7 +103,7 @@ class AboutMenuMixin:
         ):
             text_widget.configure(state="normal")
             text_widget.delete("1.0", tk.END)
-            text_widget.insert("1.0", license_text)
+            text_widget.insert("1.0", display_text)
             text_widget.configure(state="disabled")
             text_widget.yview_moveto(0.0)
             window.deiconify()
@@ -119,7 +133,7 @@ class AboutMenuMixin:
             highlightthickness=0,
             borderwidth=0,
         )
-        text_widget.insert("1.0", license_text)
+        text_widget.insert("1.0", display_text)
         text_widget.configure(state="disabled")
 
         scrollbar = ttk.Scrollbar(container, orient="vertical", command=text_widget.yview)

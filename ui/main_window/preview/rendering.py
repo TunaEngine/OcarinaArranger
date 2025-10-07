@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from bisect import bisect_right
 import logging
+import time
 import tkinter as tk
+from tkinter import messagebox
 from typing import Dict, Optional, Sequence, Tuple
 
 from ocarina_gui.fingering import FingeringView
@@ -302,5 +304,57 @@ class PreviewRenderingMixin:
         self._update_preview_fingering(side)
 
     def _on_preview_cursor_drag_state(self, side: str, dragging: bool) -> None:
+        previous = self._preview_cursor_dragging.get(side, False)
+        if previous == dragging:
+            self._update_preview_fingering(side)
+            return
+
         self._preview_cursor_dragging[side] = dragging
+        playback = self._preview_playback.get(side)
+        update_visuals = False
+
+        if dragging:
+            toggled = self._pause_preview_playback_for_cursor_seek(side)
+            update_visuals = toggled
+        else:
+            resume = self._preview_resume_on_cursor_release.pop(side, False)
+            if (
+                resume
+                and playback is not None
+                and playback.state.is_loaded
+                and not playback.state.is_playing
+            ):
+                restarted = playback.toggle_playback()
+                if restarted:
+                    self._playback_last_ts = time.perf_counter()
+                else:
+                    error = playback.state.last_error
+                    if error:
+                        try:
+                            messagebox.showwarning("Audio unavailable", error)
+                        except tk.TclError:
+                            logger.debug(
+                                "Unable to show audio warning after cursor drag resume",
+                                exc_info=True,
+                            )
+                update_visuals = True
+
         self._update_preview_fingering(side)
+        if update_visuals:
+            self._update_playback_visuals(side)
+
+    def _pause_preview_playback_for_cursor_seek(self, side: str) -> bool:
+        playback = self._preview_playback.get(side)
+        if (
+            playback is None
+            or not playback.state.is_loaded
+            or not playback.state.is_playing
+        ):
+            return False
+
+        if self._preview_resume_on_cursor_release.get(side):
+            return False
+
+        self._preview_resume_on_cursor_release[side] = True
+        playback.toggle_playback()
+        return True
