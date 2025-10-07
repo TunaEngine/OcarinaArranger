@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .about import AboutMenuMixin
 from .auto_scroll import AutoScrollMixin
 from .instrument_layout import InstrumentLayoutMixin
 from .lifecycle import LifecycleMixin
@@ -15,6 +16,7 @@ from .update_menu import UpdateMenuMixin
 
 
 class MenuActionsMixin(
+    AboutMenuMixin,
     ThemeMenuMixin,
     LoggingMenuMixin,
     ProjectMenuMixin,

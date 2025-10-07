@@ -1,13 +1,87 @@
 from __future__ import annotations
 
+import logging
+from typing import Any
+
 import pytest
-from pytest_bdd import then, when, parsers
+from pytest_bdd import parsers, then, when
 
 from tests.helpers import require_ttkbootstrap
 
 require_ttkbootstrap()
 
 from tests.e2e.harness import E2EHarness
+
+
+logger = logging.getLogger(__name__)
+
+
+def _format_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return "None" if value is None else str(value)
+
+
+def _preview_volume_snapshot(arranger_app: E2EHarness) -> dict[str, Any]:
+    window = arranger_app.window
+    var = window._preview_volume_vars.get("arranged")
+    try:
+        slider_value: float | None = float(var.get()) if var is not None else None
+    except Exception:  # pragma: no cover - defensive diagnostic path
+        slider_value = None
+
+    playback = window._preview_playback.get("arranged")
+    if playback is not None:
+        playback_volume = getattr(playback.state, "volume", None)
+        is_loaded = getattr(playback.state, "is_loaded", None)
+        is_playing = getattr(playback.state, "is_playing", None)
+    else:
+        playback_volume = None
+        is_loaded = None
+        is_playing = None
+
+    button = window._preview_volume_buttons.get("arranged")
+    if button is None:
+        button_state: str | None = None
+    else:
+        try:
+            button_state = "pressed" if button.instate(["pressed"]) else "released"
+        except Exception:  # pragma: no cover - defensive diagnostic path
+            button_state = "error"
+
+    memory = getattr(window, "_preview_volume_memory", {})
+    remembered = memory.get("arranged") if isinstance(memory, dict) else None
+
+    resume_flags = getattr(window, "_resume_volume_on_release", {})
+    resume_on_release = (
+        resume_flags.get("arranged") if isinstance(resume_flags, dict) else None
+    )
+
+    active_adjustments = getattr(window, "_active_volume_adjustment", set())
+    is_adjusting = (
+        "arranged" in active_adjustments if isinstance(active_adjustments, set) else None
+    )
+
+    return {
+        "slider": slider_value,
+        "playback_volume": playback_volume,
+        "playback_loaded": is_loaded,
+        "playback_playing": is_playing,
+        "button_state": button_state,
+        "remembered": remembered,
+        "resume_on_release": resume_on_release,
+        "is_adjusting": is_adjusting,
+    }
+
+
+def _log_preview_volume_state(arranger_app: E2EHarness, label: str) -> None:
+    snapshot = _preview_volume_snapshot(arranger_app)
+    formatted = " ".join(
+        f"{key}={_format_value(value)}" for key, value in snapshot.items()
+    )
+    message = f"[preview-volume] {label}: {formatted}"
+    logger.info(message)
+    print(message)
 
 
 @when(parsers.parse("the user adjusts the arranged preview tempo to {tempo:d} bpm"))
@@ -55,6 +129,32 @@ def switch_preview_layout(arranger_app: E2EHarness, mode: str) -> None:
     window._on_preview_layout_mode_changed()
 
 
+@when(parsers.parse("the user sets the arranged preview volume to {percent:g} percent"))
+def set_arranged_preview_volume(arranger_app: E2EHarness, percent: float) -> None:
+    _log_preview_volume_state(arranger_app, "before slider set")
+    window = arranger_app.window
+    window._ensure_preview_tab_initialized("arranged")
+    volume_var = window._preview_volume_vars["arranged"]
+    volume_var.set(float(percent))
+    window._on_preview_volume_changed("arranged")
+    window.update_idletasks()
+    _log_preview_volume_state(arranger_app, "after slider set")
+
+
+@when("the user clicks the arranged preview volume button")
+def click_arranged_preview_volume_button(arranger_app: E2EHarness) -> None:
+    _log_preview_volume_state(arranger_app, "before button click")
+    window = arranger_app.window
+    window._ensure_preview_tab_initialized("arranged")
+    button = window._preview_volume_buttons.get("arranged")
+    if button is not None:
+        button.invoke()
+    else:
+        window._toggle_preview_mute("arranged")
+    window.update_idletasks()
+    _log_preview_volume_state(arranger_app, "after button click")
+
+
 @then(parsers.parse("the arranged preview playback tempo is {tempo:d} bpm"))
 def assert_tempo(arranger_app: E2EHarness, tempo: int) -> None:
     playback = arranger_app.window._preview_playback.get("arranged")
@@ -69,6 +169,50 @@ def assert_loop(arranger_app: E2EHarness, start: float, end: float) -> None:
     assert snapshot.loop_enabled is True
     assert snapshot.loop_start_beat == pytest.approx(start)
     assert snapshot.loop_end_beat == pytest.approx(end)
+
+
+@then(parsers.parse("the arranged preview volume slider reads {percent:g} percent"))
+def assert_arranged_volume_slider(arranger_app: E2EHarness, percent: float) -> None:
+    _log_preview_volume_state(arranger_app, f"assert slider target={percent}")
+    window = arranger_app.window
+    volume_var = window._preview_volume_vars["arranged"]
+    assert volume_var.get() == pytest.approx(percent, abs=0.25)
+    controls = window._preview_volume_controls.get("arranged")
+    if controls:
+        slider = controls[-1]
+        get = getattr(slider, "get", None)
+        if callable(get):
+            assert get() == pytest.approx(percent, abs=0.25)
+
+
+@then(parsers.parse("the arranged preview playback volume is {value:g}"))
+def assert_arranged_playback_volume(arranger_app: E2EHarness, value: float) -> None:
+    _log_preview_volume_state(arranger_app, f"assert playback volume target={value}")
+    playback = arranger_app.window._preview_playback.get("arranged")
+    assert playback is not None
+    assert playback.state.volume == pytest.approx(value, abs=1e-6)
+
+
+@then("the arranged preview mute button is pressed")
+def assert_arranged_mute_button_pressed(arranger_app: E2EHarness) -> None:
+    _log_preview_volume_state(arranger_app, "assert mute pressed")
+    window = arranger_app.window
+    button = window._preview_volume_buttons.get("arranged")
+    if button is not None:
+        assert button.instate(["pressed"])
+    else:
+        assert abs(window._preview_volume_vars["arranged"].get()) <= 1e-6
+
+
+@then("the arranged preview mute button is released")
+def assert_arranged_mute_button_released(arranger_app: E2EHarness) -> None:
+    _log_preview_volume_state(arranger_app, "assert mute released")
+    window = arranger_app.window
+    button = window._preview_volume_buttons.get("arranged")
+    if button is not None:
+        assert button.instate(["!pressed"])
+    else:
+        assert window._preview_volume_vars["arranged"].get() > 1e-6
 
 
 @then(parsers.parse('the auto scroll preference is "{mode}"'))

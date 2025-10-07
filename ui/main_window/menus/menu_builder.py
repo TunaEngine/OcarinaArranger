@@ -177,6 +177,13 @@ class MenuBuilderMixin:
             command=self._open_discord_command,
         )
 
+        about_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
+        menubar.add_cascade(label="About", menu=about_menu)
+        about_menu.add_command(
+            label="Licenses",
+            command=self._show_licenses_window,
+        )
+
         # If using the custom menubar, build it now that cascades are defined.
         if not getattr(self, "_use_native_menubar", False) and not getattr(self, "_headless", False):
             try:

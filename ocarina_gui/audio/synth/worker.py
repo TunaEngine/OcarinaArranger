@@ -138,7 +138,11 @@ class _RenderWorker:
         with self._lock:
             if self._shutdown:
                 return
-            needs_render = self._is_render_needed(force, tempo, metronome_settings)
+            needs_render = self._is_render_needed(
+                force=force,
+                tempo=tempo,
+                metronome=metronome_settings,
+            )
             if not needs_render:
                 return
 
@@ -148,7 +152,11 @@ class _RenderWorker:
             self._render_ready.wait()
 
     def _is_render_needed(
-        self, force: bool, tempo: float, metronome: MetronomeSettings
+        self,
+        *,
+        force: bool,
+        tempo: float,
+        metronome: MetronomeSettings,
     ) -> bool:
         # This helper must be called with the lock held.
         if force:
@@ -205,7 +213,10 @@ class _RenderWorker:
     # Internal helpers
     # ------------------------------------------------------------------
     def _schedule_render_locked(
-        self, tempo: float, listener: AudioRenderListener | None, metronome: MetronomeSettings
+        self,
+        tempo: float,
+        listener: AudioRenderListener | None,
+        metronome: MetronomeSettings,
     ) -> None:
         # This helper must be called with the lock held.
         self._render_generation += 1

@@ -6,6 +6,7 @@ import atexit
 import logging
 import sys
 import threading
+import audioop
 from typing import Callable, Optional, Sequence
 
 from viewmodels.preview_playback_viewmodel import (
@@ -93,6 +94,7 @@ class _SynthRenderer(AudioRenderer):
         self._config_lock = threading.Lock()
         self._playback_lock = threading.RLock()
         self._resume_threads: list[threading.Thread] = []
+        self._volume = 1.0
 
     # ------------------------------------------------------------------
     # AudioRenderer protocol implementation
@@ -228,6 +230,25 @@ class _SynthRenderer(AudioRenderer):
             generation = self._worker.render_generation
             self._restart_after_render(generation, position)
 
+    def set_volume(self, volume: float) -> bool:
+        normalized = max(0.0, min(1.0, float(volume)))
+        with self._config_lock:
+            previous = self._volume
+            if abs(previous - normalized) <= 1e-6:
+                return False
+            self._volume = normalized
+
+        with self._playback_lock:
+            if not self._is_playing:
+                return False
+            position = self._position_tick
+            self._stop_handle_only()
+            self._is_playing = False
+            resumed = self._play_from_tick(position)
+            if not resumed:
+                self._is_playing = False
+        return False
+
     def set_render_listener(self, listener: AudioRenderListener | None) -> None:
         self._render_listener = listener
 
@@ -322,6 +343,7 @@ class _SynthRenderer(AudioRenderer):
                 )
                 return False
             slice_bytes = buffer[byte_offset:]
+            slice_bytes = self._apply_volume(slice_bytes)
             handle = self._player.play(slice_bytes, self._SAMPLE_RATE)
             if handle is None:
                 try:
@@ -342,6 +364,26 @@ class _SynthRenderer(AudioRenderer):
                 len(slice_bytes),
             )
             return True
+
+    def _apply_volume(self, pcm: bytes) -> bytes:
+        volume = self._volume
+        if not pcm:
+            return pcm
+        if volume <= 1e-6:
+            return self._silence(len(pcm))
+        if abs(volume - 1.0) <= 1e-6:
+            return pcm
+        try:
+            scaled = audioop.mul(pcm, 2, volume)
+        except Exception:
+            scaled = pcm
+        return scaled
+
+    @staticmethod
+    def _silence(length: int) -> bytes:
+        frames, remainder = divmod(length, 2)
+        silence = b"\x00\x00" * frames
+        return silence + (b"\x00" if remainder else b"")
 
     def _stop_handle_only(self) -> None:
         # Assumes playback lock is held.

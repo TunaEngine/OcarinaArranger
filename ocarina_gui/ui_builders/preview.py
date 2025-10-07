@@ -102,6 +102,52 @@ def _build_modern_preview_side(
     zoom_out_btn = ttk.Button(zoom_frame, **zoom_out_kwargs)
     zoom_out_btn.pack(side="left")
 
+    volume_frame = ttk.Frame(transport, style="Panel.TFrame")
+    volume_frame.grid(row=0, column=1, sticky="w", padx=(12, 12))
+    volume_icon = _load_arranged_icon(app, "volume")
+    muted_volume_icon = _load_arranged_icon(app, "volume_muted")
+    volume_kwargs: dict[str, object] = {
+        "command": lambda s=side: app._handle_preview_volume_button(s, None),
+        "padding": 2,
+    }
+    if volume_icon is not None:
+        volume_kwargs["image"] = volume_icon
+    else:
+        volume_kwargs["text"] = "🔈"
+        volume_kwargs["width"] = 3
+    volume_btn = ttk.Button(volume_frame, **volume_kwargs)
+    volume_btn.grid(row=0, column=0, sticky="w")
+    volume_btn.bind(
+        "<ButtonRelease-1>",
+        lambda event, s=side: app._handle_preview_volume_button(s, event),
+        add="+",
+    )
+    volume_slider = ttk.Scale(
+        volume_frame,
+        from_=0,
+        to=100,
+        orient="horizontal",
+        variable=app._preview_volume_vars[side],
+        bootstyle="info",
+        length=120,
+    )
+    volume_slider.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    volume_slider.bind(
+        "<ButtonPress-1>",
+        lambda event, s=side: app._on_preview_volume_press(s, event),
+        add="+",
+    )
+    volume_slider.bind(
+        "<B1-Motion>",
+        lambda event, s=side: app._on_preview_volume_drag(s, event),
+        add="+",
+    )
+    volume_slider.bind(
+        "<ButtonRelease-1>",
+        lambda event, s=side: app._on_preview_volume_release(s, event),
+        add="+",
+    )
+
     playback_bar = ttk.Frame(transport, style="Panel.TFrame")
     playback_bar.grid(row=0, column=2, sticky="e")
     playback_bar.grid_columnconfigure(0, weight=0)
@@ -158,6 +204,27 @@ def _build_modern_preview_side(
     if callable(register_icon):
         register_icon("zoom_in", zoom_in_btn)
         register_icon("zoom_out", zoom_out_btn)
+        register_icon("volume", volume_btn)
+
+    volume_controls = getattr(app, "_preview_volume_controls", None)
+    if isinstance(volume_controls, dict):
+        volume_controls[side] = (volume_btn, volume_slider)
+    volume_icon_sets = getattr(app, "_preview_volume_icons", None)
+    if not isinstance(volume_icon_sets, dict):
+        volume_icon_sets = {}
+        app._preview_volume_icons = volume_icon_sets
+    volume_icon_sets[side] = {
+        "normal": volume_icon,
+        "muted": muted_volume_icon,
+    }
+    volume_buttons = getattr(app, "_preview_volume_buttons", None)
+    if isinstance(volume_buttons, dict):
+        volume_buttons[side] = volume_btn
+    if hasattr(app, "_update_mute_button_state"):
+        try:
+            app._update_mute_button_state(side)
+        except Exception:
+            pass
 
     ttk.Separator(main, orient="horizontal").grid(
         row=1, column=0, sticky="ew", pady=(6, 6)

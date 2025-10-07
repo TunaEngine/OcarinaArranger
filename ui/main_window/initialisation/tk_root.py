@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from ocarina_gui.headless import install_headless_photoimage
 from shared.ttk import ttk
 
 from ._logging import LOGGER
@@ -18,6 +19,7 @@ class TkRootMixin:
             super().__init__(**init_kwargs)  # type: ignore[misc]
         except tk.TclError:
             tk.Tk.__init__(self, useTk=False)  # type: ignore[misc]
+            install_headless_photoimage()
             return True
         except Exception:  # pragma: no cover - defensive fallback
             LOGGER.warning(

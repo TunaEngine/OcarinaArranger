@@ -53,6 +53,20 @@ class PreviewInitialisationMixin:
         }
         self._preview_play_buttons: Dict[str, object] = {}
         self._preview_play_icons: Dict[str, Dict[str, object]] = {}
+        self._preview_volume_vars = {
+            "original": tk.DoubleVar(
+                master=self, value=self._preview_playback["original"].state.volume * 100.0
+            ),
+            "arranged": tk.DoubleVar(
+                master=self, value=self._preview_playback["arranged"].state.volume * 100.0
+            ),
+        }
+        self._preview_volume_buttons: Dict[str, object] = {}
+        self._preview_volume_controls: dict[str, tuple[object, ...]] = {}
+        self._preview_volume_memory: dict[str, float] = {}
+        self._preview_volume_button_guard: set[str] = set()
+        self._active_volume_adjustment: set[str] = set()
+        self._resume_volume_on_release: dict[str, bool] = {}
         self._preview_position_vars = {
             "original": tk.StringVar(master=self, value="0:00.000"),
             "arranged": tk.StringVar(master=self, value="0:00.000"),
@@ -114,11 +128,13 @@ class PreviewInitialisationMixin:
         self._suspend_tempo_update: set[str] = set()
         self._suspend_metronome_update: set[str] = set()
         self._suspend_loop_update: set[str] = set()
+        self._suspend_volume_update: set[str] = set()
         self._tempo_trace_tokens: dict[str, str] = {}
         self._metronome_trace_tokens: dict[str, str] = {}
         self._loop_enabled_trace_tokens: dict[str, str] = {}
         self._loop_start_trace_tokens: dict[str, str] = {}
         self._loop_end_trace_tokens: dict[str, str] = {}
+        self._volume_trace_tokens: dict[str, str] = {}
         self._loop_range_first_tick: dict[str, int | None] = {
             "original": None,
             "arranged": None,
@@ -192,6 +208,14 @@ class PreviewInitialisationMixin:
             loop_end_var = self._preview_loop_end_vars[side]
             self._loop_end_trace_tokens[side] = loop_end_var.trace_add(
                 "write", lambda *_args, s=side: self._on_preview_loop_end_changed(s)
+            )
+            volume_var = self._preview_volume_vars[side]
+            initial_volume = float(volume_var.get()) if isinstance(volume_var, tk.DoubleVar) else 100.0
+            if initial_volume <= 0.0:
+                initial_volume = 100.0
+            self._preview_volume_memory[side] = initial_volume
+            self._volume_trace_tokens[side] = volume_var.trace_add(
+                "write", lambda *_args, s=side: self._on_preview_volume_changed(s)
             )
         self._playback_last_ts: float | None = None
         self._playback_job: str | None = None

@@ -22,6 +22,8 @@ class _StubAudioRenderer(AudioRenderer):
         self.auto_complete_render = True
         self._pending_generation: int | None = None
         self.loop_region = None
+        self.volume = 1.0
+        self.volume_requires_render = False
 
     def prepare(self, events, pulses_per_quarter):  # type: ignore[override]
         self._begin_render()
@@ -51,6 +53,13 @@ class _StubAudioRenderer(AudioRenderer):
 
     def set_render_listener(self, listener) -> None:  # type: ignore[override]
         self._listener = listener
+
+    def set_volume(self, volume: float) -> bool:  # noqa: D401 - protocol compliance
+        self.volume = volume
+        if self.volume_requires_render:
+            self._begin_render()
+            return True
+        return False
 
     def finish_render(self, success: bool = True) -> None:
         if self._pending_generation is None:

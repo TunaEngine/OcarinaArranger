@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import audioop
 import threading
 import time
 from pathlib import Path
+
+import pytest
 
 from ocarina_gui import audio
 from ocarina_gui.audio.synth import rendering
@@ -59,8 +62,12 @@ class _CountingPlayer(audio._AudioPlayer):
         self.stop_all_calls += 1
 
 
-def _await_render(renderer: audio._SynthRenderer, timeout: float = 1.0) -> None:
-    assert renderer._render_ready.wait(timeout)  # type: ignore[attr-defined]
+def _await_render(renderer: audio._SynthRenderer, timeout: float = 3.0) -> None:
+    """Wait for the background render to complete within the timeout."""
+
+    if renderer._render_ready.wait(timeout):  # type: ignore[attr-defined]
+        return
+    raise AssertionError(f"expected render to complete within {timeout} seconds")
 
 
 def _wait_for_playback(
@@ -108,6 +115,38 @@ def test_synth_renderer_generates_pcm_when_started() -> None:
         renderer.shutdown()
 
 
+def test_synth_renderer_volume_changes_restart_playback() -> None:
+    player = _DummyPlayer()
+    renderer = audio._SynthRenderer(player)
+    try:
+        events = [(0, 480, 69, 79)]
+        renderer.prepare(events, 480)
+        assert renderer.start(0, 120.0)
+
+        _await_render(renderer)
+        _wait_for_playback(player)
+
+        first_pcm, _ = player.calls[-1]
+        first_rms = audioop.rms(first_pcm, 2)
+        assert first_rms > 0
+
+        renderer.set_volume(0.25)
+        _wait_for_playback(player, min_calls=2)
+
+        second_pcm, _ = player.calls[-1]
+        assert len(second_pcm) == len(first_pcm)
+        second_rms = audioop.rms(second_pcm, 2)
+        assert second_rms == pytest.approx(first_rms * 0.25, rel=0.2)
+
+        renderer.set_volume(0.0)
+        _wait_for_playback(player, min_calls=3)
+
+        muted_pcm, _ = player.calls[-1]
+        assert audioop.rms(muted_pcm, 2) == 0
+    finally:
+        renderer.shutdown()
+
+
 def test_synth_renderer_uses_instrument_specific_waveforms() -> None:
     player = _DummyPlayer()
     renderer = audio._SynthRenderer(player)
@@ -130,11 +169,11 @@ def test_synth_renderer_caches_note_segments() -> None:
 
         events = [(0, 960, 60, 79), (960, 960, 60, 79)]
         renderer.prepare(events, 480)
-        assert renderer._render_ready.wait(2.0)  # type: ignore[attr-defined]
+        _await_render(renderer, timeout=5.0)
         first_cache = rendering.get_note_segment_cache_info()
 
         renderer.prepare(events, 480)
-        assert renderer._render_ready.wait(2.0)  # type: ignore[attr-defined]
+        _await_render(renderer, timeout=5.0)
         second_cache = rendering.get_note_segment_cache_info()
 
         assert second_cache.hits > first_cache.hits

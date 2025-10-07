@@ -140,6 +140,7 @@ class PreviewPlaybackControlMixin:
         )
         self._set_preview_controls_enabled(side, controls_enabled)
         self._update_preview_fingering(side)
+        self._update_mute_button_state(side)
 
     def _register_arranged_icon_target(self, name: str, widget: tk.Widget) -> None:
         registry = getattr(self, "_arranged_icon_targets", None)
@@ -153,12 +154,21 @@ class PreviewPlaybackControlMixin:
         if not isinstance(widget, ttk.Button):
             return
 
-        emphasize = False
         play_buttons = getattr(self, "_preview_play_buttons", None)
-        if isinstance(play_buttons, dict) and widget in play_buttons.values():
-            emphasize = True
+        is_play_button = isinstance(play_buttons, dict) and widget in play_buttons.values()
 
-        bootstyle = ("primary", "outline") if emphasize else ("info", "outline")
+        if is_play_button:
+            try:
+                is_dark_theme = self._is_preview_theme_dark()
+            except AttributeError:
+                is_dark_theme = False
+            bootstyle: object
+            if is_dark_theme:
+                bootstyle = ("light", "outline", "toolbutton")
+            else:
+                bootstyle = ("outline", "toolbutton")
+        else:
+            bootstyle = ("info", "outline")
 
         try:
             widget.configure(bootstyle=bootstyle)
@@ -170,6 +180,47 @@ class PreviewPlaybackControlMixin:
 
     def _refresh_preview_theme_assets(self) -> None:
         self._refresh_arranged_icon_theme()
+
+    def _update_mute_button_state(self, side: str) -> None:
+        buttons = getattr(self, "_preview_volume_buttons", {})
+        if not isinstance(buttons, dict):
+            return
+        button = buttons.get(side)
+        if button is None:
+            return
+        playback = self._preview_playback.get(side)
+        muted = False
+        if playback is not None:
+            muted = playback.state.volume <= 1e-6
+        bootstyle = ("danger", "outline") if muted else ("info", "outline")
+        try:
+            button.configure(bootstyle=bootstyle)
+        except (tk.TclError, TypeError):
+            pass
+        icon_sets = getattr(self, "_preview_volume_icons", {})
+        icon_map = icon_sets.get(side) if isinstance(icon_sets, dict) else None
+        desired_icon = None
+        if isinstance(icon_map, dict):
+            desired_icon = icon_map.get("muted" if muted else "normal")
+        try:
+            if desired_icon is not None:
+                button.configure(image=desired_icon, text="", compound="center")
+            else:
+                button.configure(
+                    image="",
+                    text="🔇" if muted else "🔈",
+                    width=3,
+                    compound="center",
+                )
+        except (tk.TclError, TypeError):
+            pass
+        try:
+            if muted:
+                button.state(["pressed"])
+            else:
+                button.state(["!pressed"])
+        except tk.TclError:
+            pass
 
     def _refresh_arranged_icon_theme(self) -> None:
         cache = getattr(self, "_arranged_icon_cache", None)
@@ -192,6 +243,25 @@ class PreviewPlaybackControlMixin:
                         widget.configure(image=icon)
                     except tk.TclError:
                         continue
+
+        volume_icons = getattr(self, "_preview_volume_icons", {})
+        volume_buttons = getattr(self, "_preview_volume_buttons", {})
+        if isinstance(volume_icons, dict):
+            normal_entry = cache.get("volume") if isinstance(cache, dict) else None
+            muted_entry = cache.get("volume_muted") if isinstance(cache, dict) else None
+            normal_icon = None
+            muted_icon = None
+            if isinstance(normal_entry, dict):
+                normal_icon = normal_entry.get(variant) or normal_entry.get("light")
+            if isinstance(muted_entry, dict):
+                muted_icon = muted_entry.get(variant) or muted_entry.get("light")
+            for side, icon_map in volume_icons.items():
+                if not isinstance(icon_map, dict):
+                    continue
+                icon_map["normal"] = normal_icon
+                icon_map["muted"] = muted_icon
+                if isinstance(volume_buttons, dict) and side in volume_buttons:
+                    self._update_mute_button_state(side)
 
         play_icons = getattr(self, "_preview_play_icons", {})
         play_buttons = getattr(self, "_preview_play_buttons", {})
@@ -239,6 +309,21 @@ class PreviewPlaybackControlMixin:
         if playback is None:
             return
         self._cancel_loop_range_selection(side)
+        volume_var = self._preview_volume_vars.get(side)
+        if volume_var is not None:
+            target_volume = float(playback.state.volume) * 100.0
+            try:
+                target_volume = self._set_volume_controls_value(side, target_volume)
+            except AttributeError:
+                self._suspend_volume_update.add(side)
+                try:
+                    volume_var.set(target_volume)
+                except tk.TclError:
+                    pass
+                finally:
+                    self._suspend_volume_update.discard(side)
+            if target_volume > 0.0:
+                self._preview_volume_memory[side] = target_volume
         tempo_var = self._preview_tempo_vars.get(side)
         if tempo_var is not None:
             self._suspend_tempo_update.add(side)

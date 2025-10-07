@@ -16,13 +16,48 @@ class PreviewSettingsMixin:
             self._preview_metronome_controls.get(side),
         )
         loop_widgets = self._preview_loop_controls.get(side, ())
+        volume_widgets = self._preview_volume_controls.get(side, ())
+
+        def _apply_widget_state(widget: object, flags: list[str]) -> None:
+            try:
+                widget.state(tuple(flags))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            if any(flag == "!disabled" for flag in flags):
+                for action in (
+                    lambda: widget.state(("!disabled",)),
+                    lambda: widget.configure(state="normal"),
+                    lambda: widget.__setitem__("state", "normal"),
+                ):
+                    try:
+                        action()  # type: ignore[misc]
+                    except Exception:
+                        pass
+            elif any(flag == "disabled" for flag in flags):
+                for action in (
+                    lambda: widget.state(("disabled",)),
+                    lambda: widget.configure(state="disabled"),
+                    lambda: widget.__setitem__("state", "disabled"),
+                ):
+                    try:
+                        action()  # type: ignore[misc]
+                    except Exception:
+                        pass
+
         for widget in (*widgets, *loop_widgets):
             if widget is None:
                 continue
-            try:
-                widget.state(state_flags)
-            except Exception:
+            _apply_widget_state(widget, state_flags)
+        playback = getattr(self, "_preview_playback", {}).get(side)
+        if playback is not None:
+            volume_enabled = playback.state.is_loaded and not playback.state.is_rendering
+            volume_state = ["!disabled"] if volume_enabled else ["disabled"]
+        else:
+            volume_state = state_flags
+        for widget in volume_widgets:
+            if widget is None:
                 continue
+            _apply_widget_state(widget, volume_state)
         if not enabled:
             self._cancel_loop_range_selection(side)
 

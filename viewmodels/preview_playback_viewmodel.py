@@ -35,6 +35,7 @@ class PreviewPlaybackViewModel:
         self._pending_playback_resume = False
         self._render_tracker = PreviewRenderTracker(self.state, self._state_lock)
         self._audio.set_render_listener(self._RenderListener(self))
+        self._audio.set_volume(self.state.volume)
 
     # ------------------------------------------------------------------
     # State management
@@ -134,6 +135,7 @@ class PreviewPlaybackViewModel:
             self.state.beats_per_measure,
             self.state.beat_unit,
         )
+        self._audio.set_volume(self.state.volume)
         if not self._events:
             self._render_tracker.mark_idle()
             self._notify_render_observer()
@@ -305,6 +307,32 @@ class PreviewPlaybackViewModel:
             loop.end_tick,
         )
 
+    def set_volume(self, volume: float) -> None:
+        normalized = max(0.0, min(1.0, float(volume)))
+        if abs(normalized - self.state.volume) <= 1e-6:
+            logger.debug(
+                "set_volume noop: requested=%.4f current=%.4f",  # pragma: no cover - debug aid
+                normalized,
+                self.state.volume,
+            )
+            return
+
+        previous = self.state.volume
+        self.state.volume = normalized
+        needs_render = self._audio.set_volume(normalized)
+        logger.debug(
+            "set_volume applied: previous=%.4f new=%.4f needs_render=%s is_playing=%s events=%d",  # pragma: no cover - debug aid
+            previous,
+            normalized,
+            needs_render,
+            self.state.is_playing,
+            len(self._events),
+        )
+        if needs_render and self._render_tracker.mark_pending(len(self._events)):
+            self._notify_render_observer()
+        if needs_render and self.state.is_playing:
+            self._pending_playback_resume = True
+
     def reset_adjustments(self) -> None:
         """Restore cursor position and playback options to their defaults."""
 
@@ -315,6 +343,7 @@ class PreviewPlaybackViewModel:
         self.state.metronome_enabled = False
         loop = LoopRegion(enabled=False, start_tick=0, end_tick=self.state.duration_tick)
         self.state.loop = loop
+        self.state.volume = 1.0
         self._audio.set_tempo(self.state.tempo_bpm)
         self._audio.set_metronome(
             self.state.metronome_enabled,
@@ -322,6 +351,7 @@ class PreviewPlaybackViewModel:
             self.state.beat_unit,
         )
         self._audio.set_loop(loop)
+        self._audio.set_volume(self.state.volume)
 
     def stop(self) -> None:
         if self.state.is_loaded and self.state.is_playing:

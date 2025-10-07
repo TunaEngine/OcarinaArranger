@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from viewmodels.preview_playback_viewmodel import (
     LoopRegion,
     PreviewPlaybackState,
@@ -17,11 +19,13 @@ class StubAudioRenderer:
         self.tempo_updates: list[float] = []
         self.loop_updates: list[LoopRegion] = []
         self.metronome_updates: list[tuple[bool, int, int]] = []
+        self.volume_updates: list[float] = []
         self.start_should_fail = False
         self.render_listener = None
         self._generation = 0
         self.prepare_calls = 0
         self.auto_render = True
+        self.volume_requires_render = False
 
     def prepare(self, events, pulses_per_quarter: int) -> None:  # type: ignore[override]
         self.prepare_calls += 1
@@ -56,6 +60,13 @@ class StubAudioRenderer:
 
     def set_render_listener(self, listener) -> None:  # type: ignore[override]
         self.render_listener = listener
+
+    def set_volume(self, volume: float) -> bool:
+        self.volume_updates.append(volume)
+        if self.volume_requires_render:
+            self._notify_render()
+            return True
+        return False
 
     def trigger_render(self, progress: tuple[float, ...] = (0.0, 1.0), success: bool = True) -> None:
         if self.render_listener is None:
@@ -194,6 +205,20 @@ def test_tempo_change_while_playing_defers_cursor_until_render_completes() -> No
 
     viewmodel.advance(1.0)
     assert viewmodel.state.position_tick > initial_position
+
+
+def test_set_volume_updates_renderer_and_state() -> None:
+    viewmodel, renderer = _build_viewmodel()
+
+    viewmodel.set_volume(0.42)
+
+    assert renderer.volume_updates[-1] == pytest.approx(0.42)
+    assert viewmodel.state.volume == pytest.approx(0.42)
+
+    viewmodel.set_volume(-1.0)
+
+    assert renderer.volume_updates[-1] == pytest.approx(0.0)
+    assert viewmodel.state.volume == pytest.approx(0.0)
 
 
 def test_loop_region_wraps_when_enabled() -> None:

@@ -26,3 +26,14 @@ Feature: Preview playback controls
   Scenario: Changing the preview layout persists the preference
     When the user switches preview layout mode to "staff"
     Then the preview layout preference is "staff"
+
+  Scenario: Muting and unmuting via the volume button restores the previous level
+    When the user sets the arranged preview volume to 65 percent
+    And the user clicks the arranged preview volume button
+    Then the arranged preview volume slider reads 0 percent
+    And the arranged preview playback volume is 0
+    And the arranged preview mute button is pressed
+    When the user clicks the arranged preview volume button
+    Then the arranged preview volume slider reads 65 percent
+    And the arranged preview playback volume is 0.65
+    And the arranged preview mute button is released

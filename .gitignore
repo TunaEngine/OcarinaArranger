@@ -6,3 +6,4 @@ ocarina_gui/config/*
 
 build/
 dist/
+.venv

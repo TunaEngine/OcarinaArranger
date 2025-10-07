@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from ocarina_tools import NoteEvent
@@ -319,6 +320,105 @@ class HeadlessStaffView:
     def _request_wrapped_rerender(self) -> None:  # pragma: no cover - headless no-op
         self._wrap_pending_rerender = False
 
+class _HeadlessWidget:
+    """Common behaviour for headless widget stand-ins."""
+
+    def __init__(self) -> None:
+        self._options: dict[str, object] = {}
+        self._bindings: dict[str, list[Callable[[SimpleNamespace], object | None]]] = {}
+        self._manager: str = ""
+        self._grid_options: dict[str, object] = {}
+        self._width: int = 24
+        self._height: int = 24
+
+    def configure(self, **kwargs: object) -> None:
+        if not kwargs:
+            return
+        image = kwargs.pop("image", None)
+        if image is not None:
+            if image in ("", None):
+                self._options["image"] = ""
+            else:
+                self._options["image"] = str(image)
+        for key, value in kwargs.items():
+            self._options[key] = value
+        width = self._options.get("width")
+        if width is not None:
+            try:
+                self._width = int(width) if int(width) > 0 else self._width
+            except (TypeError, ValueError):
+                pass
+        length = self._options.get("length")
+        if length is not None:
+            try:
+                length_value = int(length)
+            except (TypeError, ValueError):
+                length_value = None
+            if length_value:
+                self._width = max(1, length_value)
+        height = self._options.get("height")
+        if height is not None:
+            try:
+                height_value = int(height)
+            except (TypeError, ValueError):
+                height_value = None
+            if height_value:
+                self._height = max(1, height_value)
+
+    config = configure
+
+    def cget(self, option: str) -> object:
+        if option == "image":
+            return self._options.get("image", "")
+        return self._options.get(option, "")
+
+    def bind(
+        self, sequence: str, func: Callable[[SimpleNamespace], object | None] | None, add: str | None = None
+    ) -> None:
+        if func is None:
+            return
+        if add == "+" and sequence in self._bindings:
+            self._bindings[sequence].append(func)
+        else:
+            self._bindings[sequence] = [func]
+
+    def event_generate(self, sequence: str, **kwargs: object) -> None:
+        callbacks = list(self._bindings.get(sequence, ()))
+        if not callbacks:
+            return
+        event = SimpleNamespace(widget=self, **kwargs)
+        for callback in callbacks:
+            callback(event)
+
+    def grid(self, **kwargs: object) -> None:
+        if kwargs:
+            self._grid_options.update(kwargs)
+        self._manager = "grid"
+
+    def grid_configure(self, **kwargs: object) -> None:
+        if kwargs:
+            self._grid_options.update(kwargs)
+        self._manager = "grid"
+
+    def grid_remove(self) -> None:
+        self._manager = ""
+
+    def grid_info(self) -> dict[str, object]:
+        return dict(self._grid_options)
+
+    def update_idletasks(self) -> None:  # pragma: no cover - compatibility shim
+        return None
+
+    def winfo_height(self) -> int:
+        return self._height
+
+    def winfo_manager(self) -> str:
+        return self._manager
+
+    def winfo_width(self) -> int:
+        return self._width
+
+
 class _HeadlessStateful:
     def __init__(self) -> None:
         self._states: set[str] = set()
@@ -333,14 +433,43 @@ class _HeadlessStateful:
                 self._states.add(flag)
         return tuple(self._states)
 
+    def instate(self, states: Sequence[str]) -> bool:
+        for flag in states:
+            if flag.startswith("!"):
+                if flag[1:] in self._states:
+                    return False
+            elif flag not in self._states:
+                return False
+        return True
 
-class HeadlessButton(_HeadlessStateful):
+
+class HeadlessButton(_HeadlessStateful, _HeadlessWidget):
     """Minimal stand-in for ttk.Button in headless tests."""
 
-    def __init__(self, command: Optional[Callable[[], None]] = None) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        command: Optional[Callable[[], None]] = None,
+        *,
+        text: str = "",
+        enabled: bool = False,
+    ) -> None:
+        _HeadlessStateful.__init__(self)
+        _HeadlessWidget.__init__(self)
         self._command = command
-        self._states.add("disabled")
+        self._options.update({
+            "text": text,
+            "compound": "center",
+            "bootstyle": None,
+            "width": 24,
+        })
+        if not enabled:
+            self._states.add("disabled")
+
+    def configure(self, **kwargs: object) -> None:
+        if "text" in kwargs:
+            text_value = kwargs["text"]
+            self._options["text"] = "" if text_value is None else str(text_value)
+        _HeadlessWidget.configure(self, **kwargs)
 
     def invoke(self) -> None:
         if "disabled" in self._states:
@@ -349,12 +478,152 @@ class HeadlessButton(_HeadlessStateful):
             self._command()
 
 
-class HeadlessSpinbox(_HeadlessStateful):
-    pass
+class HeadlessPhotoImage:
+    """Simple placeholder for ``tk.PhotoImage`` when Tk is unavailable."""
+
+    _COUNTER = 0
+
+    def __init__(
+        self,
+        master=None,
+        *,
+        width: int | float | None = None,
+        height: int | float | None = None,
+        file: str | None = None,
+        **_kwargs: object,
+    ) -> None:
+        type(self)._COUNTER += 1
+        self._name = f"headless_image_{type(self)._COUNTER}"
+        self._width = self._coerce_int(width, default=1)
+        self._height = self._coerce_int(height, default=1)
+        self._file = file
+
+    @staticmethod
+    def _coerce_int(value: int | float | None, *, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            numeric = int(round(float(value)))
+        except (TypeError, ValueError):
+            return default
+        return max(1, numeric)
+
+    def __str__(self) -> str:  # pragma: no cover - exercised indirectly
+        return self._name
+
+    def copy(self) -> "HeadlessPhotoImage":
+        return HeadlessPhotoImage(width=self._width, height=self._height, file=self._file)
+
+    def width(self) -> int:
+        return self._width
+
+    def height(self) -> int:
+        return self._height
+
+    def zoom(self, x: int = 1, y: int | None = None) -> "HeadlessPhotoImage":
+        factor_x = max(1, int(x))
+        factor_y = factor_x if y is None else max(1, int(y))
+        return HeadlessPhotoImage(
+            width=self._width * factor_x,
+            height=self._height * factor_y,
+            file=self._file,
+        )
+
+    def subsample(self, x: int = 1, y: int | None = None) -> "HeadlessPhotoImage":
+        factor_x = max(1, int(x))
+        factor_y = factor_x if y is None else max(1, int(y))
+        return HeadlessPhotoImage(
+            width=max(1, self._width // factor_x),
+            height=max(1, self._height // factor_y),
+            file=self._file,
+        )
 
 
-class HeadlessCheckbutton(_HeadlessStateful):
-    pass
+def install_headless_photoimage() -> None:
+    """Replace ``tk.PhotoImage`` with a lightweight stub for headless tests."""
+
+    try:
+        import tkinter as tk
+    except Exception:  # pragma: no cover - Tk unavailable
+        return
+    current = getattr(tk, "PhotoImage", None)
+    if current is HeadlessPhotoImage:
+        return
+    tk.PhotoImage = HeadlessPhotoImage  # type: ignore[attr-defined]
+
+
+class HeadlessSpinbox(_HeadlessStateful, _HeadlessWidget):
+    def __init__(self) -> None:
+        _HeadlessStateful.__init__(self)
+        _HeadlessWidget.__init__(self)
+
+
+class HeadlessCheckbutton(_HeadlessStateful, _HeadlessWidget):
+    def __init__(self) -> None:
+        _HeadlessStateful.__init__(self)
+        _HeadlessWidget.__init__(self)
+
+
+class HeadlessScale(_HeadlessStateful, _HeadlessWidget):
+    """Headless replacement for ``ttk.Scale`` used in GUI tests."""
+
+    def __init__(
+        self,
+        *,
+        variable,
+        from_: float = 0.0,
+        to: float = 100.0,
+        length: int = 120,
+    ) -> None:
+        _HeadlessStateful.__init__(self)
+        _HeadlessWidget.__init__(self)
+        self._variable = variable
+        self._options.update({"from": float(from_), "to": float(to), "length": length})
+        self._width = max(1, int(length))
+        self._height = 16
+        try:
+            initial = float(variable.get())
+        except Exception:
+            initial = float(from_)
+        self._value = float(from_)
+        self.set(initial)
+
+    def configure(self, **kwargs: object) -> None:
+        if "from_" in kwargs:
+            kwargs = dict(kwargs)
+            kwargs["from"] = kwargs.pop("from_")
+        super().configure(**kwargs)
+        for key in ("from", "to"):
+            if key in kwargs:
+                try:
+                    self._options[key] = float(kwargs[key])
+                except (TypeError, ValueError):
+                    continue
+
+    def cget(self, option: str) -> object:
+        if option == "from":
+            return self._options.get("from", 0.0)
+        if option == "to":
+            return self._options.get("to", 100.0)
+        return super().cget(option)
+
+    def get(self) -> float:
+        return float(self._value)
+
+    def set(self, value: float) -> None:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return
+        lower = float(self._options.get("from", 0.0))
+        upper = float(self._options.get("to", 100.0))
+        self._value = max(lower, min(upper, numeric))
+        variable = self._variable
+        if variable is not None:
+            try:
+                variable.set(self._value)
+            except Exception:
+                pass
 
 
 class HeadlessFrame:
@@ -427,6 +696,59 @@ def build_headless_ui(app: "App") -> None:
         )
 
     for side in ("original", "arranged"):
+        volume_button = HeadlessButton(
+            lambda s=side: app._handle_preview_volume_button(s, None),
+            enabled=True,
+        )
+        volume_button.configure(width=3, text="🔈", compound="center")
+        volume_button.bind(
+            "<ButtonRelease-1>",
+            lambda event, s=side: app._handle_preview_volume_button(s, event),
+            add="+",
+        )
+        volume_var = app._preview_volume_vars[side]
+        volume_slider = HeadlessScale(
+            variable=volume_var,
+            from_=0.0,
+            to=100.0,
+            length=120,
+        )
+        volume_slider.bind(
+            "<ButtonPress-1>",
+            lambda event, s=side: app._on_preview_volume_press(s, event),
+            add="+",
+        )
+        volume_slider.bind(
+            "<B1-Motion>",
+            lambda event, s=side: app._on_preview_volume_drag(s, event),
+            add="+",
+        )
+        volume_slider.bind(
+            "<ButtonRelease-1>",
+            lambda event, s=side: app._on_preview_volume_release(s, event),
+            add="+",
+        )
+        volume_buttons = getattr(app, "_preview_volume_buttons", None)
+        if not isinstance(volume_buttons, dict):
+            volume_buttons = {}
+            app._preview_volume_buttons = volume_buttons
+        volume_buttons[side] = volume_button
+        volume_controls = getattr(app, "_preview_volume_controls", None)
+        if not isinstance(volume_controls, dict):
+            volume_controls = {}
+            app._preview_volume_controls = volume_controls
+        volume_controls[side] = (volume_button, volume_slider)
+        volume_icon_sets = getattr(app, "_preview_volume_icons", None)
+        if not isinstance(volume_icon_sets, dict):
+            volume_icon_sets = {}
+            app._preview_volume_icons = volume_icon_sets
+        volume_icon_sets[side] = {"normal": None, "muted": None}
+        if hasattr(app, "_update_mute_button_state"):
+            try:
+                app._update_mute_button_state(side)
+            except Exception:
+                pass
+
         tempo_ctrl = HeadlessSpinbox()
         metronome_ctrl = HeadlessCheckbutton()
         app._register_preview_adjust_widgets(side, tempo_ctrl, metronome_ctrl)

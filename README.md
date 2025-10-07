@@ -8,8 +8,39 @@
 
 ### Option 2:
 
+#### Create an isolated virtual environment
+
+Keeping the project inside its own virtual environment avoids version
+conflicts with any globally installed packages. Create one alongside the
+repository (replace `.venv` with your preferred directory name if needed):
+
 ```bash
-python -m pip install ttkbootstrap
+python -m venv .venv
+```
+
+Activate it and upgrade `pip` so dependency resolution stays reliable:
+
+```bash
+source .venv/bin/activate
+python -m pip install --upgrade pip
+```
+
+On Windows, activate with:
+
+```powershell
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+Install the pinned runtime requirements:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Run the application from the same environment:
+
+```bash
 python -m ocarina_gui.app
 ```
 
@@ -113,6 +144,36 @@ python -m pytest
 
 For the roadmap that tracks behaviour-driven UI coverage, see
 [`docs/e2e_test_plan.md`](docs/e2e_test_plan.md).
+
+## Third-party license manifest
+
+Whenever you add or upgrade a runtime dependency (anything listed in
+`requirements.txt` before the `# test dependencies` sentinel), regenerate the
+aggregated license document so the application continues to ship compliant
+license information. The runtime entries are pinned to exact versions so the
+manifest stays reproducible across environments—update the pin along with the
+license file whenever you deliberately bump a dependency. From an environment
+where the dependencies are installed, run:
+
+```
+python -m scripts.build_third_party_licenses
+```
+
+This rewrites `THIRD-PARTY-LICENSES` in place by querying the installed
+distributions for their license texts and metadata. The
+`tests/unit/test_third_party_licenses.py` regression test fails if the checked-in
+file falls out of sync, so running `pytest` before committing will confirm the
+manifest matches the current dependencies. If the test reports that a runtime
+dependency is missing or the installed version does not satisfy the pinned
+requirement, reinstall the runtime stack first:
+
+```
+pip install --upgrade -r requirements.txt
+```
+
+The generator only ever inspects what is currently installed, so keeping your
+virtualenv in lockstep with `requirements.txt` avoids the subtle manifest drift
+seen when stale wheels remain in the environment.
 
 ### Polyphonic MIDI regression
 

@@ -36,6 +36,7 @@ class PreviewPlaybackState:
     is_rendering: bool = False
     render_progress: float = 1.0
     _render_generation: int = 0
+    volume: float = 1.0
 
 
 class AudioRenderer(Protocol):
@@ -68,6 +69,9 @@ class AudioRenderer(Protocol):
         ...
 
     def set_render_listener(self, listener: "AudioRenderListener | None") -> None:
+        ...
+
+    def set_volume(self, volume: float) -> bool:
         ...
 
 
@@ -115,6 +119,9 @@ class NullAudioRenderer:
 
     def set_render_listener(self, listener: AudioRenderListener | None) -> None:  # noqa: D401 - protocol compliance
         return None
+
+    def set_volume(self, volume: float) -> bool:  # noqa: D401 - protocol compliance
+        return False
 
 
 __all__ = [
