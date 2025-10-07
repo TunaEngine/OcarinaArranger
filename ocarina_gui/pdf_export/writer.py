@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from .layouts import PdfLayout
 
 
+@dataclass(frozen=True)
+class LinkAnnotation:
+    rect: Tuple[float, float, float, float]
+    uri: str
+
+
 class PageBuilder:
     def __init__(self, layout: PdfLayout) -> None:
         self.layout = layout
         self._commands: List[str] = []
+        self._annotations: List[LinkAnnotation] = []
 
     def draw_text(
         self,
@@ -24,6 +32,7 @@ class PageBuilder:
         font: str = "F1",
         angle: float = 0.0,
         fill_gray: float = 0.0,
+        fill_rgb: Optional[Tuple[float, float, float]] = None,
     ) -> None:
         if size is None:
             size = self.layout.font_size
@@ -41,10 +50,15 @@ class PageBuilder:
                 sin_theta = 0.0
             a, b = cos_theta, sin_theta
             c, d = -sin_theta, cos_theta
+        if fill_rgb is not None:
+            color_command = f"{fill_rgb[0]:.3f} {fill_rgb[1]:.3f} {fill_rgb[2]:.3f} rg"
+        else:
+            color_command = f"{fill_gray:.3f} g"
+
         self._commands.extend(
             [
                 "q",
-                f"{fill_gray:.3f} g",
+                color_command,
                 "BT",
                 f"/{font} {size:.2f} Tf",
                 f"{a:.2f} {b:.2f} {c:.2f} {d:.2f} {x:.2f} {baseline:.2f} Tm",
@@ -53,6 +67,44 @@ class PageBuilder:
                 "Q",
             ]
         )
+
+    def estimate_text_width(
+        self,
+        text: str,
+        *,
+        size: Optional[float] = None,
+        font: str = "F1",
+    ) -> float:
+        if size is None:
+            size = self.layout.font_size
+        if not text:
+            return 0.0
+        if font == "F2":
+            average_width = size * 0.6
+        else:
+            average_width = size * 0.55
+        return len(text) * average_width
+
+    def add_link_annotation(
+        self,
+        x: float,
+        y: float,
+        width: float,
+        height: float,
+        uri: str,
+    ) -> None:
+        if width <= 0 or height <= 0 or not uri:
+            return
+        lower_left_y = self.layout.height - (y + height)
+        upper_right_y = self.layout.height - y
+        y1 = min(lower_left_y, upper_right_y)
+        y2 = max(lower_left_y, upper_right_y)
+        rect = (x, y1, x + width, y2)
+        self._annotations.append(LinkAnnotation(rect=rect, uri=uri))
+
+    @property
+    def link_annotations(self) -> Sequence[LinkAnnotation]:
+        return tuple(self._annotations)
 
     def draw_line(self, x1: float, y1: float, x2: float, y2: float, *, gray: float = 0.0, line_width: float = 1.0) -> None:
         px1, py1 = self._to_pdf_point(x1, y1)
@@ -218,6 +270,7 @@ class PdfWriter:
         objects: Dict[int, bytes] = {}
         page_objects: List[Tuple[int, bytes]] = []
         content_objects: List[Tuple[int, bytes]] = []
+        annotation_objects: List[Tuple[int, bytes]] = []
 
         font_specs = {"F1": "/Helvetica", "F2": "/Courier"}
         font_numbers: Dict[str, int] = {}
@@ -230,14 +283,31 @@ class PdfWriter:
             )
             next_object += 1
 
-        for idx, page in enumerate(pages):
-            page_obj_num = next_object + idx * 2
-            content_obj_num = page_obj_num + 1
+        for page in pages:
+            page_obj_num = next_object
+            next_object += 1
+            content_obj_num = next_object
+            next_object += 1
             content_stream = page.build_stream()
             content_objects.append((content_obj_num, content_stream))
             font_entries = " ".join(
                 f"/{font} {obj} 0 R" for font, obj in font_numbers.items()
             )
+            annotation_refs: List[str] = []
+            for annotation in page.link_annotations:
+                annot_obj_num = next_object
+                next_object += 1
+                annotation_refs.append(f"{annot_obj_num} 0 R")
+                annotation_objects.append(
+                    (
+                        annot_obj_num,
+                        _encode(_encode_link_annotation(annotation)),
+                    )
+                )
+            annots_clause = ""
+            if annotation_refs:
+                refs = " ".join(annotation_refs)
+                annots_clause = f" /Annots [{refs}]"
             page_objects.append(
                 (
                     page_obj_num,
@@ -245,7 +315,7 @@ class PdfWriter:
                         "<< /Type /Page /Parent 2 0 R /Resources << /Font << "
                         f"{font_entries} >> >> "
                         f"/MediaBox [0 0 {self._layout.width:.2f} {self._layout.height:.2f}] "
-                        f"/Contents {content_obj_num} 0 R >>"
+                        f"/Contents {content_obj_num} 0 R{annots_clause} >>"
                     ),
                 )
             )
@@ -258,6 +328,8 @@ class PdfWriter:
         for num, data in page_objects:
             objects[num] = data
         for num, data in content_objects:
+            objects[num] = data
+        for num, data in annotation_objects:
             objects[num] = data
 
         max_obj = max(objects) if objects else 3
@@ -307,4 +379,15 @@ def _escape_text(value: str) -> str:
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-__all__ = ["PageBuilder", "PdfWriter"]
+def _encode_link_annotation(annotation: LinkAnnotation) -> str:
+    rect_values = " ".join(f"{value:.2f}" for value in annotation.rect)
+    uri = _escape_text(annotation.uri)
+    return (
+        "<< /Type /Annot /Subtype /Link "
+        f"/Rect [{rect_values}] "
+        "/Border [0 0 0] /C [0 0 1] "
+        f"/A << /S /URI /URI ({uri}) >> >>"
+    )
+
+
+__all__ = ["LinkAnnotation", "PageBuilder", "PdfWriter"]

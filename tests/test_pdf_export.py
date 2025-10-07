@@ -7,12 +7,19 @@ import pytest
 from ocarina_gui.fingering import FingeringLibrary, InstrumentSpec
 from ocarina_gui.pdf_export import export_arranged_pdf
 from ocarina_gui.pdf_export.layouts import resolve_layout
+from ocarina_gui.pdf_export.header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ocarina_gui.pdf_export.notes import ArrangedNote, PatternData, group_patterns
 from ocarina_gui.pdf_export.pages.fingering import build_fingering_pages
 from ocarina_gui.pdf_export.pages.piano_roll import build_piano_roll_pages
 from ocarina_gui.pdf_export.pages.staff import build_staff_pages
 from ocarina_gui.pdf_export.pages.text import build_text_page
 from ocarina_gui.pdf_export.types import PdfExportOptions
+from ocarina_gui.pdf_export.writer import PageBuilder
 from tests.helpers import make_linear_score
 
 
@@ -61,6 +68,11 @@ def test_export_arranged_pdf_writes_expected_content(
 
     data = pdf_path.read_bytes()
     assert data.startswith(b"%PDF")
+    assert b"TunaEngine OcarinaArranger" in data
+    assert b"https://github.com/TunaEngine/OcarinaArranger" in data
+    assert b"/Subtype /Link" in data
+    assert b"/C [0 0 1]" in data
+    assert b"/URI (https://github.com/TunaEngine/OcarinaArranger)" in data
     assert b"Arranged piano roll" in data
     assert b"Quarter" not in data
     assert b"Quarter note" not in data
@@ -70,6 +82,27 @@ def test_export_arranged_pdf_writes_expected_content(
     assert b"Arranged staff view" in data
     assert b"Used fingerings visuals" in data
     assert b"C4" in data
+
+
+def test_header_link_draws_blue_hyperlink() -> None:
+    layout = resolve_layout("A4", "portrait")
+    page = PageBuilder(layout)
+    header_lines = build_header_lines()
+
+    draw_document_header(page, layout, header_lines)
+
+    link_lines = [line for line in header_lines if line.link]
+    annotations = tuple(page.link_annotations)
+
+    assert len(annotations) == len(link_lines)
+    if link_lines:
+        assert annotations[0].uri == link_lines[0].link
+        rect = annotations[0].rect
+        assert rect[2] > rect[0]
+        assert rect[3] > rect[1]
+
+    commands = getattr(page, "_commands")
+    assert "0.000 0.200 0.800 rg" in commands
 
 
 def test_staff_pdf_includes_measure_numbers() -> None:
@@ -83,6 +116,9 @@ def test_staff_pdf_includes_measure_numbers() -> None:
     pages = build_staff_pages(layout, events, pulses_per_quarter=480)
 
     assert pages, "expected at least one staff page"
+
+    blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
 
     texts_with_gray = _collect_text_with_gray(pages[0])
     measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.55) < 1e-6}
@@ -102,6 +138,9 @@ def test_piano_roll_pdf_includes_measure_numbers() -> None:
     pages = build_piano_roll_pages(layout, events, pulses_per_quarter=480, prefer_flats=False)
 
     assert pages, "expected at least one piano roll page"
+
+    blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
 
     texts_with_gray = _collect_text_with_gray(pages[0])
     measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.35) < 1e-6}
@@ -184,7 +223,13 @@ def test_text_page_uses_multiple_columns_when_space_allows() -> None:
     )
     char_step = layout.font_size * 0.6
     estimated_label_height = max(len(label) for label in ("h1", "h2", "h3")) * char_step
-    estimated_y_start = layout.margin_top + estimated_label_height + layout.line_height * 0.5
+    header_lines = build_header_lines()
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
+    label_top = layout.margin_top + header_height + header_gap
+    estimated_y_start = (
+        label_top + estimated_label_height + layout.line_height * 0.5
+    )
     available_height = layout.height - layout.margin_bottom - estimated_y_start
     lines_per_column = max(1, int(available_height // layout.line_height))
     note_count = max_columns_by_width * lines_per_column + lines_per_column // 2 + 1
@@ -205,6 +250,7 @@ def test_text_page_uses_multiple_columns_when_space_allows() -> None:
     assert len(pages) > 1
 
     blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
     entry_blocks = [block for block in blocks if block[2].strip()[:3].isdigit()]
     assert len(entry_blocks) > 1
     x_positions = {round(block[0], 2) for block in entry_blocks}
@@ -252,8 +298,6 @@ def test_fingering_pdf_outline_uses_smoothed_path(monkeypatch: pytest.MonkeyPatc
 
     captured: list[list[tuple[float, float]]] = []
 
-    from ocarina_gui.pdf_export.writer import PageBuilder
-
     original_draw = PageBuilder.draw_polygon
 
     def _recording_draw(self, points, **kwargs):
@@ -264,6 +308,9 @@ def test_fingering_pdf_outline_uses_smoothed_path(monkeypatch: pytest.MonkeyPatc
 
     pages = build_fingering_pages(layout, [pattern], (), instrument, columns=1)
     assert pages, "expected fingering page to be generated"
+
+    blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
 
     original_point_count = len(instrument.outline.points) if instrument.outline else 0
     outline_points = None
@@ -299,6 +346,7 @@ def test_fingering_page_respects_requested_columns() -> None:
     assert pages
 
     blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
     pattern_blocks = [block for block in blocks if block[2].startswith("Pattern:")]
     assert pattern_blocks
     x_positions = {round(block[0], 2) for block in pattern_blocks}
@@ -393,7 +441,14 @@ def test_staff_page_draws_ledger_lines_and_octave_labels() -> None:
     assert "0.60 w" in commands
 
     blocks = _collect_text_blocks(pages[0])
-    summary_threshold = layout.margin_top + layout.line_height
+    _assert_header_present(blocks)
+    header_lines = build_header_lines()
+    summary_threshold = (
+        layout.margin_top
+        + compute_header_height(layout, header_lines)
+        + compute_header_gap(layout, header_lines)
+        + layout.line_height
+    )
     octave_blocks = {
         text
         for _x, y, text in blocks
@@ -446,6 +501,13 @@ def _collect_text_blocks(page) -> list[tuple[float, float, str]]:
         else:
             index += 1
     return blocks
+
+
+def _assert_header_present(blocks: list[tuple[float, float, str]]) -> None:
+    header_lines = build_header_lines()
+    expected = {line.text for line in header_lines}
+    observed = {text for _x, _y, text in blocks}
+    assert expected <= observed
 
 
 def _parse_tj_text(command: str) -> str:

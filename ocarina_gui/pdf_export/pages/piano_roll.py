@@ -8,6 +8,12 @@ from typing import DefaultDict, List, Sequence
 from ocarina_tools import midi_to_name as pitch_midi_to_name
 
 from ..layouts import PdfLayout
+from ..header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ..types import NoteEvent
 from ..writer import PageBuilder
 
@@ -20,17 +26,23 @@ def build_piano_roll_pages(
 ) -> List[PageBuilder]:
     """Render one or more piano roll pages depending on song length."""
 
+    header_lines = build_header_lines()
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
+
     if not events:
         page = PageBuilder(layout)
+        draw_document_header(page, layout, header_lines)
+        content_top = layout.margin_top + header_height + header_gap
         page.draw_text(
             layout.margin_left,
-            layout.margin_top,
+            content_top,
             "Arranged piano roll",
             size=layout.font_size + 2,
         )
         page.draw_text(
             layout.margin_left,
-            layout.margin_top + layout.line_height,
+            content_top + layout.line_height,
             "(No arranged notes found)",
         )
         return [page]
@@ -86,6 +98,9 @@ def build_piano_roll_pages(
             high_name,
             pulses_per_quarter,
             prefer_flats,
+            header_lines,
+            header_height,
+            header_gap,
         )
         pages.append(builder)
 
@@ -110,12 +125,17 @@ def _draw_piano_roll_page(
     high_name: str,
     pulses_per_quarter: int,
     prefer_flats: bool,
+    header_lines: Sequence[str],
+    header_height: float,
+    header_gap: float,
 ) -> None:
     layout = page.layout
     heading = "Arranged piano roll"
     if total_pages > 1:
         heading = f"{heading} (Page {page_number} of {total_pages})"
-    page.draw_text(left, layout.margin_top, heading, size=layout.font_size + 2)
+    draw_document_header(page, layout, header_lines)
+    heading_top = layout.margin_top + header_height + header_gap
+    page.draw_text(left, heading_top, heading, size=layout.font_size + 2)
 
     remaining_ticks = max_tick - page_start
     span = max(
@@ -133,7 +153,7 @@ def _draw_piano_roll_page(
         f"Range: {low_name} to {high_name} | Pulses/quarter: {pulses_per_quarter or 0}"
         f" | Measures {start_measure}-{end_measure} | Events on page: {len(events)}"
     )
-    summary_y = layout.margin_top + layout.line_height
+    summary_y = heading_top + layout.line_height
     page.draw_text(left, summary_y, summary, size=layout.font_size - 1)
 
     grid_top = summary_y + layout.line_height + 6

@@ -7,6 +7,12 @@ from typing import List, Sequence
 from ...fingering import InstrumentSpec
 from ...fingering.outline_renderer import generate_outline_path
 from ..layouts import PdfLayout
+from ..header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ..notes import PatternData
 from ..writer import PageBuilder
 
@@ -20,8 +26,13 @@ def build_fingering_pages(
 ) -> List[PageBuilder]:
     pages: List[PageBuilder] = []
 
+    header_lines = build_header_lines()
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
+
     available_width = layout.width - 2 * layout.margin_left
-    available_height = layout.height - layout.margin_top - layout.margin_bottom
+    content_top = layout.margin_top + header_height + header_gap
+    available_height = layout.height - content_top - layout.margin_bottom
     heading_height = layout.font_size + 20
     spacing = 14.0
     label_height = layout.line_height * 1.6
@@ -31,8 +42,15 @@ def build_fingering_pages(
     pattern_count = len(patterns)
     if pattern_count == 0:
         builder = PageBuilder(layout)
-        builder.draw_text(layout.margin_left, layout.margin_top, "Used fingerings visuals", size=layout.font_size + 2)
-        y = layout.margin_top + layout.line_height
+        draw_document_header(builder, layout, header_lines)
+        heading_top = content_top
+        builder.draw_text(
+            layout.margin_left,
+            heading_top,
+            "Used fingerings visuals",
+            size=layout.font_size + 2,
+        )
+        y = heading_top + layout.line_height
         if missing_notes:
             builder.draw_text(
                 layout.margin_left,
@@ -83,8 +101,15 @@ def build_fingering_pages(
     for start in range(0, pattern_count, items_per_page):
         page_patterns = patterns[start : start + items_per_page]
         builder = PageBuilder(layout)
-        builder.draw_text(layout.margin_left, layout.margin_top, "Used fingerings visuals", size=layout.font_size + 2)
-        y_base = layout.margin_top + layout.line_height + 4
+        draw_document_header(builder, layout, header_lines)
+        heading_top = content_top
+        builder.draw_text(
+            layout.margin_left,
+            heading_top,
+            "Used fingerings visuals",
+            size=layout.font_size + 2,
+        )
+        y_base = heading_top + layout.line_height + 4
 
         for idx, entry in enumerate(page_patterns):
             row = idx // target_columns

@@ -6,6 +6,12 @@ from collections import defaultdict
 from typing import DefaultDict, List, Sequence
 
 from ..layouts import PdfLayout
+from ..header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ..types import NoteEvent
 from ..writer import PageBuilder
 from ...note_values import NoteGlyphDescription, describe_note_glyph
@@ -19,17 +25,23 @@ def build_staff_pages(
     events: Sequence[NoteEvent],
     pulses_per_quarter: int,
 ) -> List[PageBuilder]:
+    header_lines = build_header_lines()
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
+
     if not events:
         page = PageBuilder(layout)
+        draw_document_header(page, layout, header_lines)
+        content_top = layout.margin_top + header_height + header_gap
         page.draw_text(
             layout.margin_left,
-            layout.margin_top,
+            content_top,
             "Arranged staff view",
             size=layout.font_size + 2,
         )
         page.draw_text(
             layout.margin_left,
-            layout.margin_top + layout.line_height,
+            content_top + layout.line_height,
             "(No arranged notes found)",
         )
         return [page]
@@ -40,7 +52,7 @@ def build_staff_pages(
     staff_height = staff_spacing * 4
     system_padding = 32.0
     system_spacing = 36.0
-    content_top = layout.margin_top + layout.line_height * 2 + 20
+    content_top = layout.margin_top + header_height + header_gap + layout.line_height * 2 + 20
     available_height = max(80.0, layout.height - layout.margin_bottom - content_top)
     system_total_height = staff_height + 2 * system_padding
     systems_per_page = max(
@@ -80,7 +92,10 @@ def build_staff_pages(
             staff_spacing,
             system_padding,
             system_spacing,
-            )
+            header_lines,
+            header_height,
+            header_gap,
+        )
         pages.append(builder)
 
     return pages
@@ -100,6 +115,9 @@ def _draw_staff_page(
     staff_spacing: float,
     system_padding: float,
     system_spacing: float,
+    header_lines: Sequence[str],
+    header_height: float,
+    header_gap: float,
 ) -> None:
     layout = page.layout
     left = layout.margin_left
@@ -110,9 +128,11 @@ def _draw_staff_page(
     heading = "Arranged staff view"
     if total_pages > 1:
         heading = f"{heading} (Page {page_number} of {total_pages})"
-    page.draw_text(left, layout.margin_top, heading, size=layout.font_size + 2)
+    draw_document_header(page, layout, header_lines)
+    heading_top = layout.margin_top + header_height + header_gap
+    page.draw_text(left, heading_top, heading, size=layout.font_size + 2)
 
-    summary_y = layout.margin_top + layout.line_height
+    summary_y = heading_top + layout.line_height
     start_measure = int(page_start // (quarter_ticks * 4)) + 1
     remaining = max_tick - page_start
     span = max(quarter_ticks, min(ticks_per_page, remaining if remaining > 0 else ticks_per_page))

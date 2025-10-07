@@ -6,6 +6,12 @@ import math
 from typing import Iterable, List, Sequence, Tuple
 
 from ..layouts import PdfLayout
+from ..header import (
+    build_header_lines,
+    draw_document_header,
+    header_gap as compute_header_gap,
+    header_height as compute_header_height,
+)
 from ..notes import ArrangedNote
 from ..writer import PageBuilder
 from ...fingering import InstrumentSpec
@@ -25,6 +31,10 @@ def build_text_page(
         instrument, page_size, notes
     )
 
+    header_lines = build_header_lines()
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
+
     char_step = layout.font_size * _CHAR_WIDTH_SCALE
     available_width = layout.width - 2 * layout.margin_left
     column_gap = layout.line_height * 1.5
@@ -35,15 +45,17 @@ def build_text_page(
 
     if not entry_lines:
         page = PageBuilder(layout)
+        draw_document_header(page, layout, header_lines)
+        label_top = layout.margin_top + header_height + header_gap
         label_height = _draw_fingering_labels(
             page,
             hole_labels,
-            layout.margin_top,
+            label_top,
             char_step,
             column_offset,
             [layout.margin_left],
         )
-        y = layout.margin_top + label_height + layout.line_height
+        y = label_top + label_height + layout.line_height
         page.draw_text(
             layout.margin_left,
             y,
@@ -58,10 +70,14 @@ def build_text_page(
     while index < total_entries:
         page = PageBuilder(layout)
 
-        label_top = layout.margin_top
+        draw_document_header(page, layout, header_lines)
+
+        label_top = layout.margin_top + header_height + header_gap
         remaining = total_entries - index
         estimated_label_height = _estimate_label_height(hole_labels, char_step)
-        estimated_y_start = label_top + estimated_label_height + layout.line_height * 0.5
+        estimated_y_start = (
+            label_top + estimated_label_height + layout.line_height * 0.5
+        )
         available_height = layout.height - layout.margin_bottom - estimated_y_start
         lines_per_column = max(1, int(available_height // layout.line_height))
         columns_for_page = min(
