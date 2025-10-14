@@ -90,6 +90,11 @@ class FingeringSetupMixin:
         selected_id = target_id if target_id in name_by_id else choices[0].instrument_id
         selected_name = name_by_id[selected_id]
 
+        mapping = getattr(self, "_fingering_instrument_ids_by_name", None)
+        if isinstance(mapping, dict):
+            mapping.clear()
+            mapping.update({choice.name: choice.instrument_id for choice in choices})
+
         if self.fingering_selector is not None:
             self.fingering_selector.configure(values=names)
             self.fingering_selector.set(selected_name)

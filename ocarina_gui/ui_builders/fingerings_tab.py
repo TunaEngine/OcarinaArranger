@@ -72,6 +72,13 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
         instrument_var = tk.StringVar(master=app, value=current.name)
         app.fingering_instrument_var = instrument_var
         instrument_by_name = {choice.name: choice.instrument_id for choice in choices}
+        try:
+            mapping = app._fingering_instrument_ids_by_name
+        except AttributeError:
+            mapping = {}
+            app._fingering_instrument_ids_by_name = mapping
+        mapping.clear()
+        mapping.update(instrument_by_name)
         combo = ttk.Combobox(
             selector_frame,
             state="readonly",
@@ -84,7 +91,8 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
 
         def _on_instrument_change(_event: tk.Event | None = None) -> None:
             selection = instrument_var.get()
-            instrument_id = instrument_by_name.get(selection)
+            lookup = getattr(app, "_fingering_instrument_ids_by_name", {})
+            instrument_id = lookup.get(selection)
             if instrument_id:
                 app.set_fingering_instrument(instrument_id)
 

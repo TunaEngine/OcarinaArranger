@@ -252,6 +252,7 @@ class PreviewInitialisationMixin:
         self.fingering_selector: Optional[ttk.Combobox] = None
         self.fingering_instrument_var: Optional[tk.StringVar] = None
         self._fingering_note_to_midi: Dict[str, Optional[int]] = {}
+        self._fingering_instrument_ids_by_name: Dict[str, str] = {}
         self._layout_editor_window: Optional[object] = None
         self._notebook: Optional[ttk.Notebook] = None
         self._preview_tab_frames: Sequence[ttk.Frame] = ()

@@ -20,6 +20,7 @@ from services.score_service import ScoreService
 class PreviewCall:
     path: str
     settings: TransformSettings
+    selected_part_ids: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -28,6 +29,7 @@ class ConversionCall:
     output_path: str
     settings: TransformSettings
     pdf_options: PdfExportOptions
+    selected_part_ids: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -105,7 +107,13 @@ class FakeScoreService:
     def _build_preview_data(self, path: str, settings: TransformSettings) -> PreviewData:
         if not self._preview_results:
             raise AssertionError("No queued preview results for FakeScoreService")
-        self.preview_calls.append(PreviewCall(path=path, settings=settings))
+        self.preview_calls.append(
+            PreviewCall(
+                path=path,
+                settings=settings,
+                selected_part_ids=settings.selected_part_ids,
+            )
+        )
         outcome = self._preview_results.popleft()
         if isinstance(outcome, Exception):
             raise outcome
@@ -138,6 +146,7 @@ class FakeScoreService:
                 output_path=output_xml_path,
                 settings=settings,
                 pdf_options=pdf_options,
+                selected_part_ids=settings.selected_part_ids,
             )
         )
         return result

@@ -61,6 +61,15 @@ Tkinter-based GUI tests require a display server. On Linux CI we rely on
 `xvfb-run` as shown above. Locally on Windows and macOS, run the suite from a
 regular desktop session so the tests can create and destroy Tk windows.
 
+### Integration fixtures
+
+The integration suite relies on curated MusicXML scores under
+`tests/integration/assets`. Use these assets when writing end-to-end assertions
+that exercise the real score transformation pipeline instead of mocks.
+
+* `06_selected_part_filter_input.musicxml` – two-part score used to verify that
+  previews, exports, and persisted manifests respect `selected_part_ids`.
+
 ## Troubleshooting
 
 ### Layout editor footer tests never see mapped widgets on Windows

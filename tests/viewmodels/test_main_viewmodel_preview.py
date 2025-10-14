@@ -202,6 +202,47 @@ def test_render_previews_passes_manual_transpose(preview_data: PreviewData, tmp_
     assert service.last_preview_settings.transpose_offset == -4
 
 
+def test_render_previews_passes_filtered_part_selection(
+    preview_data: PreviewData, tmp_path: Path
+) -> None:
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview_data)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    parts = (
+        MusicXmlPartInfo(
+            part_id="P1",
+            name="Lead",
+            midi_program=None,
+            note_count=0,
+            min_midi=None,
+            max_midi=None,
+            min_pitch=None,
+            max_pitch=None,
+        ),
+        MusicXmlPartInfo(
+            part_id="P2",
+            name="Harmony",
+            midi_program=None,
+            note_count=0,
+            min_midi=None,
+            max_midi=None,
+            min_pitch=None,
+            max_pitch=None,
+        ),
+    )
+    viewmodel.update_settings(input_path=str(file_path), available_parts=parts)
+    viewmodel.apply_part_selection(["P2", "PX"])
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    assert viewmodel.state.selected_part_ids == ("P2",)
+    assert service.last_preview_settings is not None
+    assert service.last_preview_settings.selected_part_ids == ("P2",)
+
+
 def test_render_previews_populates_arranger_results(
     monkeypatch, tmp_path: Path
 ) -> None:

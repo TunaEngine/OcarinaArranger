@@ -148,11 +148,11 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
     tree.heading("reason", text="Reason")
     tree.heading("delta", text="Δ difficulty")
     tree.heading("notes", text="Notes")
-    tree.column("bar", width=40, anchor="center")
-    tree.column("action", width=120, anchor="w")
-    tree.column("reason", width=180, anchor="w")
-    tree.column("delta", width=100, anchor="e")
-    tree.column("notes", width=140, anchor="center")
+    tree.column("bar", width=40, anchor="center", stretch=False)
+    tree.column("action", width=120, anchor="w", stretch=False)
+    tree.column("reason", width=180, anchor="w", stretch=False)
+    tree.column("delta", width=100, anchor="e", stretch=False)
+    tree.column("notes", width=140, anchor="center", stretch=False)
     tree.grid(row=0, column=0, sticky="nsew")
     scrollbar = ttk.Scrollbar(
         tree_container, orient="vertical", command=tree.yview
