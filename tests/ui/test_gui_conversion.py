@@ -7,6 +7,7 @@ from helpers import make_chord_score, make_linear_score
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_tools import collect_used_pitches, load_score, transform_to_ocarina
+from shared.melody_part import select_melody_candidate
 
 
 def _write_score(tmp_path, tree):
@@ -43,7 +44,10 @@ def test_browse_prompts_for_part_selection(gui_app, tmp_path, monkeypatch):
 
     assert selections["parts"][0].part_id == "P1"
     assert selections["parts"][1].part_id == "P2"
-    assert selections["preselected"] == ("P1", "P2")
+    expected_default = select_melody_candidate(selections["parts"])
+    if expected_default is None:
+        expected_default = selections["parts"][0].part_id
+    assert selections["preselected"] == (expected_default,)
     assert gui_app._viewmodel.state.selected_part_ids == ("P2",)
     assert [part.part_id for part in gui_app._viewmodel.state.available_parts] == [
         "P1",

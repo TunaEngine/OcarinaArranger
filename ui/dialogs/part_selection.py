@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import font as tkfont
 from collections.abc import Sequence
 
 from ocarina_tools.parts import MusicXmlPartInfo
+from shared.melody_part import select_melody_candidate
 from shared.ttk import ttk
 from ocarina_gui.themes import apply_theme_to_toplevel
 from shared.tkinter_geometry import center_window_over_parent
@@ -61,29 +63,63 @@ class PartSelectionDialog(tk.Toplevel):
         tree.column("name", width=180, anchor="w")
         tree.column("range", width=160, anchor="w")
 
+        melody_part_id = select_melody_candidate(self._parts)
+
         for part in self._parts:
             range_text = _format_range(part)
+            tags = ("melody",) if part.part_id == melody_part_id else ()
             tree.insert(
                 "",
                 "end",
                 iid=part.part_id,
                 values=(part.part_id, part.name or "Unnamed", range_text),
+                tags=tags,
             )
 
+        self._melody_part_id = melody_part_id
+        self._melody_font: tkfont.Font | None = None
+        if melody_part_id is not None:
+            try:
+                style = ttk.Style(self)
+            except (tk.TclError, TypeError):
+                style = None
+
+            base_font: tkfont.Font
+            if style is not None:
+                base_font_name = style.lookup("Treeview", "font")
+                if not base_font_name:
+                    base_font_name = style.lookup("TLabel", "font")
+
+                if base_font_name:
+                    try:
+                        base_font = tkfont.nametofont(base_font_name)
+                    except tk.TclError:
+                        base_font = tkfont.nametofont("TkDefaultFont")
+                else:
+                    base_font = tkfont.nametofont("TkDefaultFont")
+            else:
+                base_font = tkfont.nametofont("TkDefaultFont")
+
+            melody_font = tkfont.Font(self, font=base_font)
+            melody_font.configure(weight="bold")
+            tree.tag_configure("melody", font=melody_font)
+            self._melody_font = melody_font
+
         if self._parts:
-            default_selection = tuple(preselected) or tuple(
-                part.part_id for part in self._parts
-            )
-            valid_defaults = [
-                part_id
-                for part_id in default_selection
-                if tree.exists(part_id)
+            requested_defaults = [
+                part_id for part_id in preselected if tree.exists(part_id)
             ]
-            if not valid_defaults and self._parts:
-                valid_defaults = [self._parts[0].part_id]
-            tree.selection_set(valid_defaults)
-            tree.focus(valid_defaults[0])
-            tree.see(valid_defaults[0])
+            if (
+                not requested_defaults
+                and melody_part_id is not None
+                and tree.exists(melody_part_id)
+            ):
+                requested_defaults = [melody_part_id]
+            if not requested_defaults:
+                requested_defaults = [self._parts[0].part_id]
+            tree.selection_set(requested_defaults)
+            tree.focus(requested_defaults[0])
+            tree.see(requested_defaults[0])
 
         self._tree = tree
 

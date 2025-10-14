@@ -23,6 +23,7 @@ from services.project_service import (
     PreviewPlaybackSnapshot,
 )
 from services.score_service import ScoreService
+from shared.melody_part import select_melody_candidate
 from shared.result import Result
 
 from domain.arrangement.api import ArrangementStrategyResult
@@ -257,8 +258,9 @@ class MainViewModel:
             parts = tuple(loaded)
         self.update_settings(available_parts=parts)
         if self.state.available_parts and not self.state.selected_part_ids:
-            all_ids = [part.part_id for part in self.state.available_parts]
-            self.update_settings(selected_part_ids=all_ids)
+            melody_part_id = select_melody_candidate(self.state.available_parts)
+            default_id = melody_part_id or self.state.available_parts[0].part_id
+            self.update_settings(selected_part_ids=(default_id,))
         return self.state.available_parts
 
     def apply_part_selection(self, part_ids: Sequence[str]) -> tuple[str, ...]:

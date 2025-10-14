@@ -4,6 +4,8 @@ import logging
 import os
 from tkinter import messagebox
 
+from ocarina_tools.parts import MusicXmlPartInfo
+
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_tools import (
@@ -12,6 +14,7 @@ from ocarina_tools import (
     load_score,
     transform_to_ocarina,
 )
+from shared.melody_part import select_melody_candidate
 from shared.result import Result
 
 from ui.dialogs.pdf_export import ask_pdf_export_options
@@ -26,20 +29,10 @@ class PreviewCommandsMixin:
         changed = self._viewmodel.browse_for_input()
         if not changed:
             return
-        parts = self._viewmodel.load_part_metadata()
-        if not parts:
-            selected_ids: tuple[str, ...] = ()
-        elif len(parts) == 1:
-            selected_ids = (parts[0].part_id,)
-        else:
-            preselected = self._viewmodel.state.selected_part_ids or tuple(
-                part.part_id for part in parts
-            )
-            selection = self._viewmodel.ask_select_parts(parts, preselected)
-            if selection is None:
-                selected_ids = tuple(preselected)
-            else:
-                selected_ids = tuple(selection)
+        selected_ids = self._resolve_part_selection(reload_metadata=True)
+        if selected_ids is None:
+            logger.info("Part selection cancelled; aborting import")
+            return
         self._viewmodel.apply_part_selection(selected_ids)
         state = self._viewmodel.state
         self.input_path.set(state.input_path)
@@ -157,9 +150,39 @@ class PreviewCommandsMixin:
         path = self._require_input_path("Please choose a valid input file first.")
         if not path:
             return
+        selected_ids = self._resolve_part_selection(reload_metadata=False)
+        if selected_ids is None:
+            logger.info("Re-import cancelled from part selection dialog")
+            return
+        self._viewmodel.apply_part_selection(selected_ids)
         logger.info("Re-import requested", extra={"input_path": path})
         self._select_preview_tab("arranged")
         self.render_previews()
+
+    def _resolve_part_selection(
+        self, *, reload_metadata: bool
+    ) -> tuple[str, ...] | None:
+        parts: tuple[MusicXmlPartInfo, ...]
+        if reload_metadata or not self._viewmodel.state.available_parts:
+            parts = self._viewmodel.load_part_metadata()
+        else:
+            parts = self._viewmodel.state.available_parts
+        if not parts:
+            return ()
+        if len(parts) == 1:
+            return (parts[0].part_id,)
+        if self._viewmodel.state.selected_part_ids:
+            preselected = self._viewmodel.state.selected_part_ids
+        else:
+            melody_part_id = select_melody_candidate(parts)
+            if melody_part_id is not None:
+                preselected = (melody_part_id,)
+            else:
+                preselected = (parts[0].part_id,)
+        selection = self._viewmodel.ask_select_parts(parts, preselected)
+        if selection is None:
+            return None
+        return tuple(selection)
 
     def play_original(self) -> None:
         in_path = self._require_input_path("Please choose a valid input file first.")

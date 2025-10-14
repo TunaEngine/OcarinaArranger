@@ -9,6 +9,7 @@ from ocarina_tools.events import NoteEvent
 from ocarina_tools.parts import MusicXmlPartInfo
 from services.project_service import PreviewPlaybackSnapshot
 from services.arranger_preview import ArrangerComputation
+from shared.melody_part import select_melody_candidate
 from tests.viewmodels._fakes import FakeDialogs, StubScoreService
 from viewmodels.arranger_models import ArrangerGPSettings
 from viewmodels.main_viewmodel import (
@@ -96,7 +97,8 @@ def test_load_part_metadata_updates_state(tmp_path: Path) -> None:
 
     assert loaded == parts
     assert viewmodel.state.available_parts == parts
-    assert viewmodel.state.selected_part_ids == ("P1", "P2")
+    expected_default = select_melody_candidate(parts) or parts[0].part_id
+    assert viewmodel.state.selected_part_ids == (expected_default,)
     assert service.part_metadata_calls == [str(file_path)]
 
 
