@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from ocarina_gui.fingering.library import FingeringLibrary
+import pytest
+
+import ocarina_gui.fingering.library as fingering_library
+from ocarina_gui.fingering.library import FingeringLibrary, update_library_from_config
 from ocarina_gui.fingering.specs import InstrumentSpec
 
 
@@ -88,3 +91,45 @@ def test_library_breaks_ties_by_name_then_identifier() -> None:
     library = FingeringLibrary([first, second, third])
 
     assert _choices(library) == ["a", "c", "b"]
+
+
+def test_update_library_from_config_uses_defaults_for_missing_specs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    existing = _spec("existing", name="Existing", min_note="C4", max_note="E5")
+    fallback = _spec("fallback", name="Fallback", min_note="D4", max_note="F5")
+
+    original_library = fingering_library._LIBRARY
+    fingering_library._LIBRARY = FingeringLibrary([existing])
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.library._load_default_spec_map",
+        lambda: {fallback.instrument_id: fallback},
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.library.save_fingering_config",
+        lambda config: None,
+    )
+
+    captured_fallback: set[str] = set()
+
+    def _capture_fallback(config, *, fallback_specs):  # type: ignore[no-untyped-def]
+        nonlocal captured_fallback
+        if isinstance(fallback_specs, dict):
+            captured_fallback = set(fallback_specs.keys())
+        else:
+            captured_fallback = {
+                spec.instrument_id for spec in fallback_specs
+            }
+        return [existing]
+
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.library._instrument_specs_from_config",
+        _capture_fallback,
+    )
+
+    try:
+        update_library_from_config({"instruments": []}, current_instrument_id=None)
+    finally:
+        fingering_library._LIBRARY = original_library
+
+    assert captured_fallback == {existing.instrument_id, fallback.instrument_id}

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from collections.abc import Callable
+
 from ocarina_gui.preview import PreviewData
 
 from services.arranger_preview import ArrangerComputation, compute_arranger_preview
@@ -16,31 +18,46 @@ __all__ = [
 
 
 def apply_arranger_results_from_preview(
-    viewmodel: "MainViewModel", preview: PreviewData
+    viewmodel: "MainViewModel",
+    preview: PreviewData,
+    *,
+    progress_callback: Callable[[float, str | None], None] | None = None,
 ) -> ArrangerComputation:
+    with viewmodel._state_lock:
+        arranger_mode = viewmodel.state.arranger_mode
+        instrument_id = viewmodel.state.instrument_id
+        starred_instrument_ids = viewmodel.state.starred_instrument_ids
+        strategy = viewmodel.state.arranger_strategy
+        dp_slack_enabled = viewmodel.state.arranger_dp_slack_enabled
+        budgets = viewmodel.state.arranger_budgets
+        gp_settings = viewmodel.state.arranger_gp_settings
+        transpose_offset = viewmodel.state.transpose_offset
+
     computation = compute_arranger_preview(
         preview,
-        arranger_mode=viewmodel.state.arranger_mode,
-        instrument_id=viewmodel.state.instrument_id,
-        starred_instrument_ids=viewmodel.state.starred_instrument_ids,
-        strategy=viewmodel.state.arranger_strategy,
-        dp_slack_enabled=viewmodel.state.arranger_dp_slack_enabled,
-        budgets=viewmodel.state.arranger_budgets,
-        gp_settings=viewmodel.state.arranger_gp_settings,
-        transpose_offset=viewmodel.state.transpose_offset,
+        arranger_mode=arranger_mode,
+        instrument_id=instrument_id,
+        starred_instrument_ids=starred_instrument_ids,
+        strategy=strategy,
+        dp_slack_enabled=dp_slack_enabled,
+        budgets=budgets,
+        gp_settings=gp_settings,
+        transpose_offset=transpose_offset,
+        progress_callback=progress_callback,
     )
 
-    if (
-        computation.resolved_instrument_id
-        and computation.resolved_instrument_id != viewmodel.state.instrument_id
-    ):
-        viewmodel.state.instrument_id = computation.resolved_instrument_id
+    with viewmodel._state_lock:
+        if (
+            computation.resolved_instrument_id
+            and computation.resolved_instrument_id != viewmodel.state.instrument_id
+        ):
+            viewmodel.state.instrument_id = computation.resolved_instrument_id
 
-    if (
-        computation.resolved_starred_ids
-        and computation.resolved_starred_ids != viewmodel.state.starred_instrument_ids
-    ):
-        viewmodel.state.starred_instrument_ids = computation.resolved_starred_ids
+        if (
+            computation.resolved_starred_ids
+            and computation.resolved_starred_ids != viewmodel.state.starred_instrument_ids
+        ):
+            viewmodel.state.starred_instrument_ids = computation.resolved_starred_ids
 
     viewmodel.update_arranger_summary(
         summaries=computation.summaries,

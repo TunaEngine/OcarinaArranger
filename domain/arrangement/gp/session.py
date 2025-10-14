@@ -2,182 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import random
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Mapping, Sequence, Tuple
 
-from shared.ottava import OttavaShift
-
-from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.explanations import ExplanationEvent
-from domain.arrangement.phrase import PhraseNote, PhraseSpan
+from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
 from .engine import EngineConfig, EngineHooks, EngineState, run_engine
-from .fitness import FidelityConfig, FitnessConfig, FitnessObjective, compute_fitness
-from .init import generate_random_program, seed_programs
-from .ops import GPPrimitive, GlobalTranspose, LocalOctave, SimplifyRhythm
+from .evaluation import evaluate_program
+from .fitness import FidelityConfig, FitnessConfig, FitnessObjective
+from .init import seed_programs
+from .offspring import produce_offspring
+from .program_ops import ensure_population
 from .selection import Individual, SelectionConfig, advance_generation, update_archive
 from .session_logging import GPSessionLog, fitness_sort_key, log_generation, serialize_individual
 from .validation import ProgramConstraints
-from .variation import mutate_program, one_point_crossover
 
 
-def _apply_program(program: Sequence[GPPrimitive], span: PhraseSpan) -> PhraseSpan:
-    current = span
-    for operation in program:
-        current = _apply_primitive(operation, current)
-    return current
-
-
-def _apply_primitive(operation: GPPrimitive, span: PhraseSpan) -> PhraseSpan:
-    if isinstance(operation, GlobalTranspose):
-        return span.transpose(operation.semitones)
-    if isinstance(operation, LocalOctave):
-        return _apply_local_octave(operation, span)
-    if isinstance(operation, SimplifyRhythm):
-        return _apply_simplify_rhythm(operation, span)
-    return span
-
-
-def _apply_local_octave(operation: LocalOctave, span: PhraseSpan) -> PhraseSpan:
-    try:
-        start, end = operation.span.resolve(span)
-    except ValueError:
-        return span
-
-    if operation.octaves == 0:
-        return span
-
-    semitones = operation.octaves * 12
-    direction = "up" if semitones > 0 else "down"
-    shift = OttavaShift(
-        source="octave-shift",
-        direction=direction,
-        size=8 * abs(operation.octaves),
-    )
-
-    updated: list[PhraseNote] = []
-    for note in span.notes:
-        if start <= note.onset < end:
-            updated.append(note.with_midi(note.midi + semitones).add_ottava_shift(shift))
-            continue
-        updated.append(note)
-    return span.with_notes(updated)
-
-
-def _apply_simplify_rhythm(operation: SimplifyRhythm, span: PhraseSpan) -> PhraseSpan:
-    try:
-        start, end = operation.span.resolve(span)
-    except ValueError:
-        return span
-
-    subdivisions = max(1, int(operation.subdivisions))
-    unit = max(1, span.pulses_per_quarter // subdivisions)
-    updated: list[PhraseNote] = []
-
-    for note in span.notes:
-        if not (start <= note.onset < end):
-            updated.append(note)
-            continue
-
-        quantized = max(unit, round(note.duration / unit) * unit)
-        max_duration = max(1, end - note.onset)
-        updated_duration = min(quantized, max_duration)
-        updated.append(note.with_duration(updated_duration))
-
-    return span.with_notes(updated)
-
-
-def _ensure_population(
-    programs: Iterable[Sequence[GPPrimitive]],
-    *,
-    required: int,
-    phrase: PhraseSpan,
-    instrument: InstrumentRange,
-    rng: random.Random,
-    span_limits: Mapping[str, int] | None,
-) -> list[list[GPPrimitive]]:
-    pool = [list(program) for program in programs][:required]
-    seen = {tuple(program) for program in pool}
-
-    attempts = 0
-    max_attempts = max(10, required * 5)
-    while len(pool) < required and attempts < max_attempts:
-        attempts += 1
-        try:
-            candidate = generate_random_program(
-                phrase,
-                instrument,
-                rng=rng,
-                max_length=3,
-                span_limits=span_limits,
-            )
-        except RuntimeError:
-            continue
-
-        key = tuple(candidate)
-        if not candidate or key in seen:
-            continue
-        pool.append(candidate)
-        seen.add(key)
-
-    if len(pool) < required:
-        raise RuntimeError("Unable to seed initial GP population with the requested size")
-
-    return pool
-
-
-def _primitive_sampler(
-    rng: random.Random,
-    phrase: PhraseSpan,
-    instrument: InstrumentRange,
-    span_limits: Mapping[str, int] | None,
-) -> Callable[[], GPPrimitive]:
-    def _generator() -> GPPrimitive:
-        attempts = 0
-        while True:
-            attempts += 1
-            try:
-                program = generate_random_program(
-                    phrase,
-                    instrument,
-                    rng=rng,
-                    max_length=1,
-                    span_limits=span_limits,
-                )
-            except RuntimeError:
-                program = []
-            if program:
-                return program[0]
-            if attempts >= 5:
-                raise RuntimeError("Unable to generate primitive for mutation")
-
-    return _generator
-
-
-def _evaluate_program(
-    program: Sequence[GPPrimitive],
-    *,
-    phrase: PhraseSpan,
-    instrument: InstrumentRange,
-    fitness_config: FitnessConfig | None,
-    metadata: Mapping[str, object] | None = None,
-) -> Individual:
-    candidate = _apply_program(program, phrase)
-    difficulty = summarize_difficulty(candidate, instrument)
-    fitness = compute_fitness(
-        original=phrase,
-        candidate=candidate,
-        instrument=instrument,
-        program=program,
-        difficulty=difficulty,
-        config=fitness_config,
-    )
-    metadata_dict = dict(metadata or {})
-    return Individual(program=tuple(program), fitness=fitness, metadata=metadata_dict)
-
-
+logger = logging.getLogger(__name__)
 def _default_fitness_config() -> FitnessConfig:
     """Return the tuned fitness defaults emphasising melodic fidelity."""
 
@@ -268,83 +113,15 @@ class GPSessionResult:
     generations: int
     elapsed_seconds: float
     termination_reason: str
-
-
-def _produce_offspring(
-    population: Sequence[Individual],
-    *,
-    rng: random.Random,
-    config: GPSessionConfig,
-    generation_index: int,
-    phrase: PhraseSpan,
-    instrument: InstrumentRange,
-    span_limits: Mapping[str, int] | None,
-    fitness_config: FitnessConfig | None,
-) -> list[Individual]:
-    if not population:
-        return []
-
-    sampler = _primitive_sampler(rng, phrase, instrument, span_limits)
-    offspring: list[Individual] = []
-
-    while len(offspring) < config.population_size:
-        perform_crossover = len(population) >= 2 and rng.random() < config.crossover_rate
-        if perform_crossover:
-            parent_a, parent_b = rng.sample(list(population), 2)
-            children = one_point_crossover(
-                list(parent_a.program),
-                list(parent_b.program),
-                phrase,
-                rng=rng,
-                span_limits=span_limits,
-                constraints=config.constraints,
-            )
-            for child_program in children:
-                metadata = {
-                    "origin": "crossover",
-                    "generation": generation_index + 1,
-                }
-                offspring.append(
-                    _evaluate_program(
-                        child_program,
-                        phrase=phrase,
-                        instrument=instrument,
-                        fitness_config=fitness_config,
-                        metadata=metadata,
-                    )
-                )
-                if len(offspring) >= config.population_size:
-                    break
-            continue
-
-        parent = rng.choice(list(population))
-        try:
-            mutated_program = mutate_program(
-                list(parent.program),
-                phrase,
-                rng=rng,
-                span_limits=span_limits,
-                constraints=config.constraints,
-                generator=sampler,
-            )
-        except RuntimeError:
-            continue
-
-        metadata = {
-            "origin": "mutation",
-            "generation": generation_index + 1,
-        }
-        offspring.append(
-            _evaluate_program(
-                mutated_program,
-                phrase=phrase,
-                instrument=instrument,
-                fitness_config=fitness_config,
-                metadata=metadata,
-            )
-        )
-
-    return offspring
+def _report_progress(
+    callback: Callable[[int, int], None] | None, generation: int, total_generations: int
+) -> None:
+    if callback is None:
+        return
+    try:
+        callback(generation, total_generations)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("GP session progress callback failed")
 
 
 def run_gp_session(
@@ -354,6 +131,7 @@ def run_gp_session(
     config: GPSessionConfig,
     salvage_events: Sequence[ExplanationEvent] | None = None,
     transposition: int = 0,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> GPSessionResult:
     rng = random.Random(config.random_seed)
     span_limits = dict(config.span_limits or {})
@@ -368,7 +146,7 @@ def run_gp_session(
         span_limits=span_limits,
     )
 
-    initial_pool = _ensure_population(
+    initial_pool = ensure_population(
         seeded,
         required=config.population_size,
         phrase=phrase,
@@ -378,7 +156,7 @@ def run_gp_session(
     )
 
     population = [
-        _evaluate_program(
+        evaluate_program(
             program,
             phrase=phrase,
             instrument=instrument,
@@ -406,12 +184,14 @@ def run_gp_session(
         current_population: tuple[Individual, ...],
         current_archive: tuple[Individual, ...],
     ) -> GenerationLog:
-        return log_generation(
+        generation_log = log_generation(
             state.generation,
             current_population,
             current_archive,
             best_count=config.log_best_programs,
         )
+        _report_progress(progress_callback, state.generation, config.generations)
+        return generation_log
 
     def _local_search(
         current_population: tuple[Individual, ...],
@@ -431,15 +211,18 @@ def run_gp_session(
         current_population: tuple[Individual, ...],
         state: EngineState,
     ) -> Sequence[Individual]:
-        return _produce_offspring(
+        return produce_offspring(
             current_population,
             rng=rng,
-            config=config,
             generation_index=state.generation,
             phrase=phrase,
             instrument=instrument,
             span_limits=span_limits,
             fitness_config=config.fitness_config,
+            mutation_rate=config.mutation_rate,
+            crossover_rate=config.crossover_rate,
+            population_size=config.population_size,
+            constraints=config.constraints,
         )
 
     def _selection(

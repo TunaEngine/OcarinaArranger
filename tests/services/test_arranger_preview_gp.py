@@ -98,7 +98,11 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
     )
 
     assert called, "Expected arrange_v3_gp to be invoked"
-    assert called["kwargs"] == {
+    kwargs = dict(called["kwargs"])
+    progress_cb = kwargs.pop("progress_callback", None)
+    if progress_cb is not None:
+        assert callable(progress_cb)
+    assert kwargs == {
         "instrument_id": "alto_c_12",
         "starred_ids": (),
         "config": _gp_session_config(
@@ -190,6 +194,91 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
     assert computation.result_summary.transposition == 5
     assert captured.get("kwargs", {}).get("manual_transposition") == 5
 
+
+def test_compute_arranger_preview_reports_intermediate_gp_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = (
+        NoteEvent(onset=0, duration=240, midi=72, program=0),
+        NoteEvent(onset=240, duration=240, midi=74, program=0),
+    )
+    preview = preview_fixture(events)
+
+    choices = (InstrumentChoice("alto_c_12", "12-hole Alto C"),)
+    spec = make_spec(
+        "alto_c_12",
+        candidate_min="B3",
+        candidate_max="A5",
+        preferred_min="C4",
+        preferred_max="G5",
+    )
+
+    monkeypatch.setattr(
+        "services.arranger_preview.get_available_instruments",
+        lambda: choices,
+    )
+    monkeypatch.setattr(
+        "services.arranger_preview.get_instrument",
+        lambda instrument_id: spec,
+    )
+
+    instrument_range = InstrumentRange(min_midi=60, max_midi=84, comfort_center=72)
+    candidate_span = PhraseSpan(
+        (
+            PhraseNote(onset=0, duration=240, midi=72),
+            PhraseNote(onset=240, duration=240, midi=74),
+        ),
+        pulses_per_quarter=480,
+    )
+    difficulty = summarize_difficulty(candidate_span, instrument_range)
+
+    progress_updates: list[tuple[float, str | None]] = []
+
+    def _progress(percent: float, message: str | None) -> None:
+        progress_updates.append((percent, message))
+
+    def _fake_arrange_v3_gp(span, *args, **kwargs):
+        callback = kwargs.get("progress_callback")
+        assert callback is not None
+        callback(0, 5)
+        callback(2, 5)
+        callback(4, 5)
+        candidate = SimpleNamespace(
+            instrument_id="alto_c_12",
+            instrument=instrument_range,
+            program=(),
+            span=span,
+            difficulty=difficulty,
+            fitness=None,
+            explanations=(),
+        )
+        return SimpleNamespace(
+            chosen=candidate,
+            comparisons=(candidate,),
+            session=SimpleNamespace(generations=5, elapsed_seconds=1.0),
+            termination_reason="generation_limit",
+            archive_summary=(),
+            fallback=None,
+        )
+
+    monkeypatch.setattr("services.arranger_preview.arrange_v3_gp", _fake_arrange_v3_gp)
+
+    compute_arranger_preview(
+        preview,
+        arranger_mode="gp",
+        instrument_id="alto_c_12",
+        starred_instrument_ids=(),
+        strategy="current",
+        dp_slack_enabled=False,
+        gp_settings=ArrangerGPSettings(generations=5),
+        progress_callback=_progress,
+    )
+
+    percents = [percent for percent, _ in progress_updates]
+    assert percents[0] == 0.0
+    assert 10.0 in percents, "expected initial GP progress notification"
+    assert any(10.0 < value < 99.0 for value in percents)
+    assert percents[-1] == 100.0
 
 def test_gp_session_config_applies_advanced_settings() -> None:
     settings = ArrangerGPSettings(

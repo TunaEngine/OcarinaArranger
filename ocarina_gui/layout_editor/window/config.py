@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 from ...fingering import (
     InstrumentSpec,
@@ -47,6 +47,81 @@ def _resolve_instrument_entry(
 
 class _LayoutEditorConfigMixin:
     """Operations concerned with loading, saving and closing the editor."""
+
+    def _run_with_progress(
+        self,
+        initial_message: str,
+        work: Callable[[Callable[[str], None]], object],
+    ) -> object:
+        dialog = tk.Toplevel(self)
+        dialog.transient(self)
+        dialog.title("Working…")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        status_var = tk.StringVar(dialog, value=initial_message)
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        label = ttk.Label(frame, textvariable=status_var)
+        label.pack(anchor=tk.W)
+
+        progress = ttk.Progressbar(frame, mode="indeterminate")
+        progress.pack(fill=tk.X, pady=(8, 0))
+        progress.start(10)
+
+        def center_dialog() -> None:
+            try:
+                parent = self.winfo_toplevel()
+            except tk.TclError:
+                parent = self
+
+            for widget in (parent, dialog):
+                try:
+                    widget.update_idletasks()
+                except tk.TclError:
+                    return
+
+            try:
+                width = max(dialog.winfo_width(), 1)
+                height = max(dialog.winfo_height(), 1)
+            except tk.TclError:
+                return
+
+            try:
+                parent_width = parent.winfo_width()
+                parent_height = parent.winfo_height()
+                parent_x = parent.winfo_rootx()
+                parent_y = parent.winfo_rooty()
+            except tk.TclError:
+                parent_width = parent_height = 0
+                parent_x = parent_y = 0
+
+            if parent_width <= 0 or parent_height <= 0:
+                screen_width = dialog.winfo_screenwidth()
+                screen_height = dialog.winfo_screenheight()
+                x = (screen_width - width) // 2
+                y = (screen_height - height) // 2
+            else:
+                x = parent_x + (parent_width - width) // 2
+                y = parent_y + (parent_height - height) // 2
+
+            dialog.geometry(f"+{max(int(x), 0)}+{max(int(y), 0)}")
+
+        def update_status(message: str) -> None:
+            status_var.set(message)
+            center_dialog()
+
+        try:
+            center_dialog()
+            return work(update_status)
+        finally:
+            progress.stop()
+            if dialog.winfo_exists():
+                dialog.grab_release()
+                dialog.destroy()
 
     def _load_specs(self) -> tuple[InstrumentSpec, ...]:
         return tuple(
@@ -95,20 +170,35 @@ class _LayoutEditorConfigMixin:
         )
         if not path:
             return
-        try:
-            Path(path).write_text(text, encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("Save failed", f"Could not save configuration: {exc}")
+        succeeded = True
+
+        def work(update_status: Callable[[str], None]) -> None:
+            nonlocal succeeded
+            update_status("Writing configuration file…")
+            try:
+                Path(path).write_text(text, encoding="utf-8")
+            except OSError as exc:
+                succeeded = False
+                messagebox.showerror("Save failed", f"Could not save configuration: {exc}")
+                return
+
+            update_status("Applying configuration…")
+            if not self._apply_config_to_library(
+                config,
+                failure_message_prefix="Configuration saved but not applied: ",
+                refresh_warning_message="Layout saved but UI refresh failed: {exc}",
+            ):
+                succeeded = False
+                return
+
+            update_status("Refreshing editor…")
+            self._viewmodel.mark_clean()
+            self._status_var.set(f"Saved to {path}")
+            self._update_dirty_indicator()
+
+        self._run_with_progress("Saving configuration…", work)
+        if not succeeded:
             return
-        if not self._apply_config_to_library(
-            config,
-            failure_message_prefix="Configuration saved but not applied: ",
-            refresh_warning_message="Layout saved but UI refresh failed: {exc}",
-        ):
-            return
-        self._viewmodel.mark_clean()
-        self._status_var.set(f"Saved to {path}")
-        self._update_dirty_indicator()
 
     def _load_json(self) -> None:
         initial = Path(__file__).parent / "config" / "fingering_config.json"
@@ -122,12 +212,32 @@ class _LayoutEditorConfigMixin:
         )
         if not path:
             return
-        try:
-            text = Path(path).read_text(encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("Import failed", f"Could not read configuration: {exc}", parent=self)
-            return
-        self._import_config_text(text, source=path)
+        def work(update_status: Callable[[str], None]) -> None:
+            update_status("Reading configuration…")
+            try:
+                raw_text = Path(path).read_text(encoding="utf-8")
+            except OSError as exc:
+                messagebox.showerror(
+                    "Import failed", f"Could not read configuration: {exc}", parent=self
+                )
+                return
+
+            update_status("Parsing configuration…")
+            try:
+                data = json.loads(raw_text)
+            except json.JSONDecodeError as exc:
+                messagebox.showerror("Import failed", f"Invalid JSON: {exc}", parent=self)
+                return
+            if not isinstance(data, dict):
+                messagebox.showerror(
+                    "Import failed", "Configuration must be a JSON object", parent=self
+                )
+                return
+
+            update_status("Applying configuration…")
+            self._apply_config(data, source=path, _status_updater=update_status)
+
+        self._run_with_progress("Loading configuration…", work)
 
     def _export_instrument(self) -> None:
         state = self._viewmodel.state
@@ -153,12 +263,26 @@ class _LayoutEditorConfigMixin:
         )
         if not path:
             return
-        try:
-            Path(path).write_text(text, encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("Export failed", f"Could not write instrument: {exc}", parent=self)
+        succeeded = True
+
+        def work(update_status: Callable[[str], None]) -> None:
+            nonlocal succeeded
+            update_status("Writing instrument file…")
+            try:
+                Path(path).write_text(text, encoding="utf-8")
+            except OSError as exc:
+                succeeded = False
+                messagebox.showerror(
+                    "Export failed", f"Could not write instrument: {exc}", parent=self
+                )
+                return
+
+            update_status("Finishing export…")
+            self._status_var.set(f"Exported instrument '{state.name}' to {path}")
+
+        self._run_with_progress("Exporting instrument…", work)
+        if not succeeded:
             return
-        self._status_var.set(f"Exported instrument '{state.name}' to {path}")
 
     def _import_instrument(self) -> None:
         initial = Path(__file__).parent / "config"
@@ -171,45 +295,61 @@ class _LayoutEditorConfigMixin:
         )
         if not path:
             return
-        try:
-            text = Path(path).read_text(encoding="utf-8")
-        except OSError as exc:
-            messagebox.showerror("Import failed", f"Could not read instrument: {exc}", parent=self)
-            return
+        result_holder: dict[str, object] = {}
 
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as exc:
-            messagebox.showerror("Import failed", f"Invalid JSON: {exc}", parent=self)
-            return
-        if not isinstance(data, dict):
-            messagebox.showerror("Import failed", "Instrument data must be a JSON object", parent=self)
-            return
-
-        instrument_id = str(data.get("id", "")).strip()
-        conflict_strategy = "error"
-        if instrument_id and instrument_id in dict(self._viewmodel.choices()):
-            result = messagebox.askyesnocancel(
-                "Instrument exists",
-                (
-                    "Instrument '{instrument}' already exists.\n"
-                    "Choose 'Yes' to replace, 'No' to import a copy, or 'Cancel' to abort."
-                ).format(instrument=instrument_id),
-                parent=self,
-            )
-            if result is None:
+        def work(update_status: Callable[[str], None]) -> None:
+            update_status("Reading instrument…")
+            try:
+                text = Path(path).read_text(encoding="utf-8")
+            except OSError as exc:
+                messagebox.showerror("Import failed", f"Could not read instrument: {exc}", parent=self)
                 return
-            conflict_strategy = "replace" if result else "copy"
 
-        try:
-            state = self._viewmodel.import_instrument(data, conflict_strategy=conflict_strategy)
-        except ValueError as exc:
-            messagebox.showerror("Import failed", str(exc), parent=self)
+            update_status("Parsing instrument…")
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as exc:
+                messagebox.showerror("Import failed", f"Invalid JSON: {exc}", parent=self)
+                return
+            if not isinstance(data, dict):
+                messagebox.showerror(
+                    "Import failed", "Instrument data must be a JSON object", parent=self
+                )
+                return
+
+            instrument_id = str(data.get("id", "")).strip()
+            conflict_strategy = "error"
+            if instrument_id and instrument_id in dict(self._viewmodel.choices()):
+                result = messagebox.askyesnocancel(
+                    "Instrument exists",
+                    (
+                        "Instrument '{instrument}' already exists.\n"
+                        "Choose 'Yes' to replace, 'No' to import a copy, or 'Cancel' to abort."
+                    ).format(instrument=instrument_id),
+                    parent=self,
+                )
+                if result is None:
+                    return
+                conflict_strategy = "replace" if result else "copy"
+
+            update_status("Applying instrument…")
+            try:
+                state = self._viewmodel.import_instrument(
+                    data, conflict_strategy=conflict_strategy
+                )
+            except ValueError as exc:
+                messagebox.showerror("Import failed", str(exc), parent=self)
+                return
+
+            update_status("Refreshing editor…")
+            self._refresh_all()
+            self._status_var.set(f"Imported instrument '{state.name}' from {path}")
+            self._update_dirty_indicator()
+            result_holder["state"] = state
+
+        self._run_with_progress("Importing instrument…", work)
+        if "state" not in result_holder:
             return
-
-        self._refresh_all()
-        self._status_var.set(f"Imported instrument '{state.name}' from {path}")
-        self._update_dirty_indicator()
 
     def _import_config_text(self, text: str, *, source: str) -> None:
         try:
@@ -222,24 +362,40 @@ class _LayoutEditorConfigMixin:
             return
         self._apply_config(data, source=source)
 
-    def _apply_config(self, config: Dict[str, object], *, source: str) -> None:
-        try:
-            self._viewmodel.load_config(
-                config,
-                current_instrument_id=self._viewmodel.state.instrument_id,
-            )
-        except ValueError as exc:
-            messagebox.showerror("Import failed", str(exc), parent=self)
-            return
-        if not self._apply_config_to_library(
-            config,
-            refresh_warning_message="Layout imported but UI refresh failed: {exc}",
-        ):
-            return
+    def _apply_config(
+        self,
+        config: Dict[str, object],
+        *,
+        source: str,
+        _status_updater: Callable[[str], None] | None = None,
+    ) -> None:
+        def perform(update_status: Callable[[str], None]) -> None:
+            update_status("Loading configuration…")
+            try:
+                self._viewmodel.load_config(
+                    config,
+                    current_instrument_id=self._viewmodel.state.instrument_id,
+                )
+            except ValueError as exc:
+                messagebox.showerror("Import failed", str(exc), parent=self)
+                return
 
-        self._refresh_all()
-        self._status_var.set(f"Loaded from {source}")
-        self._update_dirty_indicator()
+            update_status("Updating library…")
+            if not self._apply_config_to_library(
+                config,
+                refresh_warning_message="Layout imported but UI refresh failed: {exc}",
+            ):
+                return
+
+            update_status("Refreshing editor…")
+            self._refresh_all()
+            self._status_var.set(f"Loaded from {source}")
+            self._update_dirty_indicator()
+
+        if _status_updater is None:
+            self._run_with_progress("Applying configuration…", perform)
+        else:
+            perform(_status_updater)
 
     def _apply_and_close(self) -> None:
         config = self._viewmodel.build_config()

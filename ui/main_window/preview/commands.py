@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import queue
+import threading
 from tkinter import messagebox
-
 from ocarina_tools.parts import MusicXmlPartInfo
 
 from ocarina_gui.conversion import ConversionResult
-from ocarina_gui.preview import PreviewData
 from ocarina_tools import (
     export_midi_poly,
     favor_lower_register,
@@ -15,15 +15,40 @@ from ocarina_tools import (
     transform_to_ocarina,
 )
 from shared.melody_part import select_melody_candidate
-from shared.result import Result
 
 from ui.dialogs.pdf_export import ask_pdf_export_options
+from .render_runner import PreviewRenderHandle, render_previews_for_ui
 
 logger = logging.getLogger(__name__)
 
 
 class PreviewCommandsMixin:
     """High-level commands that drive preview rendering and conversion."""
+
+    def _call_in_ui_thread(self, func, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        """Execute *func* on the Tk UI thread and return its result."""
+
+        if threading.current_thread() is threading.main_thread():
+            return func(*args, **kwargs)
+
+        result: queue.Queue[tuple[str, object]] = queue.Queue(maxsize=1)
+
+        def _invoke() -> None:
+            try:
+                result.put(("ok", func(*args, **kwargs)))
+            except BaseException as exc:  # pragma: no cover - propagated to caller
+                result.put(("err", exc))
+
+        try:
+            self.after(0, _invoke)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.exception("Failed to schedule UI-thread call")
+            raise
+
+        kind, payload = result.get()
+        if kind == "err":
+            raise payload
+        return payload
 
     def browse(self) -> None:
         changed = self._viewmodel.browse_for_input()
@@ -38,82 +63,8 @@ class PreviewCommandsMixin:
         self.input_path.set(state.input_path)
         self.pitch_list = list(state.pitch_list)
 
-    def render_previews(self) -> Result[PreviewData, str]:
-        self._sync_viewmodel_settings()
-        suppress_errors = getattr(self, "_suppress_preview_error_dialogs", False)
-        logger.info(
-            "Render previews requested",
-            extra={"input_path": self._viewmodel.state.input_path.strip()},
-        )
-        sides = ("original", "arranged")
-        arranger_mode = (self._viewmodel.state.arranger_mode or "classic").strip().lower()
-        for side in sides:
-            message = "Loading preview…"
-            if (
-                side == "arranged"
-                and arranger_mode in {"best_effort", "gp"}
-            ):
-                message = "Arranging preview…"
-            self._set_preview_initial_loading(side, True, message=message)
-        showing_arranger_progress = False
-        if hasattr(self, "_set_arranger_results_loading") and arranger_mode in {
-            "best_effort",
-            "gp",
-        }:
-            try:
-                self._set_arranger_results_loading(
-                    True, message="Arranging preview…"
-                )
-                showing_arranger_progress = True
-            except Exception:  # pragma: no cover - defensive UI safeguard
-                logger.exception("Failed to display arranger progress indicator")
-        self.update_idletasks()
-        self._set_transpose_controls_enabled(False)
-        try:
-            result = self._viewmodel.render_previews()
-        except Exception:
-            for side in sides:
-                self._set_preview_initial_loading(side, False)
-            raise
-        finally:
-            if showing_arranger_progress:
-                try:
-                    self._set_arranger_results_loading(False)
-                except Exception:  # pragma: no cover - defensive UI safeguard
-                    logger.exception("Failed to hide arranger progress indicator")
-            self._set_transpose_controls_enabled(True)
-        if result.is_err():
-            logger.error("Render previews failed: %s", result.error)
-            if not suppress_errors:
-                messagebox.showerror("Preview failed", result.error)
-            else:
-                logger.info("Preview error dialog suppressed during automatic render")
-            self.status.set(self._viewmodel.state.status_message)
-            for side in sides:
-                self._set_preview_initial_loading(side, False)
-            return result
-        preview_data = result.unwrap()
-        logger.info(
-            "Preview rendered successfully",
-            extra={
-                "original_event_count": len(preview_data.original_events),
-                "arranged_event_count": len(preview_data.arranged_events),
-            },
-        )
-        self._apply_preview_data(preview_data)
-        if hasattr(self, "_render_arranger_summary"):
-            try:
-                self._render_arranger_summary()
-            except Exception:
-                logger.exception("Failed to refresh arranger summary after preview")
-        if hasattr(self, "_refresh_arranger_results_from_state"):
-            try:
-                self._refresh_arranger_results_from_state()
-            except Exception:
-                logger.exception("Failed to refresh arranger results after preview")
-        self.status.set(self._viewmodel.state.status_message)
-        self._record_preview_import()
-        return result
+    def render_previews(self) -> PreviewRenderHandle:
+        return render_previews_for_ui(self)
 
     def convert(self) -> Result[ConversionResult, str] | None:
         self._sync_viewmodel_settings()

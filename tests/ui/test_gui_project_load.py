@@ -10,7 +10,7 @@ from services.project_service import LoadedProject, PreviewPlaybackSnapshot
 from shared.result import Result
 
 
-def _loaded_project(tmp_path: Path) -> LoadedProject:
+def _loaded_project(tmp_path: Path, *, instrument_id: str = "") -> LoadedProject:
     archive = tmp_path / "song.ocarina"
     working = tmp_path / "workspace"
     input_path = working / "original" / "score.musicxml"
@@ -28,7 +28,7 @@ def _loaded_project(tmp_path: Path) -> LoadedProject:
             collapse_chords=True,
             favor_lower=False,
             transpose_offset=-4,
-            instrument_id="",
+            instrument_id=instrument_id,
             selected_part_ids=(),
         ),
         pdf_options=PdfExportOptions.with_defaults(),
@@ -71,6 +71,36 @@ def test_open_project_restores_manual_transpose(gui_app, tmp_path, monkeypatch) 
     assert gui_app._preview_loop_start_vars["arranged"].get() == pytest.approx(1.0)
     assert gui_app._preview_loop_end_vars["arranged"].get() == pytest.approx(3.5)
     assert getattr(gui_app, "_preview_selected_side", None) == "arranged"
+
+
+@pytest.mark.gui
+def test_open_project_restores_fingering_instrument(gui_app, tmp_path, monkeypatch) -> None:
+    loaded = _loaded_project(tmp_path, instrument_id="alto_c_6")
+    base_instrument = "alto_c_12"
+    original_setter = gui_app.set_fingering_instrument
+    original_setter(base_instrument)
+    calls: list[tuple[str, bool]] = []
+
+    def spy_set_fingering(instrument_id: str, *, update_range: bool = True) -> None:
+        calls.append((instrument_id, update_range))
+        original_setter(instrument_id, update_range=update_range)
+
+    monkeypatch.setattr(gui_app, "set_fingering_instrument", spy_set_fingering)
+
+    def fake_open_project() -> Result[LoadedProject, str]:
+        gui_app._viewmodel._apply_loaded_project(loaded)
+        return Result.ok(loaded)
+
+    monkeypatch.setattr(gui_app._viewmodel, "open_project", fake_open_project)
+    monkeypatch.setattr("ocarina_gui.preferences.save_preferences", lambda *_args, **_kwargs: None)
+
+    gui_app._open_project_command()
+
+    assert ("alto_c_6", False) in calls
+    assert gui_app._selected_instrument_id == "alto_c_6"
+    assert gui_app._viewmodel.state.instrument_id == "alto_c_6"
+    assert gui_app.range_min.get() == "A4"
+    assert gui_app.range_max.get() == "F6"
 
 
 @pytest.mark.gui

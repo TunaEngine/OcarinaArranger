@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from adapters.file_dialog import FileDialogAdapter
+from services.project_service import LoadedProject, ProjectSnapshot
 from services.score_service import ScoreService
+from ocarina_gui.settings import TransformSettings
 from ocarina_tools.parts import MusicXmlPartInfo
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 from viewmodels.main_viewmodel import MainViewModel, MainViewModelState
@@ -38,14 +41,19 @@ class _StubDialogs(FileDialogAdapter):
 class _StubProjectService:
     """No-op project service implementation for view-model tests."""
 
+    saved_snapshots: list[ProjectSnapshot] = field(default_factory=list)
+
     def save(self, snapshot, destination):  # noqa: D401 - signature compatibility
-        raise NotImplementedError
+        self.saved_snapshots.append(snapshot)
+        return Path(destination)
 
     def load(self, source, extract_dir):  # noqa: D401 - signature compatibility
         raise NotImplementedError
 
 
-def _make_viewmodel() -> MainViewModel:
+def _make_viewmodel(
+    *, project_service: _StubProjectService | None = None
+) -> MainViewModel:
     """Create a view-model instance with stubbed dependencies."""
 
     stub_score_service = ScoreService(
@@ -60,7 +68,7 @@ def _make_viewmodel() -> MainViewModel:
     viewmodel = MainViewModel(
         dialogs=_StubDialogs(),
         score_service=stub_score_service,
-        project_service=_StubProjectService(),
+        project_service=project_service or _StubProjectService(),
     )
     # Sanity check to ensure defaults align with expectations for tests.
     assert isinstance(viewmodel.state, MainViewModelState)
@@ -194,3 +202,154 @@ def test_update_settings_normalizes_parts_and_selections() -> None:
     assert replacement.name == "Second"
     assert replacement.midi_program == 38
     assert viewmodel.state.selected_part_ids == ()
+
+
+def test_save_project_to_includes_arranger_settings(tmp_path: Path) -> None:
+    stub_service = _StubProjectService()
+    viewmodel = _make_viewmodel(project_service=stub_service)
+    input_path = tmp_path / "song.musicxml"
+    input_path.write_text("<score/>", encoding="utf-8")
+    viewmodel.update_settings(
+        input_path=str(input_path),
+        arranger_mode="best_effort",
+        arranger_strategy="starred-best",
+        starred_instrument_ids=("alto", "tenor"),
+        arranger_dp_slack_enabled=False,
+        arranger_budgets=ArrangerBudgetSettings(
+            max_octave_edits=2,
+            max_rhythm_edits=3,
+            max_substitutions=4,
+            max_steps_per_span=5,
+        ),
+        arranger_gp_settings=ArrangerGPSettings(
+            generations=6,
+            population_size=14,
+            time_budget_seconds=8.5,
+        ),
+    )
+    viewmodel.state.status_message = "Ready."
+
+    result = viewmodel.save_project_to(tmp_path / "project.ocarina")
+
+    assert result.is_ok()
+    assert stub_service.saved_snapshots
+    snapshot = stub_service.saved_snapshots[-1]
+    assert snapshot.arranger_mode == "best_effort"
+    assert snapshot.arranger_strategy == "starred-best"
+    assert snapshot.starred_instrument_ids == ("alto", "tenor")
+    assert snapshot.arranger_dp_slack_enabled is False
+    assert snapshot.arranger_budgets == ArrangerBudgetSettings(
+        max_octave_edits=2,
+        max_rhythm_edits=3,
+        max_substitutions=4,
+        max_steps_per_span=5,
+    ).normalized()
+    assert snapshot.arranger_gp_settings == ArrangerGPSettings(
+        generations=6,
+        population_size=14,
+        time_budget_seconds=8.5,
+    ).normalized()
+
+
+def test_apply_loaded_project_restores_arranger_settings(tmp_path: Path) -> None:
+    viewmodel = _make_viewmodel()
+    working_dir = tmp_path / "work"
+    working_dir.mkdir()
+    original_dir = working_dir / "original"
+    original_dir.mkdir()
+    input_path = original_dir / "song.musicxml"
+    input_path.write_text("<score/>", encoding="utf-8")
+    loaded = LoadedProject(
+        archive_path=tmp_path / "archive.ocarina",
+        working_directory=working_dir,
+        input_path=input_path,
+        settings=TransformSettings(
+            prefer_mode="auto",
+            range_min="C4",
+            range_max="C6",
+            prefer_flats=True,
+            collapse_chords=True,
+            favor_lower=False,
+            selected_part_ids=("P1",),
+        ),
+        pdf_options=None,
+        pitch_list=["C4"],
+        pitch_entries=["C4"],
+        status_message="Saved.",
+        conversion=None,
+        preview_settings={},
+        arranger_mode="gp",
+        arranger_strategy="starred-best",
+        starred_instrument_ids=("alto", "tenor"),
+        arranger_dp_slack_enabled=True,
+        arranger_budgets=ArrangerBudgetSettings(
+            max_octave_edits=4,
+            max_rhythm_edits=5,
+            max_substitutions=6,
+            max_steps_per_span=7,
+        ),
+        arranger_gp_settings=ArrangerGPSettings(
+            generations=8,
+            population_size=20,
+            time_budget_seconds=15.0,
+        ),
+    )
+
+    viewmodel._apply_loaded_project(loaded)
+
+    assert viewmodel.state.arranger_mode == "gp"
+    assert viewmodel.state.arranger_strategy == "starred-best"
+    assert viewmodel.state.starred_instrument_ids == ("alto", "tenor")
+    assert viewmodel.state.arranger_dp_slack_enabled is True
+    assert viewmodel.state.arranger_budgets == ArrangerBudgetSettings(
+        max_octave_edits=4,
+        max_rhythm_edits=5,
+        max_substitutions=6,
+        max_steps_per_span=7,
+    ).normalized()
+    assert viewmodel.state.arranger_gp_settings == ArrangerGPSettings(
+        generations=8,
+        population_size=20,
+        time_budget_seconds=15.0,
+    ).normalized()
+
+
+def test_apply_loaded_project_clears_starred_instruments_when_empty(
+    tmp_path: Path,
+) -> None:
+    viewmodel = _make_viewmodel()
+    viewmodel.update_settings(starred_instrument_ids=("alto",))
+
+    working_dir = tmp_path / "work"
+    working_dir.mkdir()
+    original_dir = working_dir / "original"
+    original_dir.mkdir()
+    input_path = original_dir / "song.musicxml"
+    input_path.write_text("<score/>", encoding="utf-8")
+
+    loaded = LoadedProject(
+        archive_path=tmp_path / "archive.ocarina",
+        working_directory=working_dir,
+        input_path=input_path,
+        settings=TransformSettings(
+            prefer_mode="auto",
+            range_min="C4",
+            range_max="C6",
+            prefer_flats=False,
+            collapse_chords=False,
+            favor_lower=False,
+        ),
+        pdf_options=None,
+        pitch_list=[],
+        pitch_entries=[],
+        status_message="",
+        conversion=None,
+        preview_settings={},
+        arranger_mode=None,
+        arranger_strategy=None,
+        starred_instrument_ids=(),
+    )
+
+    viewmodel._apply_loaded_project(loaded)
+
+    assert viewmodel.state.starred_instrument_ids == ()

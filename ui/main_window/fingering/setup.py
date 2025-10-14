@@ -103,7 +103,9 @@ class FingeringSetupMixin:
 
         self._apply_half_note_default(selected_id)
 
-    def set_fingering_instrument(self, instrument_id: str) -> None:
+    def set_fingering_instrument(
+        self, instrument_id: str, *, update_range: bool = True
+    ) -> None:
         logger.info("Setting fingering instrument", extra={"instrument_id": instrument_id})
         if getattr(self, "_fingering_edit_mode", False):
             try:
@@ -131,7 +133,7 @@ class FingeringSetupMixin:
         self._apply_half_note_default(instrument_id)
 
         if hasattr(self, "_on_library_instrument_changed"):
-            self._on_library_instrument_changed(instrument_id, update_range=True)
+            self._on_library_instrument_changed(instrument_id, update_range=update_range)
         self._refresh_fingering_instrument_choices(instrument_id)
         self._populate_fingering_table()
         self._on_fingering_table_select()

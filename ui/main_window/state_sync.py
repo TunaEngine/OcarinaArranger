@@ -51,7 +51,13 @@ class MainWindowStateSyncMixin:
                 self._suspend_transpose_update = False
             instrument_id = state.instrument_id or ""
             if instrument_id and instrument_id != self._selected_instrument_id:
-                self._on_library_instrument_changed(instrument_id, update_range=False)
+                set_fingering = getattr(self, "set_fingering_instrument", None)
+                if callable(set_fingering):
+                    set_fingering(instrument_id, update_range=False)
+                else:
+                    handler = getattr(self, "_on_library_instrument_changed", None)
+                    if callable(handler):
+                        handler(instrument_id, update_range=False)
             else:
                 name = self._instrument_name_by_id.get(instrument_id, "")
                 self.convert_instrument_var.set(name)

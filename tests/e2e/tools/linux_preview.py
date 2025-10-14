@@ -30,16 +30,21 @@ def prime_preview(app: App, sample_path: Path, status_file: Optional[Path]) -> N
         viewmodel.update_settings(input_path=str(sample_path))
         if hasattr(app, "_sync_controls_from_state"):
             app._sync_controls_from_state()
-        result = app.render_previews()
+        outcome = app.render_previews()
     except Exception:  # pragma: no cover - diagnostic aid only
         logger.exception("Failed to render preview data for %s", sample_path)
         write_status(status_file, preview="error", detail="render-exception")
         return
 
-    if result is None:
-        logger.error("render_previews returned None; previews not initialised")
-        write_status(status_file, preview="error", detail="no-result")
-        return
+    if hasattr(outcome, "wait"):
+        try:
+            result = outcome.wait()
+        except Exception as exc:
+            logger.exception("Preview worker raised during Linux preview priming")
+            write_status(status_file, preview="error", detail=str(exc))
+            return
+    else:
+        result = outcome
 
     if hasattr(result, "is_err") and result.is_err():
         try:

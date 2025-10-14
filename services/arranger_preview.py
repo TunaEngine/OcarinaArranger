@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -64,6 +65,24 @@ class ArrangerComputation:
     arranged_events: tuple[NoteEvent, ...] | None = None
 
 
+ProgressCallback = Callable[[float, str | None], None]
+
+
+def _notify_progress(
+    callback: ProgressCallback | None, percent: float, message: str | None = None
+) -> None:
+    if callback is None:
+        return
+    try:
+        value = max(0.0, min(100.0, float(percent)))
+    except (TypeError, ValueError):
+        value = 0.0
+    try:
+        callback(value, message)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.exception("Arranger progress callback failed")
+
+
 def compute_arranger_preview(
     preview: PreviewData,
     *,
@@ -75,11 +94,13 @@ def compute_arranger_preview(
     budgets: ArrangerBudgetSettings | None = None,
     gp_settings: ArrangerGPSettings | None = None,
     transpose_offset: int = 0,
+    progress_callback: ProgressCallback | None = None,
 ) -> ArrangerComputation:
     """Return arranger summaries derived from ``preview`` for UI consumption."""
 
     strategy_normalized = (strategy or "current").strip().lower()
     mode = (arranger_mode or "classic").strip().lower()
+    _notify_progress(progress_callback, 0.0, "Preparing arrangement…")
     logger.info(
         "Arranger preview requested: mode=%s strategy=%s instrument=%s dp_slack=%s",
         mode,
@@ -89,6 +110,7 @@ def compute_arranger_preview(
     )
     if mode not in {"best_effort", "gp"}:
         logger.info("Arranger preview using algorithm=classic (v1); returning baseline data")
+        _notify_progress(progress_callback, 100.0, "Arrangement skipped for classic mode")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     instrument_id = (instrument_id or "").strip()
@@ -96,11 +118,13 @@ def compute_arranger_preview(
         logger.debug(
             "Arranger preview missing instrument or events; cannot run arranger algorithm"
         )
+        _notify_progress(progress_callback, 100.0, "Arrangement unavailable")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     span = phrase_from_note_events(preview.original_events, preview.pulses_per_quarter)
     if not span.notes:
         logger.debug("Arranger preview span contained no notes; skipping arranger algorithm")
+        _notify_progress(progress_callback, 100.0, "Arrangement unavailable")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     try:
@@ -120,6 +144,7 @@ def compute_arranger_preview(
             "Arranger preview could not resolve instrument '%s'; skipping arranger algorithm",
             instrument_id,
         )
+        _notify_progress(progress_callback, 100.0, "Instrument unavailable for arrangement")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     starred_ids = tuple(
@@ -137,6 +162,7 @@ def compute_arranger_preview(
             "Arranger preview missing range for instrument '%s'; skipping arranger algorithm",
             resolved_instrument_id,
         )
+        _notify_progress(progress_callback, 100.0, "Instrument range unavailable")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     for candidate in starred_ids:
@@ -163,9 +189,11 @@ def compute_arranger_preview(
                 salvage_cascade=salvage_cascade,
                 tempo_bpm=float(preview.tempo_bpm) if preview.tempo_bpm else None,
                 breath_settings=breath_settings,
+                progress_callback=progress_callback,
             )
         except Exception:
             logger.exception("Arranger preview failed during best-effort arrange call")
+            _notify_progress(progress_callback, 100.0, "Arrangement failed")
             return ArrangerComputation((), None, strategy=strategy_normalized)
 
         summaries = tuple(
@@ -205,6 +233,7 @@ def compute_arranger_preview(
         arranged_events = note_events_from_phrase(chosen.result.span, program=program)
         arranged_events = ensure_monophonic(arranged_events)
 
+        _notify_progress(progress_callback, 100.0, "Arrangement complete")
         return ArrangerComputation(
             summaries=summaries,
             result_summary=result_summary,
@@ -217,6 +246,24 @@ def compute_arranger_preview(
         )
 
     gp_config = _gp_session_config(gp_settings or ArrangerGPSettings())
+    _notify_progress(progress_callback, 10.0, "Running GP arranger…")
+    gp_total_generations = max(1, int(gp_config.generations or 0))
+
+    gp_progress: Callable[[int, int], None] | None = None
+    if progress_callback is not None:
+
+        def _on_gp_generation(generation_index: int, total_generations: int) -> None:
+            effective_total = total_generations or gp_total_generations
+            if effective_total <= 0:
+                return
+            completed = min(generation_index + 1, effective_total)
+            fraction = completed / effective_total
+            percent = 10.0 + 89.0 * fraction
+            message = f"Running GP generation {completed}/{effective_total}"
+            _notify_progress(progress_callback, min(percent, 99.0), message)
+
+        gp_progress = _on_gp_generation
+
     try:
         gp_result = arrange_v3_gp(
             span,
@@ -224,9 +271,11 @@ def compute_arranger_preview(
             starred_ids=starred_ids,
             config=gp_config,
             manual_transposition=manual_transpose,
+            progress_callback=gp_progress,
         )
     except Exception:
         logger.exception("Arranger preview failed during GP arrange call")
+        _notify_progress(progress_callback, 100.0, "Arrangement failed")
         return ArrangerComputation((), None, strategy=strategy_normalized)
 
     comparisons = tuple(
@@ -259,6 +308,7 @@ def compute_arranger_preview(
         arranged_events = note_events_from_phrase(gp_result.chosen.span, program=program)
         arranged_events = ensure_monophonic(arranged_events)
 
+    _notify_progress(progress_callback, 100.0, "Arrangement complete")
     return ArrangerComputation(
         summaries=comparisons,
         result_summary=result_summary,

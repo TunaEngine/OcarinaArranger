@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, Tuple
 import zipfile
@@ -13,6 +13,9 @@ import zipfile
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_gui.settings import TransformSettings
+from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
+
+from .project_models import LoadedProject, PreviewPlaybackSnapshot, ProjectSnapshot
 
 
 _MANIFEST_NAME = "manifest.json"
@@ -23,47 +26,6 @@ _VERSION = 1
 
 class ProjectPersistenceError(RuntimeError):
     """Raised when a project archive cannot be saved or loaded."""
-
-
-@dataclass(frozen=True)
-class ProjectSnapshot:
-    """Aggregate of state required to persist a project archive."""
-
-    input_path: Path
-    settings: TransformSettings
-    pdf_options: PdfExportOptions | None
-    pitch_list: list[str]
-    pitch_entries: list[str]
-    status_message: str
-    conversion: ConversionResult | None
-    preview_settings: dict[str, "PreviewPlaybackSnapshot"] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class LoadedProject:
-    """Deserialized project data extracted from an archive."""
-
-    archive_path: Path
-    working_directory: Path
-    input_path: Path
-    settings: TransformSettings
-    pdf_options: PdfExportOptions | None
-    pitch_list: list[str]
-    pitch_entries: list[str]
-    status_message: str
-    conversion: ConversionResult | None
-    preview_settings: dict[str, "PreviewPlaybackSnapshot"]
-
-
-@dataclass(frozen=True)
-class PreviewPlaybackSnapshot:
-    """Persisted playback adjustments for a preview pane."""
-
-    tempo_bpm: float = 120.0
-    metronome_enabled: bool = False
-    loop_enabled: bool = False
-    loop_start_beat: float = 0.0
-    loop_end_beat: float = 0.0
 
 
 class ProjectService:
@@ -143,6 +105,14 @@ class ProjectService:
             manifest_data.get("preview_settings")
         )
 
+        arranger_payload = manifest_data.get("arranger")
+        arranger_mode = self._load_arranger_mode(arranger_payload)
+        arranger_strategy = self._load_arranger_strategy(arranger_payload)
+        starred_instrument_ids = self._load_starred_instruments(arranger_payload)
+        arranger_dp_slack_enabled = self._load_arranger_dp_slack(arranger_payload)
+        arranger_budgets = self._load_arranger_budgets(arranger_payload)
+        arranger_gp_settings = self._load_arranger_gp_settings(arranger_payload)
+
         return LoadedProject(
             archive_path=archive_path,
             working_directory=working_directory,
@@ -154,6 +124,12 @@ class ProjectService:
             status_message=status_message,
             conversion=conversion,
             preview_settings=preview_settings,
+            arranger_mode=arranger_mode,
+            arranger_strategy=arranger_strategy,
+            starred_instrument_ids=starred_instrument_ids,
+            arranger_dp_slack_enabled=arranger_dp_slack_enabled,
+            arranger_budgets=arranger_budgets,
+            arranger_gp_settings=arranger_gp_settings,
         )
 
     def _build_manifest(self, snapshot: ProjectSnapshot) -> Dict[str, Any]:
@@ -170,6 +146,9 @@ class ProjectService:
             "pitch_entries": list(snapshot.pitch_entries),
             "status_message": snapshot.status_message,
         }
+        arranger_payload = self._build_arranger_payload(snapshot)
+        if arranger_payload:
+            manifest["arranger"] = arranger_payload
         if snapshot.preview_settings:
             manifest["preview_settings"] = {
                 side: {
@@ -209,6 +188,46 @@ class ProjectService:
                 },
             }
         return manifest
+
+    def _build_arranger_payload(self, snapshot: ProjectSnapshot) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if snapshot.arranger_mode:
+            payload["mode"] = snapshot.arranger_mode
+        if snapshot.arranger_strategy:
+            payload["strategy"] = snapshot.arranger_strategy
+        if snapshot.starred_instrument_ids:
+            payload["starred_instrument_ids"] = list(snapshot.starred_instrument_ids)
+        if snapshot.arranger_dp_slack_enabled is not None:
+            payload["dp_slack_enabled"] = bool(snapshot.arranger_dp_slack_enabled)
+        if snapshot.arranger_budgets is not None:
+            budgets = snapshot.arranger_budgets
+            payload["budgets"] = {
+                "max_octave_edits": int(budgets.max_octave_edits),
+                "max_rhythm_edits": int(budgets.max_rhythm_edits),
+                "max_substitutions": int(budgets.max_substitutions),
+                "max_steps_per_span": int(budgets.max_steps_per_span),
+            }
+        if snapshot.arranger_gp_settings is not None:
+            gp = snapshot.arranger_gp_settings
+            payload["gp_settings"] = {
+                "generations": int(gp.generations),
+                "population_size": int(gp.population_size),
+                "time_budget_seconds": gp.time_budget_seconds,
+                "archive_size": int(gp.archive_size),
+                "random_program_count": int(gp.random_program_count),
+                "crossover_rate": float(gp.crossover_rate),
+                "mutation_rate": float(gp.mutation_rate),
+                "log_best_programs": int(gp.log_best_programs),
+                "random_seed": int(gp.random_seed),
+                "playability_weight": float(gp.playability_weight),
+                "fidelity_weight": float(gp.fidelity_weight),
+                "tessitura_weight": float(gp.tessitura_weight),
+                "program_size_weight": float(gp.program_size_weight),
+                "contour_weight": float(gp.contour_weight),
+                "lcs_weight": float(gp.lcs_weight),
+                "pitch_weight": float(gp.pitch_weight),
+            }
+        return payload
 
     def _load_preview_settings(
         self, data: Dict[str, Any] | None
@@ -318,6 +337,115 @@ class ProjectService:
             seen.add(text)
             normalized.append(text)
         return tuple(normalized)
+
+    def _load_arranger_mode(self, data: Any) -> str | None:
+        if not isinstance(data, dict):
+            return None
+        mode = data.get("mode")
+        return str(mode) if isinstance(mode, str) and mode else None
+
+    def _load_arranger_strategy(self, data: Any) -> str | None:
+        if not isinstance(data, dict):
+            return None
+        strategy = data.get("strategy")
+        return str(strategy) if isinstance(strategy, str) and strategy else None
+
+    def _load_starred_instruments(self, data: Any) -> tuple[str, ...]:
+        if not isinstance(data, dict):
+            return ()
+        return self._load_selected_part_ids(data.get("starred_instrument_ids"))
+
+    def _load_arranger_dp_slack(self, data: Any) -> bool | None:
+        if not isinstance(data, dict):
+            return None
+        raw_value = data.get("dp_slack_enabled")
+        if isinstance(raw_value, bool):
+            return raw_value
+        if raw_value in (0, 1):
+            return bool(raw_value)
+        return None
+
+    def _load_arranger_budgets(
+        self, data: Any
+    ) -> ArrangerBudgetSettings | None:
+        if not isinstance(data, dict):
+            return None
+        raw_budgets = data.get("budgets")
+        if not isinstance(raw_budgets, dict):
+            return None
+        try:
+            budgets = ArrangerBudgetSettings(
+                max_octave_edits=int(raw_budgets.get("max_octave_edits", 1)),
+                max_rhythm_edits=int(raw_budgets.get("max_rhythm_edits", 1)),
+                max_substitutions=int(raw_budgets.get("max_substitutions", 1)),
+                max_steps_per_span=int(raw_budgets.get("max_steps_per_span", 3)),
+            )
+        except (TypeError, ValueError):
+            return ArrangerBudgetSettings().normalized()
+        return budgets.normalized()
+
+    def _load_arranger_gp_settings(
+        self, data: Any
+    ) -> ArrangerGPSettings | None:
+        if not isinstance(data, dict):
+            return None
+        raw_gp = data.get("gp_settings")
+        if not isinstance(raw_gp, dict):
+            return None
+        defaults = ArrangerGPSettings()
+
+        def _safe_int(key: str, fallback: int) -> int:
+            value = raw_gp.get(key, fallback)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _safe_float(key: str, fallback: float) -> float:
+            value = raw_gp.get(key, fallback)
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        time_budget_value = raw_gp.get("time_budget_seconds")
+        if time_budget_value in (None, ""):
+            time_budget_seconds: float | None = None
+        else:
+            try:
+                time_budget_seconds = float(time_budget_value)
+            except (TypeError, ValueError):
+                time_budget_seconds = None
+
+        gp_settings = ArrangerGPSettings(
+            generations=_safe_int("generations", defaults.generations),
+            population_size=_safe_int("population_size", defaults.population_size),
+            time_budget_seconds=time_budget_seconds,
+            archive_size=_safe_int("archive_size", defaults.archive_size),
+            random_program_count=_safe_int(
+                "random_program_count", defaults.random_program_count
+            ),
+            crossover_rate=_safe_float("crossover_rate", defaults.crossover_rate),
+            mutation_rate=_safe_float("mutation_rate", defaults.mutation_rate),
+            log_best_programs=_safe_int(
+                "log_best_programs", defaults.log_best_programs
+            ),
+            random_seed=_safe_int("random_seed", defaults.random_seed),
+            playability_weight=_safe_float(
+                "playability_weight", defaults.playability_weight
+            ),
+            fidelity_weight=_safe_float("fidelity_weight", defaults.fidelity_weight),
+            tessitura_weight=_safe_float(
+                "tessitura_weight", defaults.tessitura_weight
+            ),
+            program_size_weight=_safe_float(
+                "program_size_weight", defaults.program_size_weight
+            ),
+            contour_weight=_safe_float("contour_weight", defaults.contour_weight),
+            lcs_weight=_safe_float("lcs_weight", defaults.lcs_weight),
+            pitch_weight=_safe_float("pitch_weight", defaults.pitch_weight),
+        )
+        return gp_settings.normalized()
 
     @staticmethod
     def _ensure_export_exists(path: str) -> None:

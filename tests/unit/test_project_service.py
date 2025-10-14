@@ -17,6 +17,7 @@ from services.project_service import (
     ProjectSnapshot,
     PreviewPlaybackSnapshot,
 )
+from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 
 def _create_conversion_artifacts(tmp_path: Path) -> ConversionResult:
@@ -58,6 +59,30 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         selected_part_ids=("P1",),
     )
     pdf_options = PdfExportOptions.with_defaults(page_size="A4", orientation="landscape")
+    arranger_budgets = ArrangerBudgetSettings(
+        max_octave_edits=2,
+        max_rhythm_edits=3,
+        max_substitutions=4,
+        max_steps_per_span=5,
+    )
+    arranger_gp_settings = ArrangerGPSettings(
+        generations=7,
+        population_size=18,
+        time_budget_seconds=12.5,
+        archive_size=6,
+        random_program_count=5,
+        crossover_rate=0.7,
+        mutation_rate=0.3,
+        log_best_programs=4,
+        random_seed=42,
+        playability_weight=1.1,
+        fidelity_weight=1.9,
+        tessitura_weight=1.2,
+        program_size_weight=1.3,
+        contour_weight=0.4,
+        lcs_weight=0.6,
+        pitch_weight=0.5,
+    )
     snapshot = ProjectSnapshot(
         input_path=input_path,
         settings=settings,
@@ -75,6 +100,12 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
                 loop_end_beat=3.0,
             )
         },
+        arranger_mode="best_effort",
+        arranger_strategy="starred-best",
+        starred_instrument_ids=("alto", "tenor"),
+        arranger_dp_slack_enabled=False,
+        arranger_budgets=arranger_budgets,
+        arranger_gp_settings=arranger_gp_settings,
     )
 
     service = ProjectService()
@@ -86,6 +117,20 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
 
     assert manifest["settings"]["selected_part_ids"] == ["P1"]
+    arranger_manifest = manifest.get("arranger", {})
+    assert arranger_manifest["mode"] == "best_effort"
+    assert arranger_manifest["strategy"] == "starred-best"
+    assert arranger_manifest["starred_instrument_ids"] == ["alto", "tenor"]
+    assert arranger_manifest["dp_slack_enabled"] is False
+    assert arranger_manifest["budgets"] == {
+        "max_octave_edits": 2,
+        "max_rhythm_edits": 3,
+        "max_substitutions": 4,
+        "max_steps_per_span": 5,
+    }
+    assert arranger_manifest["gp_settings"]["generations"] == 7
+    assert arranger_manifest["gp_settings"]["population_size"] == 18
+    assert arranger_manifest["gp_settings"]["time_budget_seconds"] == pytest.approx(12.5)
 
     extract_dir = tmp_path / "extracted"
     loaded = service.load(saved_path, extract_dir)
@@ -117,6 +162,12 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert pdf_key == "A4 Portrait"
     assert Path(restored_conversion.output_pdf_paths[pdf_key]).read_text(encoding="utf-8") == "pdf-bytes"
     assert Path(restored_conversion.output_folder).is_dir()
+    assert loaded.arranger_mode == "best_effort"
+    assert loaded.arranger_strategy == "starred-best"
+    assert loaded.starred_instrument_ids == ("alto", "tenor")
+    assert loaded.arranger_dp_slack_enabled is False
+    assert loaded.arranger_budgets == arranger_budgets.normalized()
+    assert loaded.arranger_gp_settings == arranger_gp_settings.normalized()
 
 
 def test_project_service_requires_existing_input(tmp_path: Path) -> None:

@@ -33,8 +33,19 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
     progress_frame = ttk.Frame(summary_tab)
     progress_frame.columnconfigure(0, weight=1)
     progress_frame.grid(row=1, column=0, sticky="ew", pady=(pad // 2, 0))
-    progress = ttk.Progressbar(progress_frame, mode="indeterminate")
+    progress = ttk.Progressbar(
+        progress_frame,
+        mode="determinate",
+        maximum=100,
+        variable=app.arranger_progress_value,
+    )
     progress.grid(row=0, column=0, sticky="ew")
+    ttk.Label(
+        progress_frame,
+        textvariable=app.arranger_progress_percent,
+        width=5,
+        anchor="e",
+    ).grid(row=0, column=1, sticky="e", padx=(pad // 2, 0))
     app._register_arranger_progress_widgets(progress_frame, progress)
     app._set_arranger_results_loading(False, restore_status=False)
 

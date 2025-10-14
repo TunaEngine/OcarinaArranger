@@ -246,7 +246,18 @@ class LinuxAutomationMixin:
             sync_controls = getattr(self, "_sync_controls_from_state", None)
             if callable(sync_controls):
                 sync_controls()
-            result = self.render_previews()
+            outcome = self.render_previews()
+            if hasattr(outcome, "wait"):
+                try:
+                    result = outcome.wait()
+                except Exception as exc:  # pragma: no cover - defensive diagnostics
+                    logger.exception(
+                        "Preview rendering worker raised during Linux automation"
+                    )
+                    self._write_linux_status(preview="error", detail=str(exc))
+                    return
+            else:
+                result = outcome
         except Exception as exc:  # pragma: no cover - defensive diagnostics
             logger.exception("Failed to render preview data for Linux automation")
             self._write_linux_status(preview="error", detail=str(exc))
@@ -254,10 +265,6 @@ class LinuxAutomationMixin:
         finally:
             self._suppress_preview_error_dialogs = previous
 
-        if result is None:
-            logger.error("render_previews returned None during Linux automation prime")
-            self._write_linux_status(preview="error", detail="no-result")
-            return
         if hasattr(result, "is_err") and result.is_err():
             detail = getattr(result, "error", "<unknown error>")
             logger.error("Preview rendering failed during Linux automation: %s", detail)

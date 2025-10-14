@@ -5,6 +5,9 @@ import tkinter as tk
 from tkinter import messagebox
 
 from helpers import make_linear_score
+from ocarina_gui.preview import PreviewData
+from ocarina_tools.events import NoteEvent
+from shared.result import Result
 
 from tests.ui._preview_helpers import write_score
 
@@ -55,6 +58,54 @@ def test_render_previews_shows_arranger_progress(gui_app, tmp_path, monkeypatch)
     gui_app.update_idletasks()
 
     assert not progress_frame.winfo_manager()
+
+
+def test_render_previews_updates_progress_percentage(gui_app, monkeypatch):
+    progress_frame = getattr(gui_app, "_arranger_progress_frame", None)
+    if progress_frame is None:
+        pytest.skip("Arranger progress indicator unavailable in this environment")
+
+    gui_app.arranger_mode.set("gp")
+    gui_app._viewmodel.state.arranger_mode = "gp"
+    gui_app._viewmodel.state.instrument_id = "test"
+    gui_app.update_idletasks()
+
+    recorded: list[float] = []
+    original_update = gui_app._update_arranger_progress
+
+    def _record_update(percent: float, message: str | None = None) -> None:
+        try:
+            recorded.append(float(percent))
+        except (TypeError, ValueError):
+            recorded.append(0.0)
+        original_update(percent, message=message)
+
+    monkeypatch.setattr(gui_app, "_update_arranger_progress", _record_update)
+
+    preview = PreviewData(
+        original_events=(NoteEvent(onset=0, duration=120, midi=72, program=0),),
+        arranged_events=(),
+        pulses_per_quarter=480,
+        beats=4,
+        beat_type=4,
+        original_range=(60, 72),
+        arranged_range=(60, 72),
+        tempo_bpm=120,
+        tempo_changes=(),
+    )
+
+    def _fake_render(*, progress_callback=None):  # noqa: ANN002
+        if callable(progress_callback):
+            progress_callback(0.0, "Preparing arrangement…")
+            progress_callback(10.0, "Running GP arranger…")
+            progress_callback(37.5, "Running GP generation 3/10")
+        return Result.ok(preview)
+
+    monkeypatch.setattr(gui_app._viewmodel, "render_previews", _fake_render)
+
+    gui_app.render_previews()
+
+    assert any(10.0 < value < 99.0 for value in recorded)
 
 
 def test_import_auto_renders_and_selects_arranged_tab(gui_app, tmp_path, monkeypatch):

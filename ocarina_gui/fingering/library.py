@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Iterable, List, Mapping, Sequence
+import logging
+from typing import Callable, Dict, Iterable, List, Sequence
 
 from .config import (
     _instrument_specs_from_config,
@@ -11,6 +12,9 @@ from .config import (
     save_fingering_config,
 )
 from .specs import InstrumentChoice, InstrumentSpec, parse_note_name_safe
+
+
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -135,7 +139,13 @@ class FingeringLibrary:
         if instrument_id == self._current_id:
             return
         if instrument_id not in self._instruments:
-            raise ValueError(f"Unknown fingering instrument: {instrument_id}")
+            fallback_id = self._order[0]
+            logger.warning(
+                "Requested fingering instrument %s is unavailable; falling back to %s",
+                instrument_id,
+                fallback_id,
+            )
+            instrument_id = fallback_id
         self._current_id = instrument_id
         instrument = self._instruments[instrument_id]
         for listener in list(self._listeners):
@@ -168,15 +178,16 @@ def update_library_from_config(
 ) -> None:
     global _LIBRARY
 
-    fallback: Mapping[str, InstrumentSpec] | Iterable[InstrumentSpec]
+    fallback_map: dict[str, InstrumentSpec]
     if _LIBRARY is not None:
-        fallback = _LIBRARY._instruments  # type: ignore[attr-defined]
+        fallback_map = dict(_load_default_spec_map())
+        fallback_map.update(_LIBRARY._instruments)  # type: ignore[attr-defined]
     else:
-        fallback = _load_default_spec_map()
+        fallback_map = dict(_load_default_spec_map())
 
     instruments = _instrument_specs_from_config(
         config,
-        fallback_specs=fallback,
+        fallback_specs=fallback_map,
     )
     if not instruments:
         raise ValueError("Fingering configuration must define at least one instrument.")

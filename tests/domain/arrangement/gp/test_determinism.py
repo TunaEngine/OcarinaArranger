@@ -43,3 +43,31 @@ def test_gp_session_is_deterministic_with_seed() -> None:
 
     # JSON serialization guard for debugging payloads
     json.dumps(first.log.to_dict())
+
+
+def test_gp_session_reports_progress_each_generation() -> None:
+    phrase = _make_phrase()
+    instrument = InstrumentRange(60, 84)
+
+    config = GPSessionConfig(
+        generations=4,
+        population_size=6,
+        archive_size=4,
+        random_seed=11,
+        random_program_count=3,
+        crossover_rate=0.7,
+        mutation_rate=0.6,
+        log_best_programs=2,
+        constraints=ProgramConstraints(max_operations=3),
+    )
+
+    updates: list[tuple[int, int]] = []
+
+    def _progress(generation: int, total: int) -> None:
+        updates.append((generation, total))
+
+    run_gp_session(phrase, instrument, config=config, progress_callback=_progress)
+
+    assert updates, "expected progress callback to be invoked"
+    assert [generation for generation, _ in updates] == list(range(config.generations))
+    assert all(total == config.generations for _, total in updates)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import Iterable, Sequence, Tuple
+from typing import Callable, Iterable, Sequence, Tuple
 
 from .config import (
     DEFAULT_FEATURE_FLAGS,
@@ -38,6 +38,57 @@ from .api_logging import (
 
 
 logger = logging.getLogger(__name__)
+
+ProgressCallback = Callable[[float, str | None], None]
+
+
+def _noop_progress(_percent: float, _message: str | None = None) -> None:
+    return None
+
+
+def _prepare_progress(callback: ProgressCallback | None) -> ProgressCallback:
+    if callback is None:
+        return _noop_progress
+    failed = False
+
+    def reporter(percent: float, message: str | None = None) -> None:
+        nonlocal failed
+        if failed:
+            return
+        try:
+            value = max(0.0, min(100.0, float(percent)))
+        except (TypeError, ValueError):
+            value = 0.0
+        try:
+            callback(value, message)
+        except Exception:
+            failed = True
+            logger.exception("Arranger progress callback failed")
+
+    return reporter
+
+
+def _scaled_progress(
+    callback: ProgressCallback,
+    start: float,
+    end: float,
+    *,
+    prefix: str | None = None,
+) -> ProgressCallback:
+    span = max(0.0, end - start)
+
+    def reporter(percent: float, message: str | None = None) -> None:
+        try:
+            inner = max(0.0, min(100.0, float(percent)))
+        except (TypeError, ValueError):
+            inner = 0.0
+        scaled = start + (span * inner / 100.0 if span else 0.0)
+        text = message
+        if prefix:
+            text = f"{prefix}: {message}" if message else f"{prefix}: {inner:.0f}%"
+        callback(scaled, text)
+
+    return reporter
 
 # Backwards-compatible alias for legacy imports in downstream tests.
 _run_candidate_pipeline = run_candidate_pipeline
@@ -109,15 +160,9 @@ def arrange_span(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> ArrangementResult:
-    """Arrange ``span`` for ``instrument`` respecting feature flags.
-
-    The arranger first evaluates the top soft-key transpositions (including the
-    baseline) and runs the DP + salvage pipeline for each candidate. The final
-    result reflects the transposed span with the lowest post-salvage difficulty.
-    When ``flags.dp_slack`` is disabled the octave-folding step is skipped, but
-    transposition and salvage may still adjust the phrase.
-    """
+    """Arrange ``span`` for ``instrument`` respecting feature flags."""
 
     active_flags = flags or DEFAULT_FEATURE_FLAGS
     melody_result = isolate_melody(span)
@@ -131,8 +176,13 @@ def arrange_span(
     candidates = _candidate_transpositions(base_span, instrument)
     log_transpositions(logger, candidates=candidates)
     best: tuple[tuple[int | float, ...], ArrangementResult] | None = None
+    report = progress_callback or _noop_progress
+    total_candidates = max(len(candidates), 1)
+    report(0.0, "Selecting candidate transpositions")
 
-    for transposition in candidates:
+    for index, transposition in enumerate(candidates, start=1):
+        start_percent = ((index - 1) / total_candidates) * 100.0
+        report(start_percent, f"Testing transposition {transposition:+d}")
         candidate_span = base_span.transpose(transposition)
         log_candidate_start(
             logger,
@@ -204,9 +254,12 @@ def arrange_span(
             ranking=ranking,
             preprocessing_count=len(arranged.preprocessing),
         )
+        end_percent = (index / total_candidates) * 100.0
+        report(end_percent, f"Completed transposition {transposition:+d}")
 
     if best is None:
         log_no_candidates(logger)
+        report(100.0, "No viable transpositions")
         return ArrangementResult(span=span, transposition=0)
 
     chosen = best[1]
@@ -216,6 +269,7 @@ def arrange_span(
         span=chosen.span,
         preprocessing=chosen.preprocessing,
     )
+    report(100.0, "Selected best transposition")
     return best[1]
 
 
@@ -229,6 +283,7 @@ def _arrange_for_instrument(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> InstrumentArrangement:
     instrument = get_instrument_range(instrument_id)
     result = arrange_span(
@@ -240,6 +295,7 @@ def _arrange_for_instrument(
         tempo_bpm=tempo_bpm,
         subhole_settings=subhole_settings,
         breath_settings=breath_settings,
+        progress_callback=progress_callback,
     )
     summary = summarize_difficulty(result.span, instrument)
     log_instrument_result(
@@ -269,6 +325,7 @@ def arrange(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> ArrangementStrategyResult:
     """Arrange ``span`` using the requested instrument selection strategy."""
 
@@ -277,6 +334,9 @@ def arrange(
         raise ValueError(f"Unsupported strategy: {strategy}")
 
     active_flags = flags or DEFAULT_FEATURE_FLAGS
+    report = _prepare_progress(progress_callback)
+    label = instrument_id or "instrument"
+    report(0.0, f"Arranging {label}")
     log_arrange_start(
         logger,
         strategy=strategy_normalized,
@@ -295,7 +355,14 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            progress_callback=_scaled_progress(
+                report,
+                0.0,
+                100.0,
+                prefix=instrument_id or "current",
+            ),
         )
+        report(100.0, f"Arranged {instrument_id or 'current instrument'}")
         return ArrangementStrategyResult(
             strategy=strategy_normalized,
             chosen=arrangement,
@@ -315,6 +382,7 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            progress_callback=progress_callback,
         )
 
     candidate_ids = [instrument_id]
@@ -322,8 +390,14 @@ def arrange(
         if starred not in candidate_ids:
             candidate_ids.append(starred)
 
-    comparisons = tuple(
-        _arrange_for_instrument(
+    total_candidates = len(candidate_ids) or 1
+    comparisons: list[InstrumentArrangement] = []
+    for index, candidate_id in enumerate(candidate_ids):
+        start = (index / total_candidates) * 100.0
+        end = ((index + 1) / total_candidates) * 100.0
+        prefix = candidate_id or f"candidate-{index+1}"
+        report(start, f"Arranging {prefix}")
+        comparison = _arrange_for_instrument(
             span,
             candidate_id,
             flags=active_flags,
@@ -332,13 +406,15 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            progress_callback=_scaled_progress(report, start, end, prefix=prefix),
         )
-        for candidate_id in candidate_ids
-    )
+        comparisons.append(comparison)
+        report(end, f"Evaluated {prefix}")
+    comparisons_tuple = tuple(comparisons)
 
     ranked = tuple(
         sorted(
-            comparisons,
+            comparisons_tuple,
             key=lambda item: (
                 item.difficulty.hard_and_very_hard,
                 item.difficulty.medium,
@@ -352,6 +428,7 @@ def arrange(
         strategy=strategy_normalized,
         ranked=ranked_pairs,
     )
+    report(100.0, f"Selected {ranked[0].instrument_id}")
     return ArrangementStrategyResult(
         strategy=strategy_normalized,
         chosen=ranked[0],

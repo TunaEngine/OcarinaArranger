@@ -150,6 +150,16 @@ def gui_app(request, monkeypatch):
         app._test_audio_renderers[key] = stub_renderer
         app._sync_preview_playback_controls(key)
 
+    original_render_previews = app.render_previews
+
+    def _render_previews_and_wait(*args, **kwargs):
+        handle = original_render_previews(*args, **kwargs)
+        if hasattr(handle, "wait"):
+            return handle.wait()
+        return handle
+
+    app.render_previews = _render_previews_and_wait  # type: ignore[assignment]
+
     def _cleanup() -> None:
         try:
             app.destroy()

@@ -6,10 +6,10 @@ from dataclasses import replace
 import pytest
 
 from ocarina_gui.fingering import (
+    FingeringLibrary,
     FingeringView,
+    InstrumentSpec,
     get_current_instrument,
-    get_current_instrument_id,
-    load_fingering_config,
     set_active_instrument,
     update_instrument_spec,
     update_library_from_config,
@@ -25,9 +25,66 @@ def test_custom_half_hole_instrument_preview_round_trip(monkeypatch: pytest.Monk
 
     root.withdraw()
     view: FingeringView | None = None
-    original_config = load_fingering_config()
-    original_id = get_current_instrument_id()
-    original_spec = get_current_instrument()
+
+    baseline_instrument_data = {
+        "id": "baseline_half_hole",
+        "name": "Baseline Half-Hole",
+        "title": "Baseline Half-Hole",
+        "canvas": {"width": 140, "height": 140},
+        "style": {
+            "background_color": "#ffffff",
+            "outline_color": "#111111",
+            "outline_width": 3.0,
+            "outline_smooth": True,
+            "outline_spline_steps": 48,
+            "hole_outline_color": "#111111",
+            "covered_fill_color": "#111111",
+        },
+        "holes": [
+            {"id": "primary", "x": 70.0, "y": 70.0, "radius": 18.0},
+        ],
+        "windways": [],
+        "note_order": ["C4"],
+        "note_map": {"C4": [2]},
+        "candidate_notes": ["C4"],
+        "candidate_range": {"min": "C4", "max": "C4"},
+        "preferred_range": {"min": "C4", "max": "C4"},
+        "allow_half_holes": True,
+        "outline": {
+            "points": [
+                [20.0, 20.0],
+                [20.0, 120.0],
+                [120.0, 120.0],
+                [120.0, 20.0],
+            ],
+            "closed": True,
+        },
+    }
+
+    original_spec = InstrumentSpec.from_dict(baseline_instrument_data)
+    original_config = {"instruments": [baseline_instrument_data]}
+    original_id = original_spec.instrument_id
+
+    baseline_library = FingeringLibrary([original_spec])
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.library._LIBRARY",
+        baseline_library,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.fingering._LIBRARY",
+        baseline_library,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.library._load_default_spec_map",
+        lambda: {original_id: original_spec},
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.fingering.load_fingering_config",
+        lambda: original_config,
+    )
+    set_active_instrument(original_id)
 
     instrument_data = {
         "id": "test_half_hole_preview",
@@ -69,7 +126,10 @@ def test_custom_half_hole_instrument_preview_round_trip(monkeypatch: pytest.Monk
     )
 
     try:
-        update_library_from_config({"instruments": [instrument_data]}, current_instrument_id=instrument_data["id"])
+        update_library_from_config(
+            {"instruments": [instrument_data]},
+            current_instrument_id=instrument_data["id"],
+        )
         set_active_instrument(instrument_data["id"])
 
         view = FingeringView(root)

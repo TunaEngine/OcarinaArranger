@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from typing import Iterable
 
 from shared.ttk import ttk
+
+logger = logging.getLogger(__name__)
 
 from viewmodels.arranger_models import (
     ArrangerEditBreakdown,
@@ -53,6 +56,9 @@ class ArrangerResultsMixin:
         self._arranger_progress_frame: ttk.Frame | None = None
         self._arranger_progress_bar: ttk.Progressbar | None = None
         self._arranger_progress_previous_status: str | None = None
+        self._arranger_progress_active_message: str | None = None
+        self.arranger_progress_percent = tk.StringVar(master=self, value="0%")
+        self.arranger_progress_value = tk.DoubleVar(master=self, value=0.0)
         self.arranger_explanation_filter.trace_add(
             "write", self._on_arranger_explanation_filter_changed
         )
@@ -66,6 +72,10 @@ class ArrangerResultsMixin:
     ) -> None:
         self._arranger_progress_frame = frame
         self._arranger_progress_bar = progress
+        try:
+            progress.configure(variable=self.arranger_progress_value)
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
         try:
             frame.grid_remove()
         except (tk.TclError, RuntimeError, AttributeError):
@@ -91,22 +101,26 @@ class ArrangerResultsMixin:
                     self.arranger_summary_status.set(message)
                 except (tk.TclError, RuntimeError, AttributeError):
                     pass
+            self._arranger_progress_active_message = message
+            try:
+                self.arranger_progress_value.set(0.0)
+            except (tk.TclError, RuntimeError, AttributeError):
+                pass
+            try:
+                self.arranger_progress_percent.set("0%")
+            except (tk.TclError, RuntimeError, AttributeError):
+                pass
             if frame is not None:
                 try:
                     if frame.winfo_manager() != "grid":
                         frame.grid()
                 except (tk.TclError, RuntimeError, AttributeError):
                     pass
-            if bar is not None:
-                try:
-                    bar.start(12)
-                except (tk.TclError, RuntimeError, AttributeError):
-                    pass
             return
 
         if bar is not None:
             try:
-                bar.stop()
+                bar.configure(value=0.0)
             except (tk.TclError, RuntimeError, AttributeError):
                 pass
         if frame is not None:
@@ -123,6 +137,49 @@ class ArrangerResultsMixin:
             except (tk.TclError, RuntimeError, AttributeError):
                 pass
         self._arranger_progress_previous_status = None
+        self._arranger_progress_active_message = None
+        try:
+            self.arranger_progress_value.set(0.0)
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
+        try:
+            self.arranger_progress_percent.set("0%")
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
+
+    def _update_arranger_progress(
+        self, percent: float, message: str | None = None
+    ) -> None:
+        try:
+            value = float(percent)
+        except (TypeError, ValueError):
+            value = 0.0
+        value = max(0.0, min(100.0, value))
+        percent_str = f"{value:.0f}%"
+        
+        # Update progress bar value
+        try:
+            self.arranger_progress_value.set(value)
+        except (tk.TclError, RuntimeError, AttributeError):
+            logger.debug("Failed to update arranger progress variable", exc_info=True)
+
+        # Update progress bar directly to ensure immediate effect
+        bar = self._arranger_progress_bar
+        if bar is not None:
+            try:
+                bar.configure(value=value)
+            except (tk.TclError, RuntimeError, AttributeError):
+                logger.debug("Failed to configure arranger progress bar", exc_info=True)
+        
+        # Update message
+        if message is not None:
+            self._arranger_progress_active_message = message
+        active_message = self._arranger_progress_active_message
+        if active_message is not None:
+            self.arranger_summary_status.set(active_message)
+        
+        # Update percentage label
+        self.arranger_progress_percent.set(percent_str)
 
     def _register_arranger_explanations_tree(self, tree: ttk.Treeview) -> None:
         self._arranger_explanations_tree = tree

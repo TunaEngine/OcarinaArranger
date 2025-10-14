@@ -92,12 +92,20 @@ def choose_score(arranger_app: E2EHarness) -> None:
 
 @when("the user renders previews")
 def render_previews(arranger_app: E2EHarness) -> None:
-    arranger_app.last_preview_result = arranger_app.window.render_previews()
+    outcome = arranger_app.window.render_previews()
+    if hasattr(outcome, "wait"):
+        arranger_app.last_preview_result = outcome.wait()
+    else:
+        arranger_app.last_preview_result = outcome
 
 
 @when("the user renders previews successfully")
 def render_previews_success(arranger_app: E2EHarness) -> None:
-    result = arranger_app.window.render_previews()
+    outcome = arranger_app.window.render_previews()
+    if hasattr(outcome, "wait"):
+        result = outcome.wait()
+    else:
+        result = outcome
     arranger_app.last_preview_result = result
     assert result.is_ok(), "Expected preview rendering to succeed"
 

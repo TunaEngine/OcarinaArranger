@@ -23,7 +23,21 @@ class PreviewTransposeMixin:
         previous = self._transpose_applied_offset
         self._transpose_applied_offset = value
         self._viewmodel.update_settings(transpose_offset=value)
-        result = self.render_previews()
+        outcome = self.render_previews()
+        try:
+            if hasattr(outcome, "wait"):
+                result = outcome.wait()
+            else:
+                result = outcome
+        except Exception:
+            self._transpose_applied_offset = previous
+            self._viewmodel.update_settings(transpose_offset=previous)
+            self._suspend_transpose_update = True
+            try:
+                self.transpose_offset.set(previous)
+            finally:
+                self._suspend_transpose_update = False
+            raise
         if result.is_err():
             self._transpose_applied_offset = previous
             self._viewmodel.update_settings(transpose_offset=previous)

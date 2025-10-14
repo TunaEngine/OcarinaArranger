@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Mapping, Sequence, Tuple, TYPE_CHECKING
+from typing import Callable, Iterable, Mapping, Sequence, Tuple, TYPE_CHECKING
 
 from domain.arrangement.config import get_instrument_range
 from domain.arrangement.difficulty import DifficultySummary, summarize_difficulty
@@ -203,6 +203,7 @@ def arrange_v3_gp(
     salvage_events: Sequence[ExplanationEvent] | None = None,
     transposition: int = 0,
     manual_transposition: int | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> GPArrangementStrategyResult:
     """Run a GP session for ``instrument_id`` and rank starred instruments.
 
@@ -231,6 +232,7 @@ def arrange_v3_gp(
         config=config,
         salvage_events=salvage_events,
         transposition=transposition,
+        progress_callback=progress_callback,
     )
 
     if logger.isEnabledFor(logging.DEBUG):

@@ -6,7 +6,8 @@ import logging
 from dataclasses import replace
 import os
 from pathlib import Path
-from collections.abc import Iterable, Mapping, Sequence
+from threading import RLock
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Optional
 
 from ocarina_gui.conversion import ConversionResult
@@ -19,7 +20,6 @@ from services.project_service import (
     LoadedProject,
     ProjectPersistenceError,
     ProjectService,
-    ProjectSnapshot,
     PreviewPlaybackSnapshot,
 )
 from services.score_service import ScoreService
@@ -60,6 +60,7 @@ from .main_viewmodel_part_selection import (
     normalize_available_parts,
     normalize_selected_part_ids,
 )
+from .main_viewmodel_persistence import apply_loaded_project, build_project_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ class MainViewModel:
         self._last_conversion: ConversionResult | None = None
         self._last_pdf_options: PdfExportOptions | None = None
         self._pitch_entries: list[str] = []
+        self._state_lock = RLock()
         logger.info("MainViewModel initialised")
 
     # ------------------------------------------------------------------
@@ -116,82 +118,83 @@ class MainViewModel:
             | tuple[int, int, object]
         ] = None,
     ) -> None:
-        if input_path is not None:
-            normalized_path = input_path
-            if normalized_path != self.state.input_path:
-                self.state.preview_settings = {}
-                self.state.available_parts = ()
-                self.state.selected_part_ids = ()
-                self.state.arranger_strategy_summary = ()
-                self.state.arranger_result_summary = None
-                self.state.arranger_explanations = ()
-                self.state.arranger_telemetry = ()
-                self.state.pitch_list = []
-                self._pitch_entries = []
-            self.state.input_path = normalized_path
-        if prefer_mode is not None:
-            self.state.prefer_mode = prefer_mode
-        if prefer_flats is not None:
-            self.state.prefer_flats = prefer_flats
-        if collapse_chords is not None:
-            self.state.collapse_chords = collapse_chords
-        if favor_lower is not None:
-            self.state.favor_lower = favor_lower
-        if range_min is not None:
-            self.state.range_min = range_min
-        if range_max is not None:
-            self.state.range_max = range_max
-        if transpose_offset is not None:
-            self.state.transpose_offset = transpose_offset
-        if instrument_id is not None:
-            self.state.instrument_id = instrument_id
-        if available_parts is not None:
-            normalized_parts = normalize_available_parts(available_parts)
-            self.state.available_parts = normalized_parts
-            if self.state.selected_part_ids:
-                filtered = normalize_selected_part_ids(
-                    self.state.selected_part_ids,
-                    (part.part_id for part in normalized_parts),
+        with self._state_lock:
+            if input_path is not None:
+                normalized_path = input_path
+                if normalized_path != self.state.input_path:
+                    self.state.preview_settings = {}
+                    self.state.available_parts = ()
+                    self.state.selected_part_ids = ()
+                    self.state.arranger_strategy_summary = ()
+                    self.state.arranger_result_summary = None
+                    self.state.arranger_explanations = ()
+                    self.state.arranger_telemetry = ()
+                    self.state.pitch_list = []
+                    self._pitch_entries = []
+                self.state.input_path = normalized_path
+            if prefer_mode is not None:
+                self.state.prefer_mode = prefer_mode
+            if prefer_flats is not None:
+                self.state.prefer_flats = prefer_flats
+            if collapse_chords is not None:
+                self.state.collapse_chords = collapse_chords
+            if favor_lower is not None:
+                self.state.favor_lower = favor_lower
+            if range_min is not None:
+                self.state.range_min = range_min
+            if range_max is not None:
+                self.state.range_max = range_max
+            if transpose_offset is not None:
+                self.state.transpose_offset = transpose_offset
+            if instrument_id is not None:
+                self.state.instrument_id = instrument_id
+            if available_parts is not None:
+                normalized_parts = normalize_available_parts(available_parts)
+                self.state.available_parts = normalized_parts
+                if self.state.selected_part_ids:
+                    filtered = normalize_selected_part_ids(
+                        self.state.selected_part_ids,
+                        (part.part_id for part in normalized_parts),
+                    )
+                    if filtered != self.state.selected_part_ids:
+                        self.state.selected_part_ids = filtered
+            if selected_part_ids is not None:
+                allowed_part_ids = (
+                    (part.part_id for part in self.state.available_parts)
+                    if self.state.available_parts
+                    else None
                 )
-                if filtered != self.state.selected_part_ids:
-                    self.state.selected_part_ids = filtered
-        if selected_part_ids is not None:
-            allowed_part_ids = (
-                (part.part_id for part in self.state.available_parts)
-                if self.state.available_parts
-                else None
-            )
-            self.state.selected_part_ids = normalize_selected_part_ids(
-                selected_part_ids,
-                allowed_part_ids,
-            )
-        if arranger_mode is not None:
-            self.state.arranger_mode = arranger_mode
-        if arranger_strategy is not None:
-            normalized_strategy = (
-                arranger_strategy if arranger_strategy in ARRANGER_STRATEGIES else DEFAULT_ARRANGER_STRATEGY
-            )
-            self.state.arranger_strategy = normalized_strategy
-        if starred_instrument_ids is not None:
-            ordered: list[str] = []
-            seen = set()
-            for identifier in starred_instrument_ids:
-                if not isinstance(identifier, str):
-                    continue
-                if identifier in seen:
-                    continue
-                seen.add(identifier)
-                ordered.append(identifier)
-            self.state.starred_instrument_ids = tuple(ordered)
-        if arranger_dp_slack_enabled is not None:
-            self.state.arranger_dp_slack_enabled = bool(arranger_dp_slack_enabled)
-        if arranger_budgets is not None:
-            self.state.arranger_budgets = normalize_arranger_budgets(arranger_budgets)
-        if arranger_gp_settings is not None:
-            self.state.arranger_gp_settings = normalize_arranger_gp_settings(
-                arranger_gp_settings,
-                self.state.arranger_gp_settings,
-            )
+                self.state.selected_part_ids = normalize_selected_part_ids(
+                    selected_part_ids,
+                    allowed_part_ids,
+                )
+            if arranger_mode is not None:
+                self.state.arranger_mode = arranger_mode
+            if arranger_strategy is not None:
+                normalized_strategy = (
+                    arranger_strategy if arranger_strategy in ARRANGER_STRATEGIES else DEFAULT_ARRANGER_STRATEGY
+                )
+                self.state.arranger_strategy = normalized_strategy
+            if starred_instrument_ids is not None:
+                ordered: list[str] = []
+                seen = set()
+                for identifier in starred_instrument_ids:
+                    if not isinstance(identifier, str):
+                        continue
+                    if identifier in seen:
+                        continue
+                    seen.add(identifier)
+                    ordered.append(identifier)
+                self.state.starred_instrument_ids = tuple(ordered)
+            if arranger_dp_slack_enabled is not None:
+                self.state.arranger_dp_slack_enabled = bool(arranger_dp_slack_enabled)
+            if arranger_budgets is not None:
+                self.state.arranger_budgets = normalize_arranger_budgets(arranger_budgets)
+            if arranger_gp_settings is not None:
+                self.state.arranger_gp_settings = normalize_arranger_gp_settings(
+                    arranger_gp_settings,
+                    self.state.arranger_gp_settings,
+                )
 
     def update_arranger_summary(
         self,
@@ -201,10 +204,11 @@ class MainViewModel:
     ) -> None:
         """Refresh arranger v2 summary data exposed to the UI."""
 
-        if strategy is not None and strategy in ARRANGER_STRATEGIES:
-            self.state.arranger_strategy = strategy
-        if summaries is not None:
-            self.state.arranger_strategy_summary = tuple(summaries)
+        with self._state_lock:
+            if strategy is not None and strategy in ARRANGER_STRATEGIES:
+                self.state.arranger_strategy = strategy
+            if summaries is not None:
+                self.state.arranger_strategy_summary = tuple(summaries)
 
     def update_arranger_results(
         self,
@@ -215,36 +219,40 @@ class MainViewModel:
     ) -> None:
         """Refresh arranger v2 outcome details used by the results panel."""
 
-        if summary is not _UNSET:
-            self.state.arranger_result_summary = summary  # type: ignore[assignment]
-        if explanations is not None:
-            self.state.arranger_explanations = tuple(explanations)
-        if telemetry is not None:
-            self.state.arranger_telemetry = tuple(telemetry)
+        with self._state_lock:
+            if summary is not _UNSET:
+                self.state.arranger_result_summary = summary  # type: ignore[assignment]
+            if explanations is not None:
+                self.state.arranger_explanations = tuple(explanations)
+            if telemetry is not None:
+                self.state.arranger_telemetry = tuple(telemetry)
 
     def reset_arranger_budgets(self) -> None:
         """Restore arranger salvage budgets to default values."""
 
-        self.state.arranger_budgets = ArrangerBudgetSettings()
+        with self._state_lock:
+            self.state.arranger_budgets = ArrangerBudgetSettings()
 
     def settings(self) -> TransformSettings:
-        return TransformSettings(
-            prefer_mode=self.state.prefer_mode,
-            range_min=self.state.range_min,
-            range_max=self.state.range_max,
-            prefer_flats=self.state.prefer_flats,
-            collapse_chords=self.state.collapse_chords,
-            favor_lower=self.state.favor_lower,
-            transpose_offset=self.state.transpose_offset,
-            instrument_id=self.state.instrument_id,
-            selected_part_ids=self.state.selected_part_ids,
-        )
+        with self._state_lock:
+            return TransformSettings(
+                prefer_mode=self.state.prefer_mode,
+                range_min=self.state.range_min,
+                range_max=self.state.range_max,
+                prefer_flats=self.state.prefer_flats,
+                collapse_chords=self.state.collapse_chords,
+                favor_lower=self.state.favor_lower,
+                transpose_offset=self.state.transpose_offset,
+                instrument_id=self.state.instrument_id,
+                selected_part_ids=self.state.selected_part_ids,
+            )
 
     # ------------------------------------------------------------------
     # Commands used by the UI
     # ------------------------------------------------------------------
     def load_part_metadata(self) -> tuple[MusicXmlPartInfo, ...]:
-        path = self.state.input_path.strip()
+        with self._state_lock:
+            path = self.state.input_path.strip()
         if not path:
             logger.debug("Skipping part metadata load: no input path set")
             self.update_settings(available_parts=())
@@ -257,17 +265,20 @@ class MainViewModel:
         else:
             parts = tuple(loaded)
         self.update_settings(available_parts=parts)
-        if self.state.available_parts and not self.state.selected_part_ids:
-            melody_part_id = select_melody_candidate(self.state.available_parts)
-            default_id = melody_part_id or self.state.available_parts[0].part_id
-            self.update_settings(selected_part_ids=(default_id,))
-        return self.state.available_parts
+        with self._state_lock:
+            if self.state.available_parts and not self.state.selected_part_ids:
+                melody_part_id = select_melody_candidate(self.state.available_parts)
+                default_id = melody_part_id or self.state.available_parts[0].part_id
+                self.update_settings(selected_part_ids=(default_id,))
+            return self.state.available_parts
 
     def apply_part_selection(self, part_ids: Sequence[str]) -> tuple[str, ...]:
-        allowed = (part.part_id for part in self.state.available_parts)
+        with self._state_lock:
+            allowed = (part.part_id for part in self.state.available_parts)
         normalized = normalize_selected_part_ids(part_ids, allowed)
         self.update_settings(selected_part_ids=normalized)
-        return self.state.selected_part_ids
+        with self._state_lock:
+            return self.state.selected_part_ids
 
     def ask_select_parts(
         self,
@@ -289,7 +300,8 @@ class MainViewModel:
 
     def browse_for_input(self) -> bool:
         logger.info("Prompting for input file")
-        previous_path = self.state.input_path
+        with self._state_lock:
+            previous_path = self.state.input_path
         path = self._dialogs.ask_open_path()
         if not path:
             logger.info("Input file selection cancelled")
@@ -298,32 +310,45 @@ class MainViewModel:
             logger.info("Input file unchanged; skipping preview reload")
             return False
         self.update_settings(input_path=path)
-        self.state.pitch_list = []
-        self._pitch_entries = []
+        with self._state_lock:
+            self.state.pitch_list = []
+            self._pitch_entries = []
         logger.info("Input file selected", extra={"path": path})
-        self.state.status_message = "Ready."
+        with self._state_lock:
+            self.state.status_message = "Ready."
         return True
 
-    def render_previews(self) -> Result[PreviewData, str]:
-        require_result = self._require_existing_input("Choose a file first.")
-        if require_result.is_err():
-            logger.warning(
-                "Preview render blocked: input required",
-                extra={"detail": require_result.error},
-            )
-            return Result.err(require_result.error)
-        path = require_result.unwrap()
+    def render_previews(
+        self,
+        progress_callback: Callable[[float, str | None], None] | None = None,
+    ) -> Result[PreviewData, str]:
+        with self._state_lock:
+            require_result = self._require_existing_input("Choose a file first.")
+            if require_result.is_err():
+                logger.warning(
+                    "Preview render blocked: input required",
+                    extra={"detail": require_result.error},
+                )
+                return Result.err(require_result.error)
+            path = require_result.unwrap()
+            settings_snapshot = self.settings()
         logger.info("Building preview data", extra={"path": path})
         try:
-            preview = self._score_service.build_preview(path, self.settings())
+            preview = self._score_service.build_preview(path, settings_snapshot)
         except Exception as exc:
-            self.state.status_message = "Preview failed."
+            with self._state_lock:
+                self.state.status_message = "Preview failed."
             logger.exception("Failed to build preview", extra={"path": path})
             return Result.err(str(exc))
-        self.state.status_message = "Preview rendered."
+        with self._state_lock:
+            self.state.status_message = "Preview rendered."
         computation: ArrangerComputation | None = None
         try:
-            computation = apply_arranger_results_from_preview(self, preview)
+            computation = apply_arranger_results_from_preview(
+                self,
+                preview,
+                progress_callback=progress_callback,
+            )
         except Exception:
             logger.exception("Failed to apply arranger results from preview")
             self.update_arranger_summary(summaries=(), strategy=self.state.arranger_strategy)
@@ -382,16 +407,7 @@ class MainViewModel:
         return self.save_project_to(destination)
 
     def save_project_to(self, destination: str | Path) -> Result[str, str]:
-        snapshot = ProjectSnapshot(
-            input_path=Path(self.state.input_path),
-            settings=self.settings(),
-            pdf_options=self._last_pdf_options,
-            pitch_list=list(self.state.pitch_list),
-            pitch_entries=self.pitch_entries(),
-            status_message=self.state.status_message,
-            conversion=self._last_conversion,
-            preview_settings=self.preview_settings(),
-        )
+        snapshot = build_project_snapshot(self)
         try:
             saved = self._project_service.save(snapshot, Path(destination))
         except ProjectPersistenceError as exc:
@@ -423,44 +439,26 @@ class MainViewModel:
         return Result.ok(loaded)
 
     def pitch_entries(self) -> list[str]:
-        if self._pitch_entries:
-            return list(self._pitch_entries)
-        if self.state.pitch_list:
-            return list(self.state.pitch_list)
+        with self._state_lock:
+            if self._pitch_entries:
+                return list(self._pitch_entries)
+            if self.state.pitch_list:
+                return list(self.state.pitch_list)
         return []
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _require_existing_input(self, message: str) -> Result[str, str]:
-        path = self.state.input_path.strip()
+        with self._state_lock:
+            path = self.state.input_path.strip()
         if not path or not os.path.exists(path):
             logger.warning("Required input missing", extra={"path": path, "detail": message})
             return Result.err(message)
         return Result.ok(path)
 
     def _apply_loaded_project(self, loaded: LoadedProject) -> None:
-        settings = loaded.settings
-        self.update_settings(
-            input_path=str(loaded.input_path),
-            prefer_mode=settings.prefer_mode,
-            prefer_flats=settings.prefer_flats,
-            collapse_chords=settings.collapse_chords,
-            favor_lower=settings.favor_lower,
-            range_min=settings.range_min,
-            range_max=settings.range_max,
-            transpose_offset=settings.transpose_offset,
-            instrument_id=settings.instrument_id,
-            selected_part_ids=settings.selected_part_ids,
-        )
-        self.state.pitch_list = list(loaded.pitch_list)
-        self._pitch_entries = list(loaded.pitch_entries)
-        self._last_pdf_options = loaded.pdf_options
-        self._last_conversion = loaded.conversion
-        if loaded.conversion is not None:
-            self.state.pitch_list = list(loaded.conversion.used_pitches)
-        self.state.status_message = loaded.status_message or "Project loaded."
-        self.state.preview_settings = dict(loaded.preview_settings)
+        apply_loaded_project(self, loaded)
 
     def update_preview_settings(
         self, preview_settings: dict[str, PreviewPlaybackSnapshot]
