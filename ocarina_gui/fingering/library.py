@@ -10,7 +10,7 @@ from .config import (
     load_fingering_config,
     save_fingering_config,
 )
-from .specs import InstrumentChoice, InstrumentSpec
+from .specs import InstrumentChoice, InstrumentSpec, parse_note_name_safe
 
 
 __all__ = [
@@ -27,6 +27,31 @@ __all__ = [
 ]
 
 
+def _resolve_note_midi(*notes: str) -> int | None:
+    for note in notes:
+        if not note:
+            continue
+        midi = parse_note_name_safe(note)
+        if midi is not None:
+            return midi
+    return None
+
+
+def _instrument_sort_key(spec: InstrumentSpec) -> tuple[float, str, str]:
+    lowest_midi = _resolve_note_midi(spec.candidate_range_min, spec.preferred_range_min)
+    return (
+        -lowest_midi if lowest_midi is not None else float("inf"),
+        spec.name.lower(),
+        spec.instrument_id.lower(),
+    )
+
+
+def _sorted_instrument_ids(instruments: Iterable[InstrumentSpec]) -> List[str]:
+    specs = list(instruments)
+    specs.sort(key=_instrument_sort_key)
+    return [spec.instrument_id for spec in specs]
+
+
 class FingeringLibrary:
     """Manages available fingering instruments and observers."""
 
@@ -36,7 +61,7 @@ class FingeringLibrary:
         self._instruments: Dict[str, InstrumentSpec] = {
             instrument.instrument_id: instrument for instrument in instruments
         }
-        self._order: List[str] = [instrument.instrument_id for instrument in instruments]
+        self._order: List[str] = _sorted_instrument_ids(instruments)
         self._current_id: str = self._order[0]
         self._listeners: List[Callable[[InstrumentSpec], None]] = []
 
@@ -69,12 +94,12 @@ class FingeringLibrary:
             raise ValueError("At least one instrument specification is required.")
 
         self._instruments = {instrument.instrument_id: instrument for instrument in instruments}
-        self._order = [instrument.instrument_id for instrument in instruments]
+        self._order = _sorted_instrument_ids(instruments)
 
         if current_id and current_id in self._instruments:
             self._current_id = current_id
         elif self._current_id not in self._instruments:
-            self._current_id = instruments[0].instrument_id
+            self._current_id = self._order[0]
 
         instrument = self._instruments[self._current_id]
         for listener in list(self._listeners):
@@ -86,13 +111,7 @@ class FingeringLibrary:
             raise ValueError(f"Unknown fingering instrument: {instrument_id}")
 
         self._instruments[instrument_id] = spec
-
-        try:
-            index = self._order.index(instrument_id)
-        except ValueError:
-            self._order.append(instrument_id)
-        else:
-            self._order[index] = instrument_id
+        self._order = _sorted_instrument_ids(self._instruments.values())
 
         if instrument_id == self._current_id:
             for listener in list(self._listeners):

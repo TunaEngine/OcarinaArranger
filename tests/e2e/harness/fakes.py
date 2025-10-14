@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ocarina_gui.fingering import InstrumentChoice
+from ocarina_tools.pitch import parse_note_name
 
 
 @dataclass(slots=True)
@@ -88,13 +89,14 @@ class FakeFingeringLibrary:
             alto_spec.instrument_id: alto_spec,
             tenor_spec.instrument_id: tenor_spec,
         }
+        self._order = self._sorted_ids()
         self._current_id = alto_spec.instrument_id
         self._listeners: list[Callable[[FakeInstrumentSpec], None]] = []
 
     def get_available_instruments(self) -> list[InstrumentChoice]:
         return [
-            InstrumentChoice(instrument_id=spec.instrument_id, name=spec.name)
-            for spec in self._instruments.values()
+            InstrumentChoice(instrument_id=instrument_id, name=self._instruments[instrument_id].name)
+            for instrument_id in self._order
         ]
 
     def get_instrument(self, instrument_id: str) -> FakeInstrumentSpec:
@@ -112,6 +114,19 @@ class FakeFingeringLibrary:
         self._current_id = instrument_id
         for listener in list(self._listeners):
             listener(spec)
+
+    def _sorted_ids(self) -> list[str]:
+        def _sort_key(spec: FakeInstrumentSpec) -> tuple[float, str]:
+            lowest_midi = parse_note_name(spec.candidate_range_min) or parse_note_name(
+                spec.preferred_range_min
+            )
+            return (
+                -lowest_midi if lowest_midi is not None else float("inf"),
+                spec.name.lower(),
+            )
+
+        ordered = sorted(self._instruments.values(), key=_sort_key)
+        return [spec.instrument_id for spec in ordered]
 
     def register_listener(self, listener: Callable[[FakeInstrumentSpec], None]) -> Callable[[], None]:
         self._listeners.append(listener)
