@@ -7,3 +7,4 @@ ocarina_gui/config/*
 build/
 dist/
 .venv
+tests/e2e/artifacts/

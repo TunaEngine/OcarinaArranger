@@ -90,7 +90,12 @@ project/
 
 **Definition of Done**
 
-- Tests pass locally: `xvfb-run -a pytest` (always run this command for verification).
+- Create and activate a local virtual environment for Python-based tooling **and keep it active for every test/tooling command**:
+  - `python3 -m venv .venv`
+  - `source .venv/bin/activate`
+- Tests pass locally from the activated virtual environment: `xvfb-run -a pytest` (always run this command for verification).
+- Run the Linux accessibility E2E suite following [docs/e2e-linux-accessibility.md](docs/e2e-linux-accessibility.md) to verify the Dogtail-powered scenarios.
+- When sharing E2E screenshots, run pytest with `--e2e-upload-screenshots` to publish the PNGs to Litterbox and include the printed URLs in the PR description instead of committing binary artifacts.
 - Coverage ≥ **85%** overall; new/changed lines covered.
 - No lints/formatting errors; types clean on changed files.
 - UI behavior verified for changed screens (manual or scripted smoke).

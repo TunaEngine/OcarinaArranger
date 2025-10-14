@@ -21,12 +21,20 @@ class HeadlessMenu:
                 setattr(master, "_test_menubar", self)
 
     # Construction helpers -------------------------------------------------
-    def add_command(self, *, label: str, command: Callable[[], None] | None = None, state: str = "normal") -> None:
+    def add_command(
+        self,
+        *,
+        label: str,
+        command: Callable[[], None] | None = None,
+        state: str = "normal",
+        accelerator: str | None = None,
+    ) -> None:
         self._entries.append({
             "type": "command",
             "label": label,
             "command": command,
             "state": state,
+            "accelerator": accelerator,
         })
 
     def add_separator(self) -> None:

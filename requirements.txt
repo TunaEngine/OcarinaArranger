@@ -7,3 +7,4 @@ pillow==10.4.0
 # Test dependencies
 pytest>=7.4
 pytest-bdd>=6.1
+dogtail>=0.9.11

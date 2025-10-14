@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import tkinter as tk
 from typing import Callable, Dict, Sequence, Tuple
@@ -23,6 +24,9 @@ class MenuBuilderMixin:
         menubar = tk.Menu(self)
         # Decide whether to use native menubar (macOS) or custom (others).
         self._use_native_menubar = (sys.platform == "darwin")
+        force_native = os.environ.get("OCARINA_FORCE_NATIVE_MENUBAR", "").strip().lower()
+        if force_native and force_native not in {"0", "false", "no"}:
+            self._use_native_menubar = True
         if self._use_native_menubar:
             menubar = self._register_menu(menubar, role="menubar")
             self.config(menu=menubar)
@@ -154,8 +158,10 @@ class MenuBuilderMixin:
 
         tools_menu.add_command(
             label="Instrument Layout Editor...",
+            accelerator="Ctrl+Shift+L",
             command=self.open_instrument_layout_editor,
         )
+        self._bind_menu_accelerator("<Control-Shift-L>", self.open_instrument_layout_editor)
 
         help_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -181,8 +187,10 @@ class MenuBuilderMixin:
         menubar.add_cascade(label="About", menu=about_menu)
         about_menu.add_command(
             label="Licenses",
+            accelerator="Ctrl+Shift+P",
             command=self._show_licenses_window,
         )
+        self._bind_menu_accelerator("<Control-Shift-P>", self._show_licenses_window)
 
         # If using the custom menubar, build it now that cascades are defined.
         if not getattr(self, "_use_native_menubar", False) and not getattr(self, "_headless", False):
@@ -223,3 +231,21 @@ class MenuBuilderMixin:
             self.config(menu=menubar)
         except tk.TclError:
             logger.debug("Unable to attach native menubar", exc_info=True)
+
+    def _bind_menu_accelerator(self, sequence: str, command: Callable[[], None]) -> None:
+        """Bind a keyboard accelerator to invoke the provided menu command."""
+
+        def _handler(_event: tk.Event) -> str:
+            try:
+                command()
+            except Exception:
+                logger.exception("Menu accelerator '%s' raised an exception", sequence)
+            return "break"
+
+        try:
+            self.bind_all(sequence, _handler, add="+")
+        except tk.TclError:
+            logger.debug(
+                "Unable to bind menu accelerator '%s'", sequence,
+                exc_info=True,
+            )
