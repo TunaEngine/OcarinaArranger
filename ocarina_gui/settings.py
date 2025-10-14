@@ -15,3 +15,4 @@ class TransformSettings:
     favor_lower: bool
     transpose_offset: int = 0
     instrument_id: str = ""
+    selected_part_ids: tuple[str, ...] = ()

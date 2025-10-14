@@ -12,6 +12,7 @@ from ocarina_tools import (
     TempoChange,
     detect_tempo_bpm,
     favor_lower_register,
+    filter_parts,
     get_note_events,
     get_tempo_changes,
     get_time_signature,
@@ -35,15 +36,19 @@ class PreviewData:
 
 def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewData:
     _, root_original = load_score(input_path)
-    events_original, pulses_per_quarter = get_note_events(root_original)
-    beats, beat_type = get_time_signature(root_original)
-    tempo_bpm = detect_tempo_bpm(root_original)
-    tempo_changes = get_tempo_changes(root_original, default_bpm=tempo_bpm)
+    root_filtered = copy.deepcopy(root_original)
+    if settings.selected_part_ids:
+        filter_parts(root_filtered, settings.selected_part_ids)
+
+    events_original, pulses_per_quarter = get_note_events(root_filtered)
+    beats, beat_type = get_time_signature(root_filtered)
+    tempo_bpm = detect_tempo_bpm(root_filtered)
+    tempo_changes = get_tempo_changes(root_filtered, default_bpm=tempo_bpm)
 
     # ``transform_to_ocarina`` mutates the supplied score. Deep copy the
     # original tree so we avoid re-loading the file from disk when only the
     # preview settings change (e.g. manual transpose).
-    root_arranged = copy.deepcopy(root_original)
+    root_arranged = copy.deepcopy(root_filtered)
     tree_arranged = ET.ElementTree(root_arranged)
     transform_to_ocarina(
         tree_arranged,
@@ -54,6 +59,7 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
         prefer_flats=settings.prefer_flats,
         collapse_chords=settings.collapse_chords,
         transpose_offset=settings.transpose_offset,
+        selected_part_ids=settings.selected_part_ids,
     )
 
     if settings.favor_lower:

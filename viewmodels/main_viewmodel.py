@@ -6,13 +6,15 @@ import logging
 from dataclasses import replace
 import os
 from pathlib import Path
-from typing import Iterable, Optional
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any, Optional
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from adapters.file_dialog import FileDialogAdapter
+from ocarina_tools.parts import MusicXmlPartInfo
 from services.project_service import (
     LoadedProject,
     ProjectPersistenceError,
@@ -48,6 +50,14 @@ from .main_viewmodel_state import (
 from .main_viewmodel_arranger_helpers import (
     apply_arranger_results_from_preview,
     preview_with_arranger_events,
+)
+from .main_viewmodel_arranger_settings import (
+    normalize_arranger_budgets,
+    normalize_arranger_gp_settings,
+)
+from .main_viewmodel_part_selection import (
+    normalize_available_parts,
+    normalize_selected_part_ids,
 )
 
 
@@ -90,6 +100,8 @@ class MainViewModel:
         range_max: Optional[str] = None,
         transpose_offset: Optional[int] = None,
         instrument_id: Optional[str] = None,
+        available_parts: Optional[Iterable[MusicXmlPartInfo | Mapping[str, Any]]] = None,
+        selected_part_ids: Optional[tuple[str, ...] | list[str]] = None,
         arranger_mode: Optional[str] = None,
         arranger_strategy: Optional[str] = None,
         starred_instrument_ids: Optional[tuple[str, ...] | list[str]] = None,
@@ -107,6 +119,14 @@ class MainViewModel:
             normalized_path = input_path
             if normalized_path != self.state.input_path:
                 self.state.preview_settings = {}
+                self.state.available_parts = ()
+                self.state.selected_part_ids = ()
+                self.state.arranger_strategy_summary = ()
+                self.state.arranger_result_summary = None
+                self.state.arranger_explanations = ()
+                self.state.arranger_telemetry = ()
+                self.state.pitch_list = []
+                self._pitch_entries = []
             self.state.input_path = normalized_path
         if prefer_mode is not None:
             self.state.prefer_mode = prefer_mode
@@ -124,6 +144,26 @@ class MainViewModel:
             self.state.transpose_offset = transpose_offset
         if instrument_id is not None:
             self.state.instrument_id = instrument_id
+        if available_parts is not None:
+            normalized_parts = normalize_available_parts(available_parts)
+            self.state.available_parts = normalized_parts
+            if self.state.selected_part_ids:
+                filtered = normalize_selected_part_ids(
+                    self.state.selected_part_ids,
+                    (part.part_id for part in normalized_parts),
+                )
+                if filtered != self.state.selected_part_ids:
+                    self.state.selected_part_ids = filtered
+        if selected_part_ids is not None:
+            allowed_part_ids = (
+                (part.part_id for part in self.state.available_parts)
+                if self.state.available_parts
+                else None
+            )
+            self.state.selected_part_ids = normalize_selected_part_ids(
+                selected_part_ids,
+                allowed_part_ids,
+            )
         if arranger_mode is not None:
             self.state.arranger_mode = arranger_mode
         if arranger_strategy is not None:
@@ -145,99 +185,12 @@ class MainViewModel:
         if arranger_dp_slack_enabled is not None:
             self.state.arranger_dp_slack_enabled = bool(arranger_dp_slack_enabled)
         if arranger_budgets is not None:
-            if isinstance(arranger_budgets, ArrangerBudgetSettings):
-                budgets = arranger_budgets
-            elif isinstance(arranger_budgets, dict):
-                budgets = ArrangerBudgetSettings(
-                    max_octave_edits=int(arranger_budgets.get("max_octave_edits", 1)),
-                    max_rhythm_edits=int(arranger_budgets.get("max_rhythm_edits", 1)),
-                    max_substitutions=int(arranger_budgets.get("max_substitutions", 1)),
-                    max_steps_per_span=int(arranger_budgets.get("max_steps_per_span", 3)),
-                )
-            elif isinstance(arranger_budgets, tuple) and len(arranger_budgets) == 4:
-                budgets = ArrangerBudgetSettings(
-                    max_octave_edits=int(arranger_budgets[0]),
-                    max_rhythm_edits=int(arranger_budgets[1]),
-                    max_substitutions=int(arranger_budgets[2]),
-                    max_steps_per_span=int(arranger_budgets[3]),
-                )
-            else:
-                budgets = ArrangerBudgetSettings()
-            self.state.arranger_budgets = budgets.normalized()
+            self.state.arranger_budgets = normalize_arranger_budgets(arranger_budgets)
         if arranger_gp_settings is not None:
-            if isinstance(arranger_gp_settings, ArrangerGPSettings):
-                gp_settings = arranger_gp_settings
-            elif isinstance(arranger_gp_settings, dict):
-                base = self.state.arranger_gp_settings
-
-                def _get_int(key: str, fallback: int) -> int:
-                    value = arranger_gp_settings.get(key, fallback)
-                    try:
-                        return int(value)
-                    except (TypeError, ValueError):
-                        return fallback
-
-                def _get_float(key: str, fallback: float) -> float:
-                    value = arranger_gp_settings.get(key, fallback)
-                    if value is None:
-                        return fallback
-                    try:
-                        return float(value)
-                    except (TypeError, ValueError):
-                        return fallback
-
-                time_budget_value = arranger_gp_settings.get("time_budget_seconds")
-                try:
-                    time_budget_seconds = (
-                        float(time_budget_value)
-                        if time_budget_value not in (None, "")
-                        else None
-                    )
-                except (TypeError, ValueError):
-                    time_budget_seconds = None
-
-                gp_settings = ArrangerGPSettings(
-                    generations=_get_int("generations", base.generations),
-                    population_size=_get_int("population_size", base.population_size),
-                    time_budget_seconds=time_budget_seconds,
-                    archive_size=_get_int("archive_size", base.archive_size),
-                    random_program_count=_get_int(
-                        "random_program_count", base.random_program_count
-                    ),
-                    crossover_rate=_get_float("crossover_rate", base.crossover_rate),
-                    mutation_rate=_get_float("mutation_rate", base.mutation_rate),
-                    log_best_programs=_get_int(
-                        "log_best_programs", base.log_best_programs
-                    ),
-                    random_seed=_get_int("random_seed", base.random_seed),
-                    playability_weight=_get_float(
-                        "playability_weight", base.playability_weight
-                    ),
-                    fidelity_weight=_get_float(
-                        "fidelity_weight", base.fidelity_weight
-                    ),
-                    tessitura_weight=_get_float(
-                        "tessitura_weight", base.tessitura_weight
-                    ),
-                    program_size_weight=_get_float(
-                        "program_size_weight", base.program_size_weight
-                    ),
-                    contour_weight=_get_float("contour_weight", base.contour_weight),
-                    lcs_weight=_get_float("lcs_weight", base.lcs_weight),
-                    pitch_weight=_get_float("pitch_weight", base.pitch_weight),
-                )
-            elif (
-                isinstance(arranger_gp_settings, tuple)
-                and len(arranger_gp_settings) == 3
-            ):
-                gp_settings = ArrangerGPSettings(
-                    generations=int(arranger_gp_settings[0]),
-                    population_size=int(arranger_gp_settings[1]),
-                    time_budget_seconds=arranger_gp_settings[2],
-                )
-            else:
-                gp_settings = ArrangerGPSettings()
-            self.state.arranger_gp_settings = gp_settings.normalized()
+            self.state.arranger_gp_settings = normalize_arranger_gp_settings(
+                arranger_gp_settings,
+                self.state.arranger_gp_settings,
+            )
 
     def update_arranger_summary(
         self,
@@ -283,11 +236,55 @@ class MainViewModel:
             favor_lower=self.state.favor_lower,
             transpose_offset=self.state.transpose_offset,
             instrument_id=self.state.instrument_id,
+            selected_part_ids=self.state.selected_part_ids,
         )
 
     # ------------------------------------------------------------------
     # Commands used by the UI
     # ------------------------------------------------------------------
+    def load_part_metadata(self) -> tuple[MusicXmlPartInfo, ...]:
+        path = self.state.input_path.strip()
+        if not path:
+            logger.debug("Skipping part metadata load: no input path set")
+            self.update_settings(available_parts=())
+            return ()
+        parts: tuple[MusicXmlPartInfo, ...] = ()
+        try:
+            loaded = self._score_service.load_part_metadata(path)
+        except Exception:
+            logger.exception("Failed to load part metadata", extra={"path": path})
+        else:
+            parts = tuple(loaded)
+        self.update_settings(available_parts=parts)
+        if self.state.available_parts and not self.state.selected_part_ids:
+            all_ids = [part.part_id for part in self.state.available_parts]
+            self.update_settings(selected_part_ids=all_ids)
+        return self.state.available_parts
+
+    def apply_part_selection(self, part_ids: Sequence[str]) -> tuple[str, ...]:
+        allowed = (part.part_id for part in self.state.available_parts)
+        normalized = normalize_selected_part_ids(part_ids, allowed)
+        self.update_settings(selected_part_ids=normalized)
+        return self.state.selected_part_ids
+
+    def ask_select_parts(
+        self,
+        parts: Sequence[MusicXmlPartInfo],
+        preselected: Sequence[str],
+    ) -> tuple[str, ...] | None:
+        chooser = getattr(self._dialogs, "ask_select_parts", None)
+        if chooser is None:
+            logger.debug("No part selection dialog available; using defaults")
+            return tuple(preselected)
+        try:
+            result = chooser(parts, preselected)
+        except Exception:
+            logger.exception("Part selection dialog failed", extra={"path": self.state.input_path})
+            return tuple(preselected)
+        if result is None:
+            return None
+        return tuple(result)
+
     def browse_for_input(self) -> bool:
         logger.info("Prompting for input file")
         previous_path = self.state.input_path
@@ -452,6 +449,7 @@ class MainViewModel:
             range_max=settings.range_max,
             transpose_offset=settings.transpose_offset,
             instrument_id=settings.instrument_id,
+            selected_part_ids=settings.selected_part_ids,
         )
         self.state.pitch_list = list(loaded.pitch_list)
         self._pitch_entries = list(loaded.pitch_entries)

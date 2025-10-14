@@ -9,6 +9,7 @@ from ocarina_gui.conversion import ConversionResult, MidiExporter, PdfExporter
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
+from ocarina_tools.parts import MusicXmlPartInfo, list_parts
 
 
 LoadScoreFn = Callable[[str], tuple[object, object]]
@@ -33,6 +34,16 @@ class ScoreService:
 
     def build_preview(self, path: str, settings: TransformSettings) -> PreviewData:
         return self.build_preview_data(path, settings)
+
+    def load_part_metadata(self, path: str) -> tuple[MusicXmlPartInfo, ...]:
+        try:
+            _tree, root = self.load_score(path)
+        except Exception:
+            return ()
+        try:
+            return tuple(list_parts(root))
+        except Exception:
+            return ()
 
     def convert(
         self,

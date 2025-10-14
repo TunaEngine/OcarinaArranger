@@ -55,6 +55,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         favor_lower=False,
         transpose_offset=2,
         instrument_id="alto",
+        selected_part_ids=("P1",),
     )
     pdf_options = PdfExportOptions.with_defaults(page_size="A4", orientation="landscape")
     snapshot = ProjectSnapshot(
@@ -80,6 +81,11 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     archive_path = tmp_path / "song.ocarina"
     saved_path = service.save(snapshot, archive_path)
     assert saved_path == archive_path
+
+    with zipfile.ZipFile(saved_path, "r") as archive:
+        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+
+    assert manifest["settings"]["selected_part_ids"] == ["P1"]
 
     extract_dir = tmp_path / "extracted"
     loaded = service.load(saved_path, extract_dir)
@@ -123,6 +129,7 @@ def test_project_service_requires_existing_input(tmp_path: Path) -> None:
             prefer_flats=True,
             collapse_chords=True,
             favor_lower=False,
+            selected_part_ids=(),
         ),
         pdf_options=None,
         pitch_list=[],
@@ -151,6 +158,7 @@ def test_project_manifest_includes_manual_transpose_options(tmp_path: Path) -> N
             favor_lower=False,
             transpose_offset=-5,
             instrument_id="alto",
+            selected_part_ids=(),
         ),
         pdf_options=None,
         pitch_list=[],
@@ -170,7 +178,39 @@ def test_project_manifest_includes_manual_transpose_options(tmp_path: Path) -> N
         manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
 
     assert manifest["settings"]["transpose_offset"] == -5
+    assert manifest["settings"]["selected_part_ids"] == []
     assert manifest["preview_settings"]["arranged"]["loop_end"] == 4.0
+
+
+def test_project_service_loads_missing_selected_parts_as_empty(tmp_path: Path) -> None:
+    archive_path = tmp_path / "legacy.ocarina"
+    manifest = {
+        "input": {"filename": "song.musicxml"},
+        "settings": {
+            "prefer_mode": "auto",
+            "range_min": "",
+            "range_max": "",
+            "prefer_flats": True,
+            "collapse_chords": True,
+            "favor_lower": False,
+            "transpose_offset": 0,
+            "instrument_id": "",
+        },
+    }
+
+    original_dir = tmp_path / "original"
+    original_dir.mkdir()
+    original_path = original_dir / "song.musicxml"
+    original_path.write_text("<score/>", encoding="utf-8")
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest).encode("utf-8"))
+        archive.write(original_path, arcname="original/song.musicxml")
+
+    service = ProjectService()
+    loaded = service.load(archive_path, tmp_path / "extract")
+
+    assert loaded.settings.selected_part_ids == ()
 
 
 def test_project_service_rejects_unsafe_archive_entries(tmp_path: Path) -> None:

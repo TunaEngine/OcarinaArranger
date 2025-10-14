@@ -20,19 +20,21 @@ def _should_skip(path: Path) -> bool:
     return any(part in IGNORED_DIR_NAMES for part in path.parts)
 
 
-@pytest.mark.parametrize(
-    "path",
-    sorted(
+def test_source_files_are_not_longer_than_500_lines() -> None:
+    violations: list[str] = []
+
+    for path in sorted(
         p.relative_to(REPO_ROOT)
         for p in REPO_ROOT.rglob("*.py")
         if not _should_skip(p.relative_to(REPO_ROOT)) and p.relative_to(REPO_ROOT) not in ALLOWLIST
-    ),
-)
-def test_source_files_are_not_longer_than_500_lines(path: Path) -> None:
-    file_path = REPO_ROOT / path
-    with file_path.open("r", encoding="utf-8") as file_handle:
-        line_count = sum(1 for _ in file_handle)
+    ):
+        file_path = REPO_ROOT / path
+        with file_path.open("r", encoding="utf-8") as file_handle:
+            line_count = sum(1 for _ in file_handle)
 
-    assert (
-        line_count <= MAX_FILE_LENGTH
-    ), f"{path} has {line_count} lines which exceeds the {MAX_FILE_LENGTH}-line limit"
+        if line_count > MAX_FILE_LENGTH:
+            violations.append(
+                f"{path} has {line_count} lines which exceeds the {MAX_FILE_LENGTH}-line limit"
+            )
+
+    assert not violations, "\n".join(["Found files exceeding the maximum length:", *violations])

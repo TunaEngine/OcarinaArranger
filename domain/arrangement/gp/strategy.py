@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence, Tuple, TYPE_CHECKING
 
 from domain.arrangement.config import get_instrument_range
 from domain.arrangement.difficulty import DifficultySummary, summarize_difficulty
 from domain.arrangement.explanations import ExplanationEvent
+from domain.arrangement.melody import isolate_melody as _isolate_melody
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.range_guard import enforce_instrument_range
 from domain.arrangement.soft_key import InstrumentRange
@@ -20,9 +20,9 @@ from domain.arrangement.logging_utils import (
 
 from .fitness import FitnessConfig, FitnessVector, compute_fitness, melody_pitch_penalty
 from .explain import explain_program
-from .ops import GPPrimitive, GlobalTranspose, LocalOctave, SimplifyRhythm
+from .ops import GPPrimitive
 from .session import GPSessionConfig, GPSessionResult, run_gp_session
-from .session_logging import IndividualSummary, serialize_individual
+from .session_logging import serialize_individual
 from .program_utils import (
     apply_program as _apply_program,
     auto_range_programs as _auto_range_programs,
@@ -30,6 +30,12 @@ from .program_utils import (
     program_candidates as _program_candidates,
     span_within_instrument_range as _span_within_instrument_range,
 )
+from .strategy_scoring import (
+    _difficulty_sort_key,
+    _melody_shift_penalty,
+    _summarize_individual,
+)
+from .strategy_types import GPArrangementStrategyResult, GPInstrumentCandidate
 
 
 if TYPE_CHECKING:
@@ -37,124 +43,8 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class GPInstrumentCandidate:
-    """Arrangement outcome for a single instrument using a GP program."""
-
-    instrument_id: str
-    instrument: InstrumentRange
-    program: Tuple[GPPrimitive, ...]
-    span: PhraseSpan
-    difficulty: DifficultySummary
-    fitness: FitnessVector
-    melody_penalty: float
-    explanations: Tuple[ExplanationEvent, ...] = ()
-
-
-@dataclass(frozen=True)
-class GPArrangementStrategyResult:
-    """Return value capturing GP session data and ranked instrument outcomes."""
-
-    session: GPSessionResult
-    programs: Tuple[Tuple[GPPrimitive, ...], ...]
-    chosen: GPInstrumentCandidate
-    comparisons: Tuple[GPInstrumentCandidate, ...]
-    archive_summary: Tuple[IndividualSummary, ...]
-    termination_reason: str
-    fallback: "ArrangementStrategyResult | None" = None
-
-
-FIDELITY_WEIGHT = 3.0
-RANGE_CLAMP_PENALTY = 1000.0
-
-
-def _summarize_individual(summary: IndividualSummary) -> str:
-    fitness = summary.fitness
-    program_entries = summary.program
-    if not program_entries:
-        program_desc = "<identity>"
-    else:
-        parts: list[str] = []
-        for entry in program_entries:
-            entry_type = entry.get("type", "<unknown>")
-            span_info = entry.get("span", {})
-            label = span_info.get("label", "span")
-            parameters = [
-                f"{key}={value}"
-                for key, value in entry.items()
-                if key not in {"type", "span"}
-            ]
-            param_desc = ", ".join(parameters)
-            if param_desc:
-                parts.append(f"{entry_type}({param_desc}@{label})")
-            else:
-                parts.append(f"{entry_type}@{label}")
-        program_desc = " -> ".join(parts)
-    return (
-        f"{program_desc} play={fitness['playability']:.3f} "
-        f"fid={fitness['fidelity']:.3f} tess={fitness['tessitura']:.3f} "
-        f"size={fitness['program_size']:.3f}"
-    )
-
-
-def _difficulty_sort_key(
-    candidate: GPInstrumentCandidate,
-    *,
-    baseline_fidelity: float | None = None,
-    fidelity_importance: float = 1.0,
-    baseline_melody: float | None = None,
-    melody_importance: float = 1.0,
-) -> tuple[float, float, float, float, float, float, float]:
-    """Return a tuple that ranks candidates by melodic fidelity before difficulty."""
-
-    melody_penalty = candidate.melody_penalty
-    melody_weight = max(1.0, melody_importance)
-    if len(candidate.program) > 0 and baseline_melody is not None:
-        melody_diff = melody_penalty - baseline_melody
-        if melody_diff > 0:
-            melody_penalty = baseline_melody + melody_diff * melody_weight * FIDELITY_WEIGHT
-    melody_key = round(melody_penalty, 12)
-
-    difficulty = candidate.difficulty
-    has_range_clamp = any(
-        event.reason_code == "range-clamp" for event in candidate.explanations
-    )
-    range_key = 1 if has_range_clamp else 0
-    range_penalty = 0.0
-    if has_range_clamp and len(candidate.program) > 0:
-        # Non-identity programs that still require clamping should be strongly
-        # disfavoured so register-faithful candidates stay ahead.
-        range_penalty = RANGE_CLAMP_PENALTY * 2
-
-    fidelity_penalty = candidate.fitness.fidelity
-    program_length = len(candidate.program)
-    program_complexity = sum(
-        0 if isinstance(operation, GlobalTranspose) else 1
-        for operation in candidate.program
-    )
-    importance = max(1.0, fidelity_importance)
-
-    if program_length > 0:
-        if baseline_fidelity is not None:
-            diff = fidelity_penalty - baseline_fidelity
-            if diff > 0:
-                fidelity_penalty = baseline_fidelity + diff * importance * FIDELITY_WEIGHT
-        else:
-            fidelity_penalty = fidelity_penalty * importance * FIDELITY_WEIGHT
-
-    return (
-        range_key,
-        melody_key,
-        round(fidelity_penalty, 12),
-        program_complexity,
-        program_length,
-        difficulty.hard_and_very_hard + range_penalty,
-        difficulty.medium,
-        difficulty.tessitura_distance,
-        candidate.fitness.playability,
-    )
+# Re-export the melody isolation helper so existing tests can monkeypatch via this module.
+isolate_melody = _isolate_melody
 
 
 def _score_instrument(
@@ -165,20 +55,31 @@ def _score_instrument(
     programs: Sequence[Sequence[GPPrimitive]],
     fitness_config: FitnessConfig | None,
     beats_per_measure: int,
+    manual_transposition: int = 0,
 ) -> tuple[
     GPInstrumentCandidate,
-    tuple[float, float, float, float, float, float, float],
+    tuple[int, float, float, float, float, float, float, float, float, float, float],
     tuple[tuple[GPPrimitive, ...], ...],
 ]:
     program_keys = {tuple(program) for program in programs}
     candidate_programs: list[tuple[GPPrimitive, ...]] = [tuple(program) for program in programs]
 
-    auto_programs = _auto_range_programs(phrase, instrument)
-    if auto_programs and logger.isEnabledFor(logging.DEBUG):
+    auto_programs: tuple[tuple[GPPrimitive, ...], ...] = ()
+    if manual_transposition == 0:
+        auto_programs = _auto_range_programs(
+            phrase, instrument, beats_per_measure=beats_per_measure
+        )
+        if auto_programs and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "arrange_v3_gp:auto programs instrument_id=%s programs=%s",
+                instrument_id,
+                [_describe_program(program) for program in auto_programs],
+            )
+    elif logger.isEnabledFor(logging.DEBUG):
         logger.debug(
-            "arrange_v3_gp:auto programs instrument_id=%s programs=%s",
+            "arrange_v3_gp:auto programs skipped instrument_id=%s manual_transposition=%+d",
             instrument_id,
-            [_describe_program(program) for program in auto_programs],
+            manual_transposition,
         )
 
     for extra_program in auto_programs:
@@ -221,6 +122,11 @@ def _score_instrument(
             adjusted_span,
             beats_per_measure=beats_per_measure,
         )
+        shift_penalty = _melody_shift_penalty(
+            phrase,
+            adjusted_span,
+            beats_per_measure=beats_per_measure,
+        )
         explanations = explain_program(
             program,
             phrase,
@@ -237,6 +143,7 @@ def _score_instrument(
             difficulty=difficulty,
             fitness=fitness,
             melody_penalty=round(melody_penalty, 12),
+            melody_shift_penalty=shift_penalty,
             explanations=explanations,
         )
         if not program:
@@ -295,6 +202,7 @@ def arrange_v3_gp(
     starred_ids: Iterable[str] | None = None,
     salvage_events: Sequence[ExplanationEvent] | None = None,
     transposition: int = 0,
+    manual_transposition: int | None = None,
 ) -> GPArrangementStrategyResult:
     """Run a GP session for ``instrument_id`` and rank starred instruments.
 
@@ -303,14 +211,17 @@ def arrange_v3_gp(
     fallback computed via the arranger v2 pipeline when the GP loop exits early.
     """
 
+    manual_offset = manual_transposition or 0
+
     base_instrument = get_instrument_range(instrument_id)
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug(
-            "arrange_v3_gp:start instrument_id=%s instrument=%s starred=%s transposition=%+d span=%s config=%s",
+            "arrange_v3_gp:start instrument_id=%s instrument=%s starred=%s transposition=%+d manual_transposition=%+d span=%s config=%s",
             instrument_id,
             describe_instrument(base_instrument),
             tuple(starred_ids or ()),
             transposition,
+            manual_offset,
             describe_span(phrase),
             config,
         )
@@ -372,7 +283,10 @@ def arrange_v3_gp(
             candidate_ids.append(starred)
 
     candidates: list[GPInstrumentCandidate] = []
-    candidate_keys: dict[str, tuple[float, float, float, float, float, float, float]] = {}
+    candidate_keys: dict[
+        str,
+        tuple[int, float, float, float, float, float, float, float, float, float, float],
+    ] = {}
     for candidate_id in candidate_ids:
         instrument = get_instrument_range(candidate_id)
         candidate, sort_key, used_programs = _score_instrument(
@@ -382,6 +296,7 @@ def arrange_v3_gp(
             programs=tuple(programs),
             fitness_config=config.fitness_config,
             beats_per_measure=beats_per_measure,
+            manual_transposition=manual_offset,
         )
         candidates.append(candidate)
         candidate_keys[candidate.instrument_id] = sort_key

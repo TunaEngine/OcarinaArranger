@@ -8,6 +8,7 @@ from typing import Tuple
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from services.project_service import PreviewPlaybackSnapshot
+from ocarina_tools.parts import MusicXmlPartInfo
 
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
@@ -41,6 +42,8 @@ class MainViewModelState:
     pitch_list: list[str] = field(default_factory=list)
     transpose_offset: int = 0
     instrument_id: str = ""
+    available_parts: Tuple[MusicXmlPartInfo, ...] = field(default_factory=tuple)
+    selected_part_ids: Tuple[str, ...] = field(default_factory=tuple)
     preview_settings: dict[str, PreviewPlaybackSnapshot] = field(default_factory=dict)
     arranger_mode: str = DEFAULT_ARRANGER_MODE
     arranger_strategy: str = DEFAULT_ARRANGER_STRATEGY

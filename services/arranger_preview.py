@@ -223,6 +223,7 @@ def compute_arranger_preview(
             instrument_id=resolved_instrument_id,
             starred_ids=starred_ids,
             config=gp_config,
+            manual_transposition=manual_transpose,
         )
     except Exception:
         logger.exception("Arranger preview failed during GP arrange call")

@@ -11,6 +11,7 @@ from .events import (
     get_tempo_changes,
     get_time_signature,
 )
+from .parts import MusicXmlPartInfo, filter_parts, list_parts
 
 __all__ = [
     "load_score",
@@ -23,6 +24,9 @@ __all__ = [
     "transform_to_ocarina",
     "favor_lower_register",
     "collect_used_pitches",
+    "list_parts",
+    "filter_parts",
+    "MusicXmlPartInfo",
     "export_musicxml",
     "export_mxl",
     "export_midi", 

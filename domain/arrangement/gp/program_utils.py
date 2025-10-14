@@ -7,6 +7,7 @@ from typing import Iterable, Mapping, Sequence, Tuple
 
 from shared.ottava import OttavaShift
 
+from domain.arrangement.melody import isolate_melody
 from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
@@ -76,8 +77,49 @@ def span_within_instrument_range(span: PhraseSpan, instrument: InstrumentRange) 
     return True
 
 
+def _top_voice_bounds(span: PhraseSpan) -> Tuple[int, int] | None:
+    """Return the lowest and highest MIDI values in the top voice of *span*."""
+
+    if not span.notes:
+        return None
+
+    top_by_onset: dict[int, int] = {}
+    for note in span.notes:
+        current = top_by_onset.get(note.onset)
+        if current is None or note.midi > current:
+            top_by_onset[note.onset] = note.midi
+
+    if not top_by_onset:
+        return None
+
+    tops = top_by_onset.values()
+    return min(tops), max(tops)
+
+
+def _melody_bounds(
+    phrase: PhraseSpan, *, beats_per_measure: int
+) -> Tuple[int, int] | None:
+    """Return the MIDI bounds for the isolated melody, falling back to top voice."""
+
+    isolated = isolate_melody(phrase, beats_per_measure=beats_per_measure).span
+    if isolated.notes:
+        midis = sorted(note.midi for note in isolated.notes)
+        if len(midis) >= 3:
+            upper_half = midis[len(midis) // 2 :]
+            anchor = sum(upper_half) / len(upper_half)
+            threshold = anchor - 12
+            filtered = [midi for midi in midis if midi >= threshold]
+            if filtered:
+                midis = filtered
+        return min(midis), max(midis)
+    return _top_voice_bounds(phrase)
+
+
 def auto_range_programs(
-    phrase: PhraseSpan, instrument: InstrumentRange
+    phrase: PhraseSpan,
+    instrument: InstrumentRange,
+    *,
+    beats_per_measure: int = 4,
 ) -> tuple[tuple[GPPrimitive, ...], ...]:
     """Return global transpose programs that keep ``phrase`` inside ``instrument``."""
 
@@ -87,37 +129,98 @@ def auto_range_programs(
     lowest = min(note.midi for note in phrase.notes)
     highest = max(note.midi for note in phrase.notes)
 
-    if instrument.min_midi <= lowest and highest <= instrument.max_midi:
-        return ()
-
-    min_shift = instrument.min_midi - lowest
-    max_shift = instrument.max_midi - highest
-
-    programs: list[tuple[GPPrimitive, ...]] = []
+    shift_values: set[int] = set()
+    comfort_center = (
+        instrument.comfort_center
+        if instrument.comfort_center is not None
+        else (instrument.min_midi + instrument.max_midi) / 2.0
+    )
+    needs_lower_clamp = instrument.min_midi > lowest
 
     def _candidate_shifts(lower: int, upper: int) -> Iterable[int]:
-        if lower > upper:
-            return ()
         shifts: set[int] = set()
-        # Prefer octave-aligned adjustments when possible.
-        start = math.ceil(lower / 12)
-        end = math.floor(upper / 12)
+        lo = min(lower, upper)
+        hi = max(lower, upper)
+        # Prefer octave-aligned adjustments when possible within the span bounds.
+        start = math.ceil(lo / 12)
+        end = math.floor(hi / 12)
         for step in range(start, end + 1):
             shift = step * 12
-            if shift == 0:
-                continue
-            if lower <= shift <= upper:
+            if shift != 0:
                 shifts.add(int(shift))
-        shifts.add(int(lower))
-        shifts.add(int(upper))
+        for value in (lower, upper):
+            if value != 0:
+                shifts.add(int(value))
+            floor_multiple = math.floor(value / 12) * 12
+            ceil_multiple = math.ceil(value / 12) * 12
+            for candidate in (floor_multiple, ceil_multiple):
+                if candidate != 0:
+                    shifts.add(int(candidate))
         return shifts
 
-    candidates = set(_candidate_shifts(min_shift, max_shift))
+    def _extend_candidate_shifts(
+        lower: int, upper: int, *, take_first_only: bool = False
+    ) -> None:
+        ordered_candidates = sorted(
+            _candidate_shifts(lower, upper),
+            key=lambda shift: (0 if shift % 12 == 0 else 1, abs(shift), shift),
+        )
+        for index, shift in enumerate(ordered_candidates):
+            if shift == 0:
+                continue
+            shift_values.add(int(shift))
+            if take_first_only and index == 0:
+                break
+
+    if instrument.min_midi > lowest or highest > instrument.max_midi:
+        _extend_candidate_shifts(
+            instrument.min_midi - lowest,
+            instrument.max_midi - highest,
+        )
+
+    melody_bounds = _melody_bounds(phrase, beats_per_measure=beats_per_measure)
+    if melody_bounds is not None:
+        top_low, top_high = melody_bounds
+        if instrument.min_midi > top_low or top_high > instrument.max_midi:
+            _extend_candidate_shifts(
+                instrument.min_midi - top_low,
+                instrument.max_midi - top_high,
+                take_first_only=True,
+            )
+
+    if needs_lower_clamp and melody_bounds is not None and not shift_values:
+        top_low, top_high = melody_bounds
+        top_lower_room = max(0, instrument.min_midi - top_low)
+        top_upper_room = instrument.max_midi - top_high
+        if top_lower_room <= top_upper_room and top_upper_room >= 0:
+            top_mid = (top_low + top_high) / 2.0
+            desired_shift = comfort_center - top_mid
+            candidate_pool = [
+                shift
+                for shift in _candidate_shifts(top_lower_room, top_upper_room)
+                if shift != 0
+            ]
+            if candidate_pool:
+                best_shift = min(
+                    candidate_pool,
+                    key=lambda shift: (
+                        abs(shift - desired_shift),
+                        0 if shift % 12 == 0 else 1,
+                        abs(shift),
+                        shift,
+                    ),
+                )
+                shift_values.add(int(best_shift))
+
+    if not shift_values:
+        return ()
+
     ordered = sorted(
-        (shift for shift in candidates if shift != 0),
+        shift_values,
         key=lambda shift: (0 if shift % 12 == 0 else 1, abs(shift), shift),
     )
 
+    programs: list[tuple[GPPrimitive, ...]] = []
     for semitones in ordered:
         programs.append((GlobalTranspose(semitones=semitones),))
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from adapters.file_dialog import FileDialogAdapter
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
+from ocarina_tools.parts import MusicXmlPartInfo
 from services.project_service import LoadedProject, ProjectPersistenceError, ProjectSnapshot
 
 
@@ -21,15 +22,21 @@ class FakeDialogs(FileDialogAdapter):
         save_path: Optional[str] = None,
         project_open_path: Optional[str] = None,
         project_save_path: Optional[str] = None,
+        part_selection: Sequence[str] | None | object = Ellipsis,
     ) -> None:
         self._open_path = open_path
         self._save_path = save_path
         self._project_open_path = project_open_path
         self._project_save_path = project_save_path
+        self._part_selection = part_selection
+        self._has_explicit_part_selection = part_selection is not Ellipsis
         self.open_calls: list[None] = []
         self.save_calls: list[str] = []
         self.project_open_calls: list[None] = []
         self.project_save_calls: list[str] = []
+        self.part_selection_calls: list[
+            tuple[tuple[MusicXmlPartInfo, ...], tuple[str, ...]]
+        ] = []
 
     def ask_open_path(self) -> str | None:
         self.open_calls.append(None)
@@ -47,6 +54,19 @@ class FakeDialogs(FileDialogAdapter):
         self.project_save_calls.append(suggested_name)
         return self._project_save_path
 
+    def ask_select_parts(
+        self,
+        parts: Sequence[MusicXmlPartInfo],
+        preselected: Sequence[str],
+    ) -> Sequence[str] | None:
+        snapshot = tuple(parts)
+        self.part_selection_calls.append((snapshot, tuple(preselected)))
+        if not self._has_explicit_part_selection:
+            return tuple(preselected)
+        if self._part_selection is None:
+            return None
+        return tuple(self._part_selection)
+
 
 @dataclass
 class StubScoreService:
@@ -56,6 +76,8 @@ class StubScoreService:
     convert_error: Optional[Exception] = None
     last_preview_settings: Optional[TransformSettings] = None
     last_convert_settings: Optional[TransformSettings] = None
+    part_metadata: tuple[MusicXmlPartInfo, ...] = ()
+    part_metadata_calls: list[str] = field(default_factory=list)
 
     def build_preview(self, path: str, settings: TransformSettings) -> PreviewData:
         if self.preview_error:
@@ -76,6 +98,10 @@ class StubScoreService:
         assert self.conversion is not None
         self.last_convert_settings = settings
         return self.conversion
+
+    def load_part_metadata(self, path: str) -> tuple[MusicXmlPartInfo, ...]:
+        self.part_metadata_calls.append(path)
+        return self.part_metadata
 
 
 @dataclass

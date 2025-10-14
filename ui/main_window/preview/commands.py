@@ -26,6 +26,21 @@ class PreviewCommandsMixin:
         changed = self._viewmodel.browse_for_input()
         if not changed:
             return
+        parts = self._viewmodel.load_part_metadata()
+        if not parts:
+            selected_ids: tuple[str, ...] = ()
+        elif len(parts) == 1:
+            selected_ids = (parts[0].part_id,)
+        else:
+            preselected = self._viewmodel.state.selected_part_ids or tuple(
+                part.part_id for part in parts
+            )
+            selection = self._viewmodel.ask_select_parts(parts, preselected)
+            if selection is None:
+                selected_ids = tuple(preselected)
+            else:
+                selected_ids = tuple(selection)
+        self._viewmodel.apply_part_selection(selected_ids)
         state = self._viewmodel.state
         self.input_path.set(state.input_path)
         self.pitch_list = list(state.pitch_list)
@@ -38,8 +53,27 @@ class PreviewCommandsMixin:
             extra={"input_path": self._viewmodel.state.input_path.strip()},
         )
         sides = ("original", "arranged")
+        arranger_mode = (self._viewmodel.state.arranger_mode or "classic").strip().lower()
         for side in sides:
-            self._set_preview_initial_loading(side, True, message="Loading preview…")
+            message = "Loading preview…"
+            if (
+                side == "arranged"
+                and arranger_mode in {"best_effort", "gp"}
+            ):
+                message = "Arranging preview…"
+            self._set_preview_initial_loading(side, True, message=message)
+        showing_arranger_progress = False
+        if hasattr(self, "_set_arranger_results_loading") and arranger_mode in {
+            "best_effort",
+            "gp",
+        }:
+            try:
+                self._set_arranger_results_loading(
+                    True, message="Arranging preview…"
+                )
+                showing_arranger_progress = True
+            except Exception:  # pragma: no cover - defensive UI safeguard
+                logger.exception("Failed to display arranger progress indicator")
         self.update_idletasks()
         self._set_transpose_controls_enabled(False)
         try:
@@ -49,6 +83,11 @@ class PreviewCommandsMixin:
                 self._set_preview_initial_loading(side, False)
             raise
         finally:
+            if showing_arranger_progress:
+                try:
+                    self._set_arranger_results_loading(False)
+                except Exception:  # pragma: no cover - defensive UI safeguard
+                    logger.exception("Failed to hide arranger progress indicator")
             self._set_transpose_controls_enabled(True)
         if result.is_err():
             logger.error("Render previews failed: %s", result.error)
@@ -155,6 +194,7 @@ class PreviewCommandsMixin:
                 prefer_flats=settings.prefer_flats,
                 collapse_chords=settings.collapse_chords,
                 transpose_offset=settings.transpose_offset,
+                selected_part_ids=settings.selected_part_ids,
             )
             if settings.favor_lower:
                 favor_lower_register(root, range_min=settings.range_min)

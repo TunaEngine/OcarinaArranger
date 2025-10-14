@@ -32,6 +32,7 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
             favor_lower=True,
             transpose_offset=1,
             instrument_id="alto",
+            selected_part_ids=("P2",),
         ),
         pdf_options=PdfExportOptions.with_defaults(page_size="A6", orientation="portrait"),
         pitch_list=["C4", "D4"],
@@ -126,6 +127,7 @@ def test_load_project_updates_state(tmp_path: Path, conversion_result: Conversio
     assert state.favor_lower is True
     assert state.transpose_offset == 1
     assert state.instrument_id == "alto"
+    assert state.selected_part_ids == ("P2",)
     assert state.pitch_list == ["C4", "D4"]
     assert viewmodel.pitch_entries() == ["C4", "D4"]
     assert viewmodel.state.status_message == "Project loaded."

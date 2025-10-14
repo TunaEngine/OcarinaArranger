@@ -28,6 +28,35 @@ def test_render_previews_updates_status_and_caches(gui_app, tmp_path, monkeypatc
     assert gui_app.staff_arr._cached is not None
 
 
+def test_render_previews_shows_arranger_progress(gui_app, tmp_path, monkeypatch):
+    tree, _ = make_linear_score()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.arranger_mode.set("gp")
+    gui_app._viewmodel.state.instrument_id = "test"
+    gui_app.update_idletasks()
+
+    progress_frame = getattr(gui_app, "_arranger_progress_frame", None)
+    if progress_frame is None:
+        pytest.skip("Arranger progress indicator unavailable in this environment")
+
+    assert not progress_frame.winfo_manager()
+
+    original_render = gui_app._viewmodel.render_previews
+
+    def _tracked_render():
+        assert progress_frame.winfo_manager()
+        assert "Arranging" in gui_app.arranger_summary_status.get()
+        return original_render()
+
+    monkeypatch.setattr(gui_app._viewmodel, "render_previews", _tracked_render)
+
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    assert not progress_frame.winfo_manager()
+
+
 def test_import_auto_renders_and_selects_arranged_tab(gui_app, tmp_path, monkeypatch):
     tree, _ = make_linear_score()
     path = write_score(tmp_path, tree)
@@ -320,6 +349,27 @@ def test_render_previews_shows_initial_loading_indicator(gui_app, tmp_path, monk
         assert gui_app._preview_initial_loading == {"original", "arranged"}
         label = gui_app._preview_render_progress_labels["original"]
         assert label.get() == "Loading preview… 0%"
+        return original_render()
+
+    monkeypatch.setattr(gui_app._viewmodel, "render_previews", _tracked_render)
+
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    assert not gui_app._preview_initial_loading
+
+
+def test_render_previews_labels_arranged_tab_as_arranging(gui_app, tmp_path, monkeypatch):
+    tree, _ = make_linear_score()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.arranger_mode.set("gp")
+
+    original_render = gui_app._viewmodel.render_previews
+
+    def _tracked_render():
+        label = gui_app._preview_render_progress_labels["arranged"]
+        assert label.get() == "Arranging preview… 0%"
         return original_render()
 
     monkeypatch.setattr(gui_app._viewmodel, "render_previews", _tracked_render)

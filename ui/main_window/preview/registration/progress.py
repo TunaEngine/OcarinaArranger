@@ -10,6 +10,8 @@ class PreviewProgressMixin:
         self, side: str, loading: bool, *, message: str | None = None
     ) -> None:
         if loading:
+            self._ensure_preview_progress_overlay(side)
+        if loading:
             self._preview_initial_loading.add(side)
             if message is not None:
                 self._preview_progress_messages[side] = message
@@ -34,6 +36,30 @@ class PreviewProgressMixin:
         self._update_preview_render_progress(side)
         if hasattr(self, "_update_reimport_button_state"):
             self._update_reimport_button_state()
+
+    def _ensure_preview_progress_overlay(self, side: str) -> None:
+        if side in self._preview_progress_frames:
+            return
+        frame = self._preview_frames_by_side.get(side)  # type: ignore[attr-defined]
+        if frame is None:
+            tab_frames = getattr(self, "_preview_tab_frames", ())
+            index = 0 if side == "original" else 1 if side == "arranged" else -1
+            try:
+                frame = tab_frames[index]
+            except (IndexError, TypeError):
+                frame = None
+        if frame is None:
+            return
+        try:
+            from ocarina_gui.ui_builders.preview_overlay import (
+                build_preview_progress_overlay,
+            )
+        except Exception:
+            return
+        try:
+            build_preview_progress_overlay(self, frame, side)
+        except Exception:
+            return
 
     @staticmethod
     def _format_progress_percentage(percent: float) -> str:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from adapters.file_dialog import FileDialogAdapter
 from services.score_service import ScoreService
+from ocarina_tools.parts import MusicXmlPartInfo
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 from viewmodels.main_viewmodel import MainViewModel, MainViewModelState
 
@@ -24,6 +25,13 @@ class _StubDialogs(FileDialogAdapter):
 
     def ask_save_project_path(self, suggested_name: str) -> str | None:  # noqa: D401
         return None
+
+    def ask_select_parts(
+        self,
+        parts,
+        preselected,
+    ) -> tuple[str, ...]:  # noqa: D401 - protocol compliance
+        return tuple(preselected)
 
 
 @dataclass(slots=True)
@@ -126,3 +134,63 @@ def test_update_settings_tracks_gp_configuration() -> None:
     viewmodel.update_settings(arranger_gp_settings=custom)
 
     assert viewmodel.state.arranger_gp_settings == custom.normalized()
+
+
+def test_update_settings_normalizes_parts_and_selections() -> None:
+    viewmodel = _make_viewmodel()
+
+    parts = [
+        MusicXmlPartInfo(
+            part_id=" P1 ",
+            name=" Part 1 ",
+            midi_program=41,
+            note_count=3,
+            min_midi=60,
+            max_midi=72,
+            min_pitch="C4",
+            max_pitch="C5",
+        ),
+        MusicXmlPartInfo(
+            part_id="P1",
+            name="Duplicate",
+            midi_program=42,
+            note_count=2,
+            min_midi=None,
+            max_midi=None,
+            min_pitch=None,
+            max_pitch=None,
+        ),
+    ]
+
+    viewmodel.update_settings(available_parts=parts)
+
+    assert len(viewmodel.state.available_parts) == 1
+    normalized_part = viewmodel.state.available_parts[0]
+    assert normalized_part.part_id == "P1"
+    assert normalized_part.name == "Part 1"
+    assert normalized_part.midi_program == 41
+
+    viewmodel.update_settings(selected_part_ids=("P1", "P3", "P1"))
+    assert viewmodel.state.selected_part_ids == ("P1",)
+
+    viewmodel.update_settings(
+        available_parts=[
+            {
+                "part_id": "P2",
+                "name": "Second",
+                "midi_program": "38",
+                "note_count": "5",
+                "min_midi": "55",
+                "max_midi": "77",
+                "min_pitch": "G3",
+                "max_pitch": "F5",
+            }
+        ]
+    )
+
+    assert len(viewmodel.state.available_parts) == 1
+    replacement = viewmodel.state.available_parts[0]
+    assert replacement.part_id == "P2"
+    assert replacement.name == "Second"
+    assert replacement.midi_program == 38
+    assert viewmodel.state.selected_part_ids == ()

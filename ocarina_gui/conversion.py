@@ -98,6 +98,7 @@ def convert_score(
         prefer_flats=settings.prefer_flats,
         collapse_chords=settings.collapse_chords,
         transpose_offset=settings.transpose_offset,
+        selected_part_ids=settings.selected_part_ids,
     )
 
     shifted = 0

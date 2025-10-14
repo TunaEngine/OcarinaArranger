@@ -89,6 +89,14 @@ When troubleshooting preview playback the app now records verbose diagnostics to
 `OCARINA_LOG_DIR` / `OCARINA_LOG_FILE` environment variables). Share this file
 when reporting audio issues so we can inspect the detailed playback timeline.
 
+## Project archives
+
+Saved `.ocarina` project bundles include a `manifest.json` file describing the
+active transform settings. The `settings.selected_part_ids` list records the
+MusicXML part identifiers that were chosen when the project was saved. When the
+field is missing (in older manifests) the loader falls back to including all
+parts from the source score.
+
 ## Automatic updates (Windows)
 
 On Windows, the application can automatically check GitHub releases on startup and

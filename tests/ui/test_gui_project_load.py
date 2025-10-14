@@ -29,6 +29,7 @@ def _loaded_project(tmp_path: Path) -> LoadedProject:
             favor_lower=False,
             transpose_offset=-4,
             instrument_id="",
+            selected_part_ids=(),
         ),
         pdf_options=PdfExportOptions.with_defaults(),
         pitch_list=["A4"],

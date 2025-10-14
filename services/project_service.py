@@ -157,10 +157,15 @@ class ProjectService:
         )
 
     def _build_manifest(self, snapshot: ProjectSnapshot) -> Dict[str, Any]:
+        settings_payload = asdict(snapshot.settings)
+        settings_payload["selected_part_ids"] = list(
+            snapshot.settings.selected_part_ids
+        )
+
         manifest: Dict[str, Any] = {
             "version": _VERSION,
             "input": {"filename": snapshot.input_path.name},
-            "settings": asdict(snapshot.settings),
+            "settings": settings_payload,
             "pitch_list": list(snapshot.pitch_list),
             "pitch_entries": list(snapshot.pitch_entries),
             "status_message": snapshot.status_message,
@@ -251,6 +256,7 @@ class ProjectService:
             favor_lower=bool(data.get("favor_lower", False)),
             transpose_offset=int(data.get("transpose_offset", 0)),
             instrument_id=str(data.get("instrument_id", "")),
+            selected_part_ids=self._load_selected_part_ids(data.get("selected_part_ids")),
         )
 
     def _load_pdf_options(self, data: Dict[str, Any] | None) -> PdfExportOptions | None:
@@ -292,6 +298,26 @@ class ProjectService:
             output_pdf_paths=pdf_paths,
             output_folder=str((exports_dir).resolve()),
         )
+
+    @staticmethod
+    def _load_selected_part_ids(entries: Any) -> tuple[str, ...]:
+        if entries in (None, ""):
+            return ()
+        normalized: list[str] = []
+        seen: set[str] = set()
+        if isinstance(entries, (list, tuple)):
+            iterator = entries
+        else:
+            iterator = [entries]
+        for entry in iterator:
+            if entry is None:
+                continue
+            text = str(entry).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        return tuple(normalized)
 
     @staticmethod
     def _ensure_export_exists(path: str) -> None:

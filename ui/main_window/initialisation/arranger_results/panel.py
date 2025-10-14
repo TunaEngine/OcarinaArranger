@@ -30,13 +30,21 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
         justify="left",
     ).grid(row=0, column=0, sticky="w")
 
+    progress_frame = ttk.Frame(summary_tab)
+    progress_frame.columnconfigure(0, weight=1)
+    progress_frame.grid(row=1, column=0, sticky="ew", pady=(pad // 2, 0))
+    progress = ttk.Progressbar(progress_frame, mode="indeterminate")
+    progress.grid(row=0, column=0, sticky="ew")
+    app._register_arranger_progress_widgets(progress_frame, progress)
+    app._set_arranger_results_loading(False, restore_status=False)
+
     difficulty_group = ttk.LabelFrame(
         summary_tab,
         text="Difficulty metrics",
         padding=pad,
         style="Panel.TLabelframe",
     )
-    difficulty_group.grid(row=1, column=0, sticky="ew", pady=(pad, 0))
+    difficulty_group.grid(row=2, column=0, sticky="ew", pady=(pad, 0))
     difficulty_group.columnconfigure(1, weight=1)
     for row_index, (label, variable) in enumerate(
         (
@@ -70,7 +78,7 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
         padding=pad,
         style="Panel.TLabelframe",
     )
-    edits_group.grid(row=2, column=0, sticky="ew", pady=(pad, 0))
+    edits_group.grid(row=3, column=0, sticky="ew", pady=(pad, 0))
     edits_group.columnconfigure(1, weight=1)
     for row_index, (label, variable) in enumerate(
         (
@@ -93,7 +101,7 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
         )
 
     ttk.Label(summary_tab, text="Applied steps").grid(
-        row=3,
+        row=4,
         column=0,
         sticky="w",
         pady=(pad, 0),
@@ -103,7 +111,7 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
         textvariable=app.arranger_applied_steps,
         wraplength=320,
         justify="left",
-    ).grid(row=4, column=0, sticky="w")
+    ).grid(row=5, column=0, sticky="w")
 
     explanations_tab = ttk.Frame(notebook, padding=pad)
     explanations_tab.columnconfigure(0, weight=1)

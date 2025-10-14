@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from tkinter import filedialog, messagebox
 
-from helpers import make_linear_score
+from helpers import make_chord_score, make_linear_score
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_tools import collect_used_pitches, load_score, transform_to_ocarina
@@ -13,6 +13,42 @@ def _write_score(tmp_path, tree):
     path = tmp_path / "sample.musicxml"
     tree.write(path, encoding="utf-8", xml_declaration=True)
     return path
+
+
+def test_browse_prompts_for_part_selection(gui_app, tmp_path, monkeypatch):
+    tree, _ = make_chord_score()
+    input_path = _write_score(tmp_path, tree)
+
+    selections: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        type(gui_app._viewmodel._dialogs),
+        "ask_open_path",
+        lambda _self: str(input_path),
+    )
+
+    def _fake_select(_self, parts, preselected):
+        selections["parts"] = tuple(parts)
+        selections["preselected"] = tuple(preselected)
+        return ("P2",)
+
+    monkeypatch.setattr(
+        type(gui_app._viewmodel._dialogs),
+        "ask_select_parts",
+        _fake_select,
+    )
+
+    gui_app.browse()
+    gui_app.update_idletasks()
+
+    assert selections["parts"][0].part_id == "P1"
+    assert selections["parts"][1].part_id == "P2"
+    assert selections["preselected"] == ("P1", "P2")
+    assert gui_app._viewmodel.state.selected_part_ids == ("P2",)
+    assert [part.part_id for part in gui_app._viewmodel.state.available_parts] == [
+        "P1",
+        "P2",
+    ]
 
 
 def test_convert_exports_files_and_reports_success(gui_app, tmp_path, monkeypatch):

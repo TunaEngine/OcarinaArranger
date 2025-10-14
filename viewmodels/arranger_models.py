@@ -80,7 +80,7 @@ class ArrangerTelemetryHint:
 class ArrangerGPSettings:
     """Expose tunable parameters for the GP arranger pipeline."""
 
-    generations: int = 6
+    generations: int = 10
     population_size: int = 16
     time_budget_seconds: float | None = None
     archive_size: int = 8

@@ -198,7 +198,7 @@ def _default_fitness_config() -> FitnessConfig:
 class GPSessionConfig:
     """Configuration controlling a GP optimisation session."""
 
-    generations: int = 6
+    generations: int = 10
     population_size: int = 16
     archive_size: int = 8
     random_seed: int = 0

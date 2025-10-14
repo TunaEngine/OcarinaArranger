@@ -108,6 +108,7 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
                 time_budget_seconds=8.0,
             )
         ),
+        "manual_transposition": 0,
     }
     assert computation.summaries
     assert computation.result_summary is not None
@@ -148,6 +149,7 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
 
     def _fake_arrange_v3_gp(span, *args, **kwargs):
         captured["phrase_midis"] = tuple(note.midi for note in span.notes)
+        captured["kwargs"] = kwargs
         difficulty = summarize_difficulty(span, instrument_range)
         candidate = SimpleNamespace(
             instrument_id="alto_c_12",
@@ -186,6 +188,7 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
     assert tuple(event.midi for event in computation.arranged_events) == expected_midis
     assert computation.result_summary is not None
     assert computation.result_summary.transposition == 5
+    assert captured.get("kwargs", {}).get("manual_transposition") == 5
 
 
 def test_gp_session_config_applies_advanced_settings() -> None:

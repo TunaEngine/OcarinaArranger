@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, Sequence
+
+from ocarina_tools.parts import MusicXmlPartInfo
 
 
 class FileDialogAdapter(Protocol):
@@ -20,6 +22,13 @@ class FileDialogAdapter(Protocol):
 
     def ask_save_project_path(self, suggested_name: str) -> str | None:
         """Return a project archive destination or ``None`` if cancelled."""
+
+    def ask_select_parts(
+        self,
+        parts: Sequence[MusicXmlPartInfo],
+        preselected: Sequence[str],
+    ) -> Sequence[str] | None:
+        """Return the selected part identifiers or ``None`` if cancelled."""
 
 
 @dataclass(slots=True)
@@ -72,6 +81,15 @@ class TkFileDialogAdapter:
             initialfile=suggested_name,
             filetypes=[("Ocarina Project", "*.ocarina")],
         )
+
+    def ask_select_parts(
+        self,
+        parts: Sequence[MusicXmlPartInfo],
+        preselected: Sequence[str],
+    ) -> Sequence[str] | None:
+        from ui.dialogs.part_selection import ask_part_selection
+
+        return ask_part_selection(parts=parts, preselected=preselected)
 
 
 __all__ = ["FileDialogAdapter", "TkFileDialogAdapter"]

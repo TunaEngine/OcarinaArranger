@@ -50,6 +50,9 @@ class ArrangerResultsMixin:
         self._arranger_explanation_row_map: dict[str, ArrangerExplanationRow] = {}
         self._arranger_telemetry_container: ttk.Frame | None = None
         self._arranger_telemetry_placeholder: ttk.Label | None = None
+        self._arranger_progress_frame: ttk.Frame | None = None
+        self._arranger_progress_bar: ttk.Progressbar | None = None
+        self._arranger_progress_previous_status: str | None = None
         self.arranger_explanation_filter.trace_add(
             "write", self._on_arranger_explanation_filter_changed
         )
@@ -57,6 +60,69 @@ class ArrangerResultsMixin:
     def _register_arranger_results_notebook(self, notebook: ttk.Notebook) -> None:
         self._arranger_results_notebook = notebook
         self._refresh_arranger_results_from_state()
+
+    def _register_arranger_progress_widgets(
+        self, frame: ttk.Frame, progress: ttk.Progressbar
+    ) -> None:
+        self._arranger_progress_frame = frame
+        self._arranger_progress_bar = progress
+        try:
+            frame.grid_remove()
+        except (tk.TclError, RuntimeError, AttributeError):
+            pass
+
+    def _set_arranger_results_loading(
+        self,
+        loading: bool,
+        *,
+        message: str | None = None,
+        restore_status: bool = True,
+    ) -> None:
+        frame = self._arranger_progress_frame
+        bar = self._arranger_progress_bar
+        if loading:
+            if restore_status:
+                try:
+                    self._arranger_progress_previous_status = self.arranger_summary_status.get()
+                except (tk.TclError, RuntimeError, AttributeError):
+                    self._arranger_progress_previous_status = None
+            if message is not None:
+                try:
+                    self.arranger_summary_status.set(message)
+                except (tk.TclError, RuntimeError, AttributeError):
+                    pass
+            if frame is not None:
+                try:
+                    if frame.winfo_manager() != "grid":
+                        frame.grid()
+                except (tk.TclError, RuntimeError, AttributeError):
+                    pass
+            if bar is not None:
+                try:
+                    bar.start(12)
+                except (tk.TclError, RuntimeError, AttributeError):
+                    pass
+            return
+
+        if bar is not None:
+            try:
+                bar.stop()
+            except (tk.TclError, RuntimeError, AttributeError):
+                pass
+        if frame is not None:
+            try:
+                if frame.winfo_manager() == "grid":
+                    frame.grid_remove()
+            except (tk.TclError, RuntimeError, AttributeError):
+                pass
+        if restore_status and self._arranger_progress_previous_status is not None:
+            try:
+                self.arranger_summary_status.set(
+                    self._arranger_progress_previous_status
+                )
+            except (tk.TclError, RuntimeError, AttributeError):
+                pass
+        self._arranger_progress_previous_status = None
 
     def _register_arranger_explanations_tree(self, tree: ttk.Treeview) -> None:
         self._arranger_explanations_tree = tree
@@ -87,6 +153,7 @@ class ArrangerResultsMixin:
     def _apply_arranger_result_summary(
         self, summary: ArrangerResultSummary | None
     ) -> None:
+        self._set_arranger_results_loading(False, restore_status=False)
         if summary is None:
             self.arranger_summary_status.set(
                 "Arrange a score to view best-effort results."

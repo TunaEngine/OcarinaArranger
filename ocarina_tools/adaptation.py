@@ -17,6 +17,7 @@ from .musicxml import (
     is_voice_one,
     qname,
 )
+from .parts import _summarize_part_range, filter_parts
 from .pitch import midi_to_name, parse_note_name
 
 
@@ -179,28 +180,6 @@ def _update_part_list_metadata(root: ET.Element, q) -> None:
         program.text = "80"
 
 
-def _summarize_part_range(part: ET.Element, q) -> Tuple[Dict[str, Optional[int]], Dict[str, Optional[str]]]:
-    lowest = highest = None
-    count = 0
-    for measure in part.findall(q('measure')):
-        for note in measure.findall(q('note')):
-            if note.find(q('rest')) is not None:
-                continue
-            pitch_data = get_pitch_data(note, q)
-            if pitch_data is None:
-                continue
-            midi = pitch_data.midi
-            lowest = midi if lowest is None else min(lowest, midi)
-            highest = midi if highest is None else max(highest, midi)
-            count += 1
-    range_midi = {"min": lowest, "max": highest, "count": count}
-    range_names = {
-        "min": midi_to_name(lowest) if lowest is not None else None,
-        "max": midi_to_name(highest) if highest is not None else None,
-    }
-    return range_midi, range_names
-
-
 def _collect_primary_voice_midis(part: ET.Element, q) -> List[int]:
     """Return MIDI values for voice-one pitched notes in ``part``."""
 
@@ -277,11 +256,15 @@ def transform_to_ocarina(
     prefer_flats: bool = True,
     collapse_chords: bool = True,
     transpose_offset: int = 0,
+    selected_part_ids: tuple[str, ...] = (),
 ) -> Dict:
     q = lambda t: qname(root, t)
     key_info = analyze_key(root)
     auto_transpose = compute_transpose_semitones(key_info.get('tonic') or 'C', prefer_mode)
     transpose_semitones = auto_transpose + transpose_offset
+
+    if selected_part_ids:
+        filter_parts(root, selected_part_ids)
 
     melodic_part = _select_primary_part(root, q)
     _ensure_primary_attributes(melodic_part, q, prefer_mode, key_info)
