@@ -90,7 +90,7 @@ project/
 
 **Definition of Done**
 
-- Tests pass locally: `pytest -q`.
+- Tests pass locally: `xvfb-run -a pytest` (always run this command for verification).
 - Coverage ≥ **85%** overall; new/changed lines covered.
 - No lints/formatting errors; types clean on changed files.
 - UI behavior verified for changed screens (manual or scripted smoke).

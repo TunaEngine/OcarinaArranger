@@ -73,7 +73,10 @@ class InstrumentLayoutEditor(
         self._json_text: tk.Text | None = None
         self._preview_frame: ttk.Frame | None = None
         self._preview_toggle: ttk.Button | None = None
+        self._done_button: ttk.Button | None = None
+        self._cancel_button: ttk.Button | None = None
         self._preview_visible = False
+        self._footer_menus: tuple[tk.Menu, ...] | None = None
         self._preferred_min_combo: ttk.Combobox | None = None
         self._preferred_max_combo: ttk.Combobox | None = None
         self._candidate_min_combo: ttk.Combobox | None = None
@@ -222,6 +225,7 @@ class InstrumentLayoutEditor(
         self.minsize(min(requested_width, max_width), min(requested_height, max_height))
 
         center_window_over_parent(self, master)
+        self.deiconify()
 
     # The following overrides exist solely to aid type checking for mixins.
     def _describe_selection(self, state: InstrumentLayoutState) -> str:  # type: ignore[override]

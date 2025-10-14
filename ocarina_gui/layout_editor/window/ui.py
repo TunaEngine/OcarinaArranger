@@ -20,6 +20,7 @@ class _LayoutEditorUIMixin:
     _add_hole_button: ttk.Button | None
     _add_windway_button: ttk.Button | None
     _remove_element_button: ttk.Button | None
+    _cancel_button: ttk.Button | None
     _hole_entry: ttk.Entry | None
     _width_entry: ttk.Entry | None
     _height_entry: ttk.Entry | None
@@ -30,6 +31,7 @@ class _LayoutEditorUIMixin:
     _allow_half_var: tk.BooleanVar | None
     _allow_half_check: ttk.Checkbutton | None
     _on_half_toggle: Callable[[], None] | None
+    _footer_menus: tuple[tk.Menu, ...] | None
 
     def _build_header(self, parent: ttk.Frame) -> None:
         selector_frame = ttk.Frame(parent)
@@ -247,20 +249,51 @@ class _LayoutEditorUIMixin:
         button_row.grid(row=0, column=0, sticky="ew")
         button_row.columnconfigure(0, weight=1)
 
-        ttk.Button(button_row, text="Export Config...", command=self._save_json).pack(side="left", padx=4)
-        ttk.Button(button_row, text="Import Config...", command=self._load_json).pack(side="left", padx=4)
-        ttk.Button(button_row, text="Export Instrument...", command=self._export_instrument).pack(side="left", padx=4)
-        ttk.Button(button_row, text="Import Instrument...", command=self._import_instrument).pack(side="left", padx=4)
-        ttk.Label(button_row, textvariable=self._status_var, style="Hint.TLabel").pack(side="left", padx=8)
+        top_row = ttk.Frame(button_row)
+        top_row.grid(row=0, column=0, sticky="ew")
+        top_row.columnconfigure(0, weight=1)
+        top_row.columnconfigure(1, weight=0)
 
-        toggle = ttk.Button(button_row, text="Show Config Preview", command=self._toggle_preview)
+        export_row = ttk.Frame(top_row)
+        export_row.grid(row=0, column=0, sticky="w")
+
+        config_button = ttk.Menubutton(export_row, text="Config", direction="below")
+        config_button.pack(side="left", padx=4)
+
+        config_menu = tk.Menu(config_button, tearoff=False)
+        config_menu.add_command(label="Export Config...", command=self._save_json)
+        config_menu.add_command(label="Import Config...", command=self._load_json)
+        config_button["menu"] = config_menu
+
+        instrument_button = ttk.Menubutton(export_row, text="Instrument", direction="below")
+        instrument_button.pack(side="left", padx=4)
+
+        instrument_menu = tk.Menu(instrument_button, tearoff=False)
+        instrument_menu.add_command(label="Export Instrument...", command=self._export_instrument)
+        instrument_menu.add_command(label="Import Instrument...", command=self._import_instrument)
+        instrument_button["menu"] = instrument_menu
+
+        self._footer_menus = (config_menu, instrument_menu)
+
+        actions = ttk.Frame(top_row)
+        actions.grid(row=0, column=1, sticky="e")
+
+        cancel_button = ttk.Button(actions, text="Cancel", command=self._cancel_edits)
+        self._cancel_button = cancel_button
+
+        done_button = ttk.Button(actions, text="Done", command=self._apply_and_close)
+        self._done_button = done_button
+
+        done_button.pack(side="right", padx=(0, 4))
+        cancel_button.pack(side="right", padx=(0, 4))
+
+        toggle = ttk.Button(actions, text="Show Preview", command=self._toggle_preview)
         toggle.pack(side="right", padx=(0, 4))
         self._preview_toggle = toggle
 
-        action_row = ttk.Frame(button_row)
-        action_row.pack(side="right")
-        ttk.Button(action_row, text="Cancel", command=self._cancel_edits).pack(side="right", padx=(0, 4))
-        ttk.Button(action_row, text="Done", command=self._apply_and_close).pack(side="right", padx=(0, 4))
+        ttk.Label(button_row, textvariable=self._status_var, style="Hint.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
 
         preview_frame = ttk.Frame(footer)
         preview_frame.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
@@ -294,7 +327,7 @@ class _LayoutEditorUIMixin:
         self._preview_visible = True
         toggle = self._preview_toggle
         if toggle is not None:
-            toggle.configure(text="Hide Config Preview")
+            toggle.configure(text="Hide Preview")
 
     def _hide_preview(self) -> None:
         frame = self._preview_frame
@@ -304,4 +337,4 @@ class _LayoutEditorUIMixin:
         self._preview_visible = False
         toggle = self._preview_toggle
         if toggle is not None:
-            toggle.configure(text="Show Config Preview")
+            toggle.configure(text="Show Preview")
