@@ -20,6 +20,12 @@ from ocarina_tools import NoteEvent
 logger = logging.getLogger(__name__)
 
 
+_TEMPO_MARKER_MIN_BOTTOM = 24.0
+_TEMPO_MARKER_VERTICAL_OFFSET = 18.0
+_TEMPO_MARKER_LEFT_PADDING = 8.0
+_TEMPO_MARKER_BARLINE_PADDING = 6.0
+
+
 class StaffViewBase(ttk.Frame):
     """Shared state and behaviour for :class:`StaffView`."""
 
@@ -85,6 +91,8 @@ class StaffViewBase(ttk.Frame):
         self._cursor_cb: Optional[Callable[[int], None]] = None
         self._cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
         self._scrollbars.configure_for_layout(self._layout_mode)
+        self._tempo_markers: tuple[tuple[int, str], ...] = ()
+        self._tempo_marker_items: list[int] = []
         for sequence in ("<Button-1>", "<ButtonPress-1>", "<ButtonRelease-1>", "<B1-Motion>"):
             self.canvas.bind(sequence, self._on_cursor_event)
         # Ensure clicks on rendered items propagate to the cursor handler.
@@ -196,9 +204,11 @@ class StaffViewBase(ttk.Frame):
         self._ticks_per_measure = max(1, beats * ticks_per_beat)
         if self._layout_mode == "wrapped":
             self._renderer.render_wrapped(sorted_events, pulses_per_quarter, beats, beat_type)
+            self._redraw_tempo_markers()
             return
 
         self._renderer.render_horizontal(sorted_events, beats, beat_type)
+        self._redraw_tempo_markers()
 
     def _normalize_events(
         self, events: Sequence[Event | Tuple[int, int, int, int]]
@@ -215,8 +225,10 @@ class StaffViewBase(ttk.Frame):
             if self._cached:
                 events, ppq, beats, beat_type = self._cached
                 self._renderer.render_wrapped(tuple(events), ppq, beats, beat_type)
+                self._redraw_tempo_markers()
             return
         self._renderer.redraw_visible_region(force=True)
+        self._redraw_tempo_markers()
 
     def _on_map_event(self, _event: tk.Event) -> None:
         if self._layout_mode != "wrapped":
@@ -265,6 +277,8 @@ class StaffViewBase(ttk.Frame):
         if self._cached:
             events, ppq, beats, beat_type = self._cached
             self.render(events, ppq, beats, beat_type)
+        else:
+            self._redraw_tempo_markers()
 
     def _on_theme_changed(self, theme: ThemeSpec) -> None:
         self.apply_palette(theme.palette.staff)
@@ -286,6 +300,125 @@ class StaffViewBase(ttk.Frame):
 
     def _raise_cursor_lines(self) -> None:
         self._cursor_controller.raise_cursor_lines()
+
+    def set_tempo_markers(self, markers: Sequence[tuple[int, str]]) -> None:
+        normalized: list[tuple[int, str]] = []
+        for tick, label in markers:
+            try:
+                tick_int = max(0, int(tick))
+            except Exception:
+                continue
+            text = str(label).strip()
+            if not text:
+                continue
+            normalized.append((tick_int, text))
+        self._tempo_markers = tuple(normalized)
+        self._redraw_tempo_markers()
+
+    def _clear_tempo_marker_items(self) -> None:
+        if not self._tempo_marker_items:
+            return
+        for item in self._tempo_marker_items:
+            try:
+                self.canvas.delete(item)
+            except Exception:
+                pass
+        self._tempo_marker_items = []
+
+    def _redraw_tempo_markers(self) -> None:
+        self._clear_tempo_marker_items()
+        if not self._tempo_markers:
+            return
+        layout_mode = getattr(self, "_layout_mode", "horizontal")
+        palette = self._palette
+
+        if layout_mode == "horizontal":
+            px_per_tick = max(self.px_per_tick, 1e-6)
+            left_pad = self.LEFT_PAD
+            y_top = getattr(self, "_last_y_top", 40)
+            y = max(
+                _TEMPO_MARKER_MIN_BOTTOM,
+                y_top - _TEMPO_MARKER_VERTICAL_OFFSET,
+            )
+            min_left = float(left_pad) + _TEMPO_MARKER_LEFT_PADDING
+
+            for tick, label in self._tempo_markers:
+                bar_x = left_pad + tick * px_per_tick
+                x = bar_x + _TEMPO_MARKER_BARLINE_PADDING
+                try:
+                    item = self.canvas.create_text(
+                        x,
+                        y,
+                        text=label,
+                        fill=palette.measure_number_text,
+                        font=("TkDefaultFont", 9),
+                        anchor="sw",
+                        tags=("tempo_marker", "overlay"),
+                    )
+                except Exception:
+                    continue
+                item_id = int(item)
+                self._nudge_tempo_marker_bounds(item_id, min_left=min_left)
+                self._tempo_marker_items.append(item_id)
+        elif layout_mode == "wrapped":
+            layout = getattr(self, "_wrap_layout", None) or {}
+            content_width = float(layout.get("content_width", self.LEFT_PAD + self.RIGHT_PAD + 1))
+            min_x = float(self.LEFT_PAD)
+            max_x = max(min_x, content_width - float(self.RIGHT_PAD))
+            min_left = min_x + _TEMPO_MARKER_LEFT_PADDING
+            for tick, label in self._tempo_markers:
+                x, y_top, _ = self._wrap_tick_to_coords(tick)
+                anchor_x = float(x) + _TEMPO_MARKER_BARLINE_PADDING
+                clamped_x = max(min_x, min(max_x, anchor_x))
+                y = max(
+                    _TEMPO_MARKER_MIN_BOTTOM,
+                    y_top - _TEMPO_MARKER_VERTICAL_OFFSET,
+                )
+                try:
+                    item = self.canvas.create_text(
+                        clamped_x,
+                        y,
+                        text=label,
+                        fill=palette.measure_number_text,
+                        font=("TkDefaultFont", 9),
+                        anchor="sw",
+                        tags=("tempo_marker", "overlay"),
+                    )
+                except Exception:
+                    continue
+                item_id = int(item)
+                self._nudge_tempo_marker_bounds(item_id, min_left=min_left)
+                self._tempo_marker_items.append(item_id)
+        else:
+            return
+
+        if self._tempo_marker_items:
+            try:
+                self.canvas.tag_raise("tempo_marker")
+            except Exception:
+                pass
+        self._cursor_controller.raise_cursor_lines()
+
+    def _nudge_tempo_marker_bounds(
+        self,
+        item: int,
+        *,
+        min_left: float | None = None,
+    ) -> None:
+        if min_left is None:
+            return
+        try:
+            bbox = self.canvas.bbox(item)
+        except Exception:
+            return
+        if not bbox:
+            return
+        left = float(bbox[0])
+        if left < min_left:
+            try:
+                self.canvas.move(item, min_left - left, 0.0)
+            except Exception:
+                return
 
     def set_loop_region(self, start_tick: int, end_tick: int, visible: bool) -> None:
         self._cursor_controller.set_loop_region(start_tick, end_tick, visible)

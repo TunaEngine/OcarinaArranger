@@ -20,7 +20,7 @@ from ocarina_gui.pdf_export.pages.staff import build_staff_pages
 from ocarina_gui.pdf_export.pages.text import build_text_page
 from ocarina_gui.pdf_export.types import NoteEvent, PdfExportOptions
 from ocarina_gui.pdf_export.writer import PageBuilder
-from tests.helpers import make_linear_score
+from tests.helpers import make_linear_score, make_score_with_tempo_changes
 
 
 def _install_test_instrument(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,6 +82,33 @@ def test_export_arranged_pdf_writes_expected_content(
     assert b"Arranged staff view" in data
     assert b"Used fingerings visuals" in data
     assert b"C4" in data
+
+
+def test_export_arranged_pdf_includes_tempo_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree, root = make_score_with_tempo_changes()
+    _install_test_instrument(monkeypatch)
+
+    pdf_path = tmp_path / "tempo.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A4",
+        "portrait",
+        4,
+        prefer_flats=True,
+        include_piano_roll=True,
+        include_staff=True,
+        include_text=True,
+        include_fingerings=False,
+    )
+
+    data = pdf_path.read_bytes()
+    assert b"Tempo map" not in data
+    assert b"= 180" in data
+    assert b"= 120" in data
+    assert b"= 210" in data
 
 
 def test_header_link_draws_blue_hyperlink() -> None:

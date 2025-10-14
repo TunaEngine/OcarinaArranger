@@ -297,10 +297,20 @@ class PreviewPlaybackControlMixin:
     def _format_preview_time_label(
         playback: PreviewPlaybackViewModel, ticks: int
     ) -> str:
-        pulses = max(1, getattr(playback.state, "pulses_per_quarter", 1))
-        tempo = getattr(playback.state, "tempo_bpm", 60.0) or 60.0
-        tempo = max(tempo, 1e-6)
-        seconds = max(0.0, (ticks / pulses) * 60.0 / tempo)
+        try:
+            seconds = float(playback.seconds_at_tick(ticks))
+        except AttributeError:
+            pulses = max(1, getattr(playback.state, "pulses_per_quarter", 1))
+            tempo = getattr(playback.state, "tempo_bpm", 60.0) or 60.0
+            tempo = max(tempo, 1e-6)
+            seconds = max(0.0, (ticks / pulses) * 60.0 / tempo)
+        except Exception:
+            pulses = max(1, getattr(playback.state, "pulses_per_quarter", 1))
+            tempo = getattr(playback.state, "tempo_bpm", 60.0) or 60.0
+            tempo = max(tempo, 1e-6)
+            seconds = max(0.0, (ticks / pulses) * 60.0 / tempo)
+        else:
+            seconds = max(0.0, seconds)
         minutes, remainder = divmod(seconds, 60.0)
         return f"{int(minutes)}:{remainder:06.3f}"
 
@@ -328,7 +338,13 @@ class PreviewPlaybackControlMixin:
         if tempo_var is not None:
             self._suspend_tempo_update.add(side)
             try:
-                tempo_var.set(float(playback.state.tempo_bpm))
+                current_tempo = float(playback.state.tempo_bpm)
+                tempo_var.set(current_tempo)
+                if hasattr(self, "_refresh_tempo_summary"):
+                    try:
+                        self._refresh_tempo_summary(side, tempo_value=current_tempo)
+                    except Exception:
+                        pass
             except tk.TclError:
                 pass
             finally:

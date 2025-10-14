@@ -3,14 +3,34 @@ from __future__ import annotations
 from tkinter import messagebox
 
 import pytest
+from types import SimpleNamespace
 
-from helpers import make_linear_score, make_linear_score_with_tempo
+from ocarina_gui.piano_roll.view.widget import (
+    _TEMPO_MARKER_BARLINE_PADDING as ROLL_TEMPO_BARLINE_PADDING,
+    _TEMPO_MARKER_LEFT_PADDING as ROLL_TEMPO_LEFT_PADDING,
+)
+from ocarina_gui.staff.view.base import (
+    _TEMPO_MARKER_BARLINE_PADDING as STAFF_TEMPO_BARLINE_PADDING,
+    _TEMPO_MARKER_LEFT_PADDING as STAFF_TEMPO_LEFT_PADDING,
+)
+
+from helpers import (
+    make_linear_score,
+    make_linear_score_with_tempo,
+    make_score_with_tempo_changes,
+)
+from shared.tempo import scaled_tempo_marker_pairs
 from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 
 from tests.ui._preview_helpers import write_score
 
 
 pytestmark = pytest.mark.usefixtures("ensure_original_preview")
+
+
+def _canvas_marker_texts(canvas) -> list[str]:
+    markers = canvas.find_withtag("tempo_marker")
+    return [canvas.itemcget(item, "text") for item in markers]
 
 
 def test_arranged_preview_transpose_requires_apply(gui_app, tmp_path, monkeypatch):
@@ -329,6 +349,152 @@ def test_preview_tempo_control_updates_viewmodel(gui_app, tmp_path):
     assert playback.state.tempo_bpm == pytest.approx(150.0)
     assert "disabled" in apply_button.state()
     assert "disabled" in cancel_button.state()
+
+
+def test_preview_tempo_summary_updates_with_scaling(gui_app, tmp_path):
+    tree, _ = make_score_with_tempo_changes()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    tempo_var = gui_app._preview_tempo_vars["original"]
+    tempo_changes = gui_app._preview_tempo_maps["original"]
+    target = float(tempo_var.get())
+    marker_pairs = gui_app._preview_tempo_marker_pairs["original"]
+    expected_pairs = scaled_tempo_marker_pairs(tempo_changes, target)
+    assert marker_pairs == expected_pairs
+
+    tempo_var.set(90.0)
+    gui_app._on_preview_tempo_changed("original")
+    gui_app.update_idletasks()
+
+    updated_target = float(tempo_var.get())
+    updated_pairs = gui_app._preview_tempo_marker_pairs["original"]
+    expected_updated = scaled_tempo_marker_pairs(tempo_changes, updated_target)
+    assert updated_pairs == expected_updated
+
+
+def test_preview_tempo_markers_follow_tempo_changes(gui_app, tmp_path):
+    tree, _ = make_score_with_tempo_changes()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    roll = gui_app.roll_orig
+    staff = gui_app.staff_orig
+    assert roll is not None
+    assert staff is not None
+
+    tempo_var = gui_app._preview_tempo_vars["original"]
+    tempo_changes = gui_app._preview_tempo_maps["original"]
+    target = float(tempo_var.get())
+    expected_pairs = scaled_tempo_marker_pairs(tempo_changes, target)
+    markers = gui_app._preview_tempo_marker_pairs["original"]
+    assert markers == expected_pairs
+
+    expected_labels = {label for _tick, label in expected_pairs}
+    roll_texts = _canvas_marker_texts(roll.canvas)
+    staff_texts = _canvas_marker_texts(staff.canvas)
+    assert set(roll_texts) == expected_labels
+    assert set(staff_texts) == expected_labels
+
+    if len(expected_pairs) > 1:
+        roll_items = roll.canvas.find_withtag("tempo_marker")
+        staff_items = staff.canvas.find_withtag("tempo_marker")
+        for (tick, label), item in zip(expected_pairs, roll_items):
+            coords = roll.canvas.coords(item)
+            assert coords
+            bbox = roll.canvas.bbox(item)
+            assert bbox
+            expected_left = (
+                roll.LEFT_PAD
+                + tick * roll.px_per_tick
+                + ROLL_TEMPO_BARLINE_PADDING
+            )
+            if tick == 0:
+                assert bbox[0] >= roll.LEFT_PAD + ROLL_TEMPO_LEFT_PADDING
+            else:
+                assert bbox[0] == pytest.approx(expected_left, abs=2.0)
+            expected_y = max(
+                24.0,
+                roll._current_geometry().note_y(roll.max_midi)  # type: ignore[attr-defined]
+                + min(roll.px_per_note * 0.4, 14.0)
+                - 18.0,
+            )
+            assert coords[1] == pytest.approx(expected_y, abs=1.5)
+            assert roll.canvas.itemcget(item, "text") == label
+        for (tick, label), item in zip(expected_pairs, staff_items):
+            coords = staff.canvas.coords(item)
+            assert coords
+            bbox = staff.canvas.bbox(item)
+            assert bbox
+            expected_left = (
+                staff.LEFT_PAD
+                + tick * staff.px_per_tick
+                + STAFF_TEMPO_BARLINE_PADDING
+            )
+            if tick == 0:
+                assert bbox[0] >= staff.LEFT_PAD + STAFF_TEMPO_LEFT_PADDING
+            else:
+                assert bbox[0] == pytest.approx(expected_left, abs=2.0)
+            expected_y = max(24.0, staff._last_y_top - 18.0)  # type: ignore[attr-defined]
+            assert coords[1] == pytest.approx(expected_y, abs=1.5)
+            assert staff.canvas.itemcget(item, "text") == label
+
+        roll_measure_items = roll.canvas.find_withtag("measure_number")
+        if roll_measure_items:
+            tempo_bbox = roll.canvas.bbox(roll_items[0])
+            measure_bbox = roll.canvas.bbox(roll_measure_items[0])
+            assert tempo_bbox and measure_bbox
+            assert tempo_bbox[3] <= measure_bbox[1] - 2
+
+        staff_measure_items = staff.canvas.find_withtag("measure_number")
+        if staff_measure_items:
+            tempo_bbox = staff.canvas.bbox(staff_items[0])
+            measure_bbox = staff.canvas.bbox(staff_measure_items[0])
+            assert tempo_bbox and measure_bbox
+            assert tempo_bbox[3] <= measure_bbox[1] - 2
+
+    tempo_var.set(90.0)
+    gui_app._on_preview_tempo_changed("original")
+    gui_app.update_idletasks()
+
+    updated_target = float(tempo_var.get())
+    updated_expected_pairs = scaled_tempo_marker_pairs(tempo_changes, updated_target)
+    updated_markers = gui_app._preview_tempo_marker_pairs["original"]
+    assert updated_markers == updated_expected_pairs
+
+    updated_labels = {label for _tick, label in updated_expected_pairs}
+    roll_texts = _canvas_marker_texts(roll.canvas)
+    staff_texts = _canvas_marker_texts(staff.canvas)
+    assert set(roll_texts) == updated_labels
+    assert set(staff_texts) == updated_labels
+
+    gui_app.preview_layout_mode.set("piano")
+    gui_app.update_idletasks()
+    roll_only_texts = _canvas_marker_texts(roll.canvas)
+    assert set(roll_only_texts) == updated_labels
+
+    current_width = roll.canvas.winfo_width() or 0
+    roll._on_canvas_configure(SimpleNamespace(width=current_width + 120))
+    gui_app.update_idletasks()
+    resized_texts = _canvas_marker_texts(roll.canvas)
+    assert set(resized_texts) == updated_labels
+
+    gui_app.preview_layout_mode.set("piano_vertical")
+    gui_app.update_idletasks()
+    vertical_texts = _canvas_marker_texts(roll.canvas)
+    assert set(vertical_texts) == updated_labels
+
+    gui_app.preview_layout_mode.set("staff")
+    gui_app.update_idletasks()
+    staff_only_texts = _canvas_marker_texts(staff.canvas)
+    assert set(staff_only_texts) == updated_labels
+
+    gui_app.preview_layout_mode.set("piano_staff")
+    gui_app.update_idletasks()
 
 
 def test_preview_loop_controls_apply_updates_viewmodel(gui_app, tmp_path):

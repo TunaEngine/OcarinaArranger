@@ -14,6 +14,11 @@ from ocarina_gui.staff import StaffView
 from ocarina_tools import NoteEvent
 from services.project_service import PreviewPlaybackSnapshot
 from viewmodels.preview_playback_viewmodel import LoopRegion
+from shared.tempo import (
+    TempoChange,
+    first_tempo,
+    scaled_tempo_marker_pairs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +107,24 @@ class PreviewRenderingMixin:
             staff.set_cursor(0)
         if hasattr(staff, "set_secondary_cursor"):
             staff.set_secondary_cursor(None)
+        tempo_changes = tuple(getattr(data, "tempo_changes", ()))
         applied = self._preview_applied_settings.setdefault(side, {})
-        applied["tempo"] = float(getattr(data, "tempo_bpm", applied.get("tempo", 120.0)))
+        base_tempo = float(getattr(data, "tempo_bpm", applied.get("tempo", 120.0)))
+        applied["tempo"] = base_tempo
         applied.setdefault("metronome", False)
         applied.setdefault("loop_enabled", False)
         applied.setdefault("loop_start", 0.0)
         applied.setdefault("loop_end", 0.0)
+        tempo_maps = getattr(self, "_preview_tempo_maps", None)
+        if isinstance(tempo_maps, dict):
+            tempo_maps[side] = tempo_changes
+        tempo_bases = getattr(self, "_preview_tempo_bases", None)
+        if isinstance(tempo_bases, dict):
+            tempo_bases[side] = first_tempo(tempo_changes, default=base_tempo)
         if hasattr(self, "_preview_settings_seeded"):
             self._preview_settings_seeded.add(side)
         self._set_preview_initial_loading(side, False)
+        self._refresh_tempo_summary(side)
 
     def _set_preview_events(
         self, side: str, events: Sequence[NoteEvent]
@@ -124,6 +138,62 @@ class PreviewRenderingMixin:
         self._update_preview_fingering(side)
         return normalized
 
+    def _refresh_tempo_summary(
+        self, side: str, tempo_value: float | None = None
+    ) -> None:
+        tempo_maps = getattr(self, "_preview_tempo_maps", {})
+        tempo_changes = tempo_maps.get(side, ()) if isinstance(tempo_maps, dict) else ()
+        if not tempo_changes:
+            marker_store = getattr(self, "_preview_tempo_marker_pairs", None)
+            if isinstance(marker_store, dict):
+                marker_store[side] = ()
+            self._update_tempo_marker_widgets(side)
+            return
+        tempo_bases = getattr(self, "_preview_tempo_bases", {})
+        base = tempo_bases.get(side, 120.0) if isinstance(tempo_bases, dict) else 120.0
+        target = tempo_value
+        if target is None:
+            tempo_vars = getattr(self, "_preview_tempo_vars", {})
+            tempo_var = tempo_vars.get(side) if isinstance(tempo_vars, dict) else None
+            if tempo_var is not None:
+                try:
+                    target = float(tempo_var.get())
+                except (tk.TclError, TypeError, ValueError):
+                    target = None
+        if target is None:
+            target = base
+        marker_pairs = scaled_tempo_marker_pairs(tempo_changes, target)
+        marker_store = getattr(self, "_preview_tempo_marker_pairs", None)
+        if isinstance(marker_store, dict):
+            marker_store[side] = marker_pairs
+        self._update_tempo_marker_widgets(side)
+
+    def _update_tempo_marker_widgets(self, side: str) -> None:
+        marker_store = getattr(self, "_preview_tempo_marker_pairs", {})
+        markers = ()
+        if isinstance(marker_store, dict):
+            markers = marker_store.get(side, ())
+
+        roll: Optional[PianoRoll]
+        staff: Optional[StaffView]
+        if side == "original":
+            roll = self.roll_orig
+            staff = self.staff_orig
+        else:
+            roll = self.roll_arr
+            staff = self.staff_arr
+
+        if roll is not None and hasattr(roll, "set_tempo_markers"):
+            try:
+                roll.set_tempo_markers(markers)
+            except Exception:
+                logger.exception("Failed to update piano roll tempo markers")
+        if staff is not None and hasattr(staff, "set_tempo_markers"):
+            try:
+                staff.set_tempo_markers(markers)
+            except Exception:
+                logger.exception("Failed to update staff tempo markers")
+
     def _prepare_preview_playback(
         self, side: str, events: tuple[NoteEvent, ...], data: PreviewData
     ) -> None:
@@ -136,6 +206,7 @@ class PreviewRenderingMixin:
             data.tempo_bpm,
             int(data.beats),
             int(data.beat_type),
+            tuple(getattr(data, "tempo_changes", ())),
         )
         tempo_value = spec[2]
         try:
@@ -192,7 +263,15 @@ class PreviewRenderingMixin:
             self._viewmodel.update_preview_settings(updated_settings)
         initialized = side in getattr(self, "_preview_tab_initialized", set())
         pending: Dict[
-            str, Tuple[tuple[NoteEvent, ...], int, float | None, int, int]
+            str,
+            Tuple[
+                tuple[NoteEvent, ...],
+                int,
+                float | None,
+                int,
+                int,
+                tuple[TempoChange, ...],
+            ],
         ] = getattr(
             self, "_pending_preview_playback", {}
         )
@@ -202,6 +281,7 @@ class PreviewRenderingMixin:
                 events,
                 spec[1],
                 tempo_bpm=spec[2],
+                tempo_changes=spec[5],
                 beats_per_measure=spec[3],
                 beat_unit=spec[4],
             )
@@ -225,7 +305,15 @@ class PreviewRenderingMixin:
 
     def _load_pending_preview_playback(self, side: str) -> None:
         pending: Dict[
-            str, Tuple[tuple[NoteEvent, ...], int, float | None, int, int]
+            str,
+            Tuple[
+                tuple[NoteEvent, ...],
+                int,
+                float | None,
+                int,
+                int,
+                tuple[TempoChange, ...],
+            ],
         ] = getattr(
             self, "_pending_preview_playback", {}
         )
@@ -235,11 +323,19 @@ class PreviewRenderingMixin:
         playback = self._preview_playback.get(side)
         if playback is None:
             return
-        events, pulses_per_quarter, tempo_bpm, beats_per_measure, beat_unit = spec
+        (
+            events,
+            pulses_per_quarter,
+            tempo_bpm,
+            beats_per_measure,
+            beat_unit,
+            tempo_changes,
+        ) = spec
         playback.load(
             events,
             pulses_per_quarter,
             tempo_bpm=tempo_bpm,
+            tempo_changes=tempo_changes,
             beats_per_measure=beats_per_measure,
             beat_unit=beat_unit,
         )
@@ -255,6 +351,8 @@ class PreviewRenderingMixin:
         snapshot = viewmodel_settings.get(side)
         if isinstance(snapshot, PreviewPlaybackSnapshot):
             self._apply_preview_snapshot(side, snapshot)
+        else:
+            self._refresh_tempo_summary(side, tempo_value=tempo_to_apply)
 
     def _current_playback_midi(self, side: str) -> Optional[int]:
         events = self._preview_events.get(side, ())

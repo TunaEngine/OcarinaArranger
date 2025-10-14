@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, Sequence, Tuple
 
+from shared.tempo import TempoChange
+
 
 Event = Tuple[int, int, int, int]
 
@@ -42,7 +44,12 @@ class PreviewPlaybackState:
 class AudioRenderer(Protocol):
     """Minimal protocol for coordinating an audio playback backend."""
 
-    def prepare(self, events: Sequence[Event], pulses_per_quarter: int) -> None:
+    def prepare(
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        tempo_changes: Sequence[TempoChange] | None = None,
+    ) -> None:
         ...
 
     def start(self, position_tick: int, tempo_bpm: float) -> bool:
@@ -91,7 +98,12 @@ class AudioRenderListener(Protocol):
 class NullAudioRenderer:
     """Fallback renderer that performs no actual audio output."""
 
-    def prepare(self, events: Sequence[Event], pulses_per_quarter: int) -> None:  # noqa: D401 - protocol compliance
+    def prepare(
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        tempo_changes: Sequence[TempoChange] | None = None,
+    ) -> None:  # noqa: D401 - protocol compliance
         return None
 
     def start(self, position_tick: int, tempo_bpm: float) -> bool:

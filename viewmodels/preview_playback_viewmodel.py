@@ -16,6 +16,12 @@ from .preview_playback_types import (
     NullAudioRenderer,
     PreviewPlaybackState,
 )
+from shared.tempo import (
+    TempoChange,
+    TempoMap,
+    first_tempo,
+    normalized_tempo_changes,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +34,8 @@ class PreviewPlaybackViewModel:
         self._supports_audio = not isinstance(self._audio, NullAudioRenderer)
         self.state = PreviewPlaybackState()
         self._events: tuple[Event, ...] = ()
+        self._tempo_changes: tuple[TempoChange, ...] = ()
+        self._tempo_map: TempoMap | None = None
         self._fractional_ticks = 0.0
         self._state_lock = threading.Lock()
         self._prepared_signature: bytes | None = None
@@ -50,11 +58,16 @@ class PreviewPlaybackViewModel:
         pulses_per_quarter: int,
         *,
         tempo_bpm: float | None = None,
+        tempo_changes: Sequence[TempoChange] | None = None,
         beats_per_measure: int = 4,
         beat_unit: int = 4,
     ) -> None:
         normalized_events = tuple(events)
-        signature = self._compute_events_signature(normalized_events, pulses_per_quarter)
+        normalized_tempi = tuple(tempo_changes or ())
+        default_tempo = first_tempo(normalized_tempi, default=self.state.tempo_bpm)
+        signature = self._compute_events_signature(
+            normalized_events, pulses_per_quarter, normalized_tempi
+        )
 
         was_loaded = self.state.is_loaded
         was_playing = self.state.is_playing
@@ -80,6 +93,7 @@ class PreviewPlaybackViewModel:
             self.state.last_error = None
 
         self._events = normalized_events
+        self._tempo_changes = normalized_tempi
         duration = (
             max((onset + duration) for onset, duration, _midi, _program in self._events)
             if self._events
@@ -98,12 +112,13 @@ class PreviewPlaybackViewModel:
         self.state.metronome_enabled = False
         self._fractional_ticks = 0.0
 
+        desired_tempo = default_tempo
         if tempo_bpm is not None:
             try:
-                normalized_tempo = self._normalize_tempo(float(tempo_bpm))
+                desired_tempo = float(tempo_bpm)
             except (TypeError, ValueError):
-                normalized_tempo = self.state.tempo_bpm
-            self.state.tempo_bpm = normalized_tempo
+                desired_tempo = default_tempo
+        self.state.tempo_bpm = self._normalize_tempo(desired_tempo)
 
         # Ensure the audio renderer discards any previously configured loop.
         self._audio.set_loop(self.state.loop)
@@ -111,7 +126,9 @@ class PreviewPlaybackViewModel:
         if events_changed:
             if self._render_tracker.mark_pending(len(self._events)):
                 self._notify_render_observer()
-            self._audio.prepare(self._events, pulses_per_quarter)
+            self._audio.prepare(
+                self._events, pulses_per_quarter, tempo_changes=self._tempo_changes
+            )
             self._prepared_signature = signature
             logger.debug(
                 "PreviewPlaybackViewModel.load: scheduled async render for %d events (ppq=%d)",
@@ -127,6 +144,7 @@ class PreviewPlaybackViewModel:
                 pulses_per_quarter,
             )
 
+        self._rebuild_tempo_map(self.state.tempo_bpm)
         self._audio.set_tempo(self.state.tempo_bpm)
         self._notify_render_observer()
 
@@ -203,6 +221,19 @@ class PreviewPlaybackViewModel:
         if self._pending_playback_resume:
             return
 
+        tempo_map = self._tempo_map
+        if tempo_map is not None:
+            start_tick = self.state.position_tick
+            start_seconds = tempo_map.seconds_at(start_tick)
+            target_seconds = start_seconds + elapsed_seconds
+            target_tick = tempo_map.seconds_to_tick(target_seconds)
+            whole_ticks = max(0, int(target_tick - start_tick))
+            if whole_ticks <= 0:
+                return
+            self._fractional_ticks = 0.0
+            self._move_forward(whole_ticks)
+            return
+
         ticks_per_second = (self.state.tempo_bpm / 60.0) * self.state.pulses_per_quarter
         self._fractional_ticks += elapsed_seconds * ticks_per_second
         whole_ticks = int(self._fractional_ticks)
@@ -237,6 +268,7 @@ class PreviewPlaybackViewModel:
             return
 
         self.state.tempo_bpm = tempo_bpm
+        self._rebuild_tempo_map(tempo_bpm)
         self._audio.set_tempo(tempo_bpm)
         if self._render_tracker.mark_pending(len(self._events)):
             self._notify_render_observer()
@@ -248,6 +280,25 @@ class PreviewPlaybackViewModel:
         if tempo_bpm <= 0:
             return 30.0
         return max(30.0, min(400.0, tempo_bpm))
+
+    def _rebuild_tempo_map(self, target_first: float) -> None:
+        try:
+            pulses = max(1, int(self.state.pulses_per_quarter))
+        except Exception:
+            pulses = 1
+        try:
+            normalized = normalized_tempo_changes(float(target_first), self._tempo_changes)
+            self._tempo_map = TempoMap(pulses, normalized)
+        except Exception:
+            self._tempo_map = None
+
+    def seconds_at_tick(self, tick: int) -> float:
+        tempo_map = self._tempo_map
+        if tempo_map is not None:
+            return tempo_map.seconds_at(max(0, int(tick)))
+        pulses = max(1, self.state.pulses_per_quarter)
+        tempo = max(self.state.tempo_bpm, 1e-6)
+        return max(0, int(tick)) / pulses * 60.0 / tempo
 
     def set_metronome(self, enabled: bool) -> None:
         if not self.state.is_loaded:
@@ -459,7 +510,10 @@ class PreviewPlaybackViewModel:
         return self.state.duration_tick
 
     def _compute_events_signature(
-        self, events: Sequence[Event], pulses_per_quarter: int
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        tempo_changes: Sequence[TempoChange],
     ) -> bytes:
         hasher = hashlib.blake2b(digest_size=24)
         hasher.update(int(max(0, pulses_per_quarter)).to_bytes(4, "little", signed=False))
@@ -469,6 +523,11 @@ class PreviewPlaybackViewModel:
             hasher.update(int(max(0, duration)).to_bytes(8, "little", signed=False))
             hasher.update(int(max(0, midi)).to_bytes(2, "little", signed=False))
             hasher.update(int(max(0, program)).to_bytes(2, "little", signed=False))
+        hasher.update(len(tempo_changes).to_bytes(4, "little", signed=False))
+        for change in tempo_changes:
+            hasher.update(int(max(0, change.tick)).to_bytes(8, "little", signed=False))
+            tempo_scaled = int(round(max(1.0, change.tempo_bpm * 1000.0)))
+            hasher.update(tempo_scaled.to_bytes(8, "little", signed=False))
         return hasher.digest()
 
 

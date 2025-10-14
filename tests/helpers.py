@@ -180,4 +180,69 @@ def make_linear_score_with_tempo(tempo: int = 96) -> tuple[ET.ElementTree, ET.El
     return tree, tree.getroot()
 
 
-__all__ = ["make_chord_score", "make_linear_score", "make_linear_score_with_tempo"]
+def make_score_with_tempo_changes() -> tuple[ET.ElementTree, ET.Element]:
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1">
+              <part-name>Solo</part-name>
+            </score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>4</divisions>
+              </attributes>
+              <direction placement="above">
+                <sound tempo="180" />
+              </direction>
+              <note>
+                <pitch>
+                  <step>C</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>4</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+            <measure number="2">
+              <direction placement="above">
+                <sound tempo="120" />
+              </direction>
+              <note>
+                <pitch>
+                  <step>D</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>4</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+            <measure number="3">
+              <direction placement="above">
+                <sound tempo="210" />
+              </direction>
+              <note>
+                <pitch>
+                  <step>E</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>4</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    tree = ET.ElementTree(ET.fromstring(xml))
+    return tree, tree.getroot()
+
+
+__all__ = [
+    "make_chord_score",
+    "make_linear_score",
+    "make_linear_score_with_tempo",
+    "make_score_with_tempo_changes",
+]

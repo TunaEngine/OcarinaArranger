@@ -62,11 +62,16 @@ def _build_modern_preview_side(
     layout_area.grid(row=2, column=0, sticky="nsew")
     layout_area.grid_columnconfigure(0, weight=1)
     layout_area.grid_rowconfigure(0, weight=1)
-    layout_area.grid_rowconfigure(1, weight=0)
+
+    content_area = ttk.Frame(layout_area, style="Panel.TFrame")
+    content_area.grid(row=0, column=0, sticky="nsew")
+    content_area.grid_columnconfigure(0, weight=1)
+    content_area.grid_rowconfigure(0, weight=1)
+    content_area.grid_rowconfigure(1, weight=0)
 
     register_main = getattr(app, "_preview_main_frames", None)
     if isinstance(register_main, dict):
-        register_main[side] = layout_area
+        register_main[side] = content_area
 
     transport = ttk.Frame(main, padding=(0, 4), style="Panel.TFrame")
     transport.grid(row=0, column=0, sticky="ew")
@@ -230,9 +235,9 @@ def _build_modern_preview_side(
         row=1, column=0, sticky="ew", pady=(6, 6)
     )
 
-    roll = PianoRoll(layout_area, show_fingering=False)
+    roll = PianoRoll(content_area, show_fingering=False)
     roll.grid(row=0, column=0, sticky="nsew")
-    staff = StaffView(layout_area)
+    staff = StaffView(content_area)
     staff.grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
     register_roll = getattr(app, "_preview_roll_widgets", None)
@@ -252,8 +257,8 @@ def _build_modern_preview_side(
         except tk.TclError:
             manager = ""
         if manager != "grid":
-            layout_area.grid_rowconfigure(0, weight=1, minsize=0)
-            layout_area.grid_rowconfigure(1, weight=0, minsize=0)
+            content_area.grid_rowconfigure(0, weight=1, minsize=0)
+            content_area.grid_rowconfigure(1, weight=0, minsize=0)
             return
         try:
             staff.update_idletasks()
@@ -267,11 +272,11 @@ def _build_modern_preview_side(
         except Exception:
             row = 1
         if row == 0:
-            layout_area.grid_rowconfigure(0, weight=1, minsize=staff_height)
-            layout_area.grid_rowconfigure(1, weight=0, minsize=0)
+            content_area.grid_rowconfigure(0, weight=1, minsize=staff_height)
+            content_area.grid_rowconfigure(1, weight=0, minsize=0)
         else:
-            layout_area.grid_rowconfigure(0, weight=1, minsize=0)
-            layout_area.grid_rowconfigure(1, weight=0, minsize=staff_height)
+            content_area.grid_rowconfigure(0, weight=1, minsize=0)
+            content_area.grid_rowconfigure(1, weight=0, minsize=staff_height)
 
     staff.bind("<Configure>", _sync_staff_constraints, add=True)
     main.after_idle(_sync_staff_constraints)

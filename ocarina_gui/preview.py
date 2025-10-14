@@ -9,14 +9,15 @@ from typing import Sequence, Tuple
 
 from ocarina_tools import (
     NoteEvent,
+    TempoChange,
     detect_tempo_bpm,
     favor_lower_register,
     get_note_events,
+    get_tempo_changes,
     get_time_signature,
     load_score,
     transform_to_ocarina,
 )
-
 from .settings import TransformSettings
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class PreviewData:
     original_range: Tuple[int, int]
     arranged_range: Tuple[int, int]
     tempo_bpm: int
+    tempo_changes: Sequence[TempoChange]
 
 
 def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewData:
@@ -36,6 +38,7 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
     events_original, pulses_per_quarter = get_note_events(root_original)
     beats, beat_type = get_time_signature(root_original)
     tempo_bpm = detect_tempo_bpm(root_original)
+    tempo_changes = get_tempo_changes(root_original, default_bpm=tempo_bpm)
 
     # ``transform_to_ocarina`` mutates the supplied score. Deep copy the
     # original tree so we avoid re-loading the file from disk when only the
@@ -71,6 +74,7 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
         original_range=original_range,
         arranged_range=arranged_range,
         tempo_bpm=tempo_bpm,
+        tempo_changes=tuple(tempo_changes),
     )
 
 

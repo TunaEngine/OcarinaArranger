@@ -24,9 +24,11 @@ class _StubAudioRenderer(AudioRenderer):
         self.loop_region = None
         self.volume = 1.0
         self.volume_requires_render = False
+        self.tempo_changes = ()
 
-    def prepare(self, events, pulses_per_quarter):  # type: ignore[override]
+    def prepare(self, events, pulses_per_quarter, tempo_changes=None):  # type: ignore[override]
         self._begin_render()
+        self.tempo_changes = tuple(tempo_changes or ())
 
     def start(self, position_tick: int, tempo_bpm: float) -> bool:  # noqa: D401 - protocol compliance
         self._is_playing = True

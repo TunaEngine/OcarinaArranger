@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from ocarina_tools.events import get_note_events
+from ocarina_tools.events import detect_tempo_bpm, get_note_events, get_tempo_changes
 
 from ..fingering import get_current_instrument
 from .layouts import resolve_layout
@@ -16,6 +16,7 @@ from .pages.piano_roll import build_piano_roll_pages
 from .pages.staff import build_staff_pages
 from .pages.text import build_text_page
 from .writer import PdfWriter
+from shared.tempo import first_tempo
 
 __all__ = ["export_arranged_pdf"]
 
@@ -46,6 +47,10 @@ def export_arranged_pdf(
 
     instrument = get_current_instrument()
 
+    tempo_bpm = detect_tempo_bpm(root)
+    tempo_changes = get_tempo_changes(root, default_bpm=tempo_bpm)
+    tempo_base = first_tempo(tempo_changes, default=tempo_bpm)
+
     notes: list[ArrangedNote] = []
     grouped_patterns: list[PatternData] = []
     missing_notes: list[str] = []
@@ -58,18 +63,34 @@ def export_arranged_pdf(
 
     if include_piano_roll:
         piano_pages = build_piano_roll_pages(
-            layout, events, pulses_per_quarter, prefer_flats
+            layout,
+            events,
+            pulses_per_quarter,
+            prefer_flats,
+            tempo_changes=tempo_changes,
+            tempo_base=tempo_base,
         )
         for page in piano_pages:
             writer.add_page(page)
 
     if include_text:
-        text_pages = build_text_page(layout, instrument, page_size.upper(), notes)
+        text_pages = build_text_page(
+            layout,
+            instrument,
+            page_size.upper(),
+            notes,
+        )
         for page in text_pages:
             writer.add_page(page)
 
     if include_staff:
-        staff_pages = build_staff_pages(layout, events, pulses_per_quarter)
+        staff_pages = build_staff_pages(
+            layout,
+            events,
+            pulses_per_quarter,
+            tempo_changes=tempo_changes,
+            tempo_base=tempo_base,
+        )
         for page in staff_pages:
             writer.add_page(page)
 

@@ -46,7 +46,8 @@ def build_text_page(
     if not entry_lines:
         page = PageBuilder(layout)
         draw_document_header(page, layout, header_lines)
-        label_top = layout.margin_top + header_height + header_gap
+        content_top = layout.margin_top + header_height + header_gap
+        label_top = content_top
         label_height = _draw_fingering_labels(
             page,
             hole_labels,
@@ -72,12 +73,11 @@ def build_text_page(
 
         draw_document_header(page, layout, header_lines)
 
-        label_top = layout.margin_top + header_height + header_gap
+        content_top = layout.margin_top + header_height + header_gap
+        label_top = content_top
         remaining = total_entries - index
         estimated_label_height = _estimate_label_height(hole_labels, char_step)
-        estimated_y_start = (
-            label_top + estimated_label_height + layout.line_height * 0.5
-        )
+        estimated_y_start = label_top + estimated_label_height + layout.line_height * 0.5
         available_height = layout.height - layout.margin_bottom - estimated_y_start
         lines_per_column = max(1, int(available_height // layout.line_height))
         columns_for_page = min(
@@ -145,8 +145,6 @@ def _build_document_lines(
 
     column_offset = _fingering_column_offset(entry_lines, notes)
     return entry_lines, hole_labels, column_offset
-
-
 def _iter_hole_labels(instrument: InstrumentSpec) -> Iterable[str]:
     for index, hole in enumerate(instrument.holes, start=1):
         identifier = (hole.identifier or "").strip()

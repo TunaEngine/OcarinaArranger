@@ -12,6 +12,7 @@ from ocarina_gui.preview import PreviewData
 from ocarina_gui.preferences import PREVIEW_LAYOUT_MODES
 from ocarina_gui.staff import StaffView
 from ocarina_tools import NoteEvent
+from shared.tempo import TempoChange
 from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 
 
@@ -82,6 +83,20 @@ class PreviewInitialisationMixin:
             "arranged": tk.DoubleVar(
                 master=self, value=self._preview_playback["arranged"].state.tempo_bpm
             ),
+        }
+        self._preview_tempo_maps: dict[str, tuple[TempoChange, ...]] = {
+            "original": (),
+            "arranged": (),
+        }
+        self._preview_tempo_bases: dict[str, float] = {
+            "original": self._preview_playback["original"].state.tempo_bpm,
+            "arranged": self._preview_playback["arranged"].state.tempo_bpm,
+        }
+        self._preview_tempo_marker_pairs: dict[
+            str, tuple[tuple[int, str], ...]
+        ] = {
+            "original": (),
+            "arranged": (),
         }
         self._preview_metronome_vars = {
             "original": tk.BooleanVar(

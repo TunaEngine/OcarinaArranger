@@ -170,7 +170,13 @@ class PreviewSettingsMixin:
         if tempo_var is not None:
             self._suspend_tempo_update.add(side)
             try:
-                tempo_var.set(float(applied["tempo"]))
+                tempo_value = float(applied["tempo"])
+                tempo_var.set(tempo_value)
+                if hasattr(self, "_refresh_tempo_summary"):
+                    try:
+                        self._refresh_tempo_summary(side, tempo_value=tempo_value)
+                    except Exception:
+                        pass
             except (tk.TclError, ValueError):
                 pass
             finally:
@@ -219,6 +225,11 @@ class PreviewSettingsMixin:
             self._suspend_tempo_update.add(side)
             try:
                 tempo_var.set(tempo)
+                if hasattr(self, "_refresh_tempo_summary"):
+                    try:
+                        self._refresh_tempo_summary(side, tempo_value=tempo)
+                    except Exception:
+                        pass
             except (tk.TclError, ValueError):
                 pass
             finally:

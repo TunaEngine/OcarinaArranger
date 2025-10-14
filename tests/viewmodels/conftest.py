@@ -27,6 +27,7 @@ def preview_data() -> PreviewData:
         original_range=(60, 72),
         arranged_range=(60, 72),
         tempo_bpm=120,
+        tempo_changes=(),
     )
 
 

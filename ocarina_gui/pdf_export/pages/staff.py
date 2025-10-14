@@ -21,6 +21,13 @@ from ..header import (
 from ..types import NoteEvent
 from ..writer import PageBuilder
 from ...note_values import NoteGlyphDescription, describe_note_glyph
+from shared.tempo import TempoChange, scaled_tempo_marker_pairs
+
+from ._tempo import (
+    TEMPO_MARKER_BARLINE_PADDING,
+    draw_tempo_marker,
+    tempo_marker_total_width,
+)
 
 
 SHARP_SEMITONES = {1, 3, 6, 8, 10}
@@ -30,6 +37,9 @@ def build_staff_pages(
     layout: PdfLayout,
     events: Sequence[NoteEvent],
     pulses_per_quarter: int,
+    *,
+    tempo_changes: Sequence[TempoChange] | None = None,
+    tempo_base: float | None = None,
 ) -> List[PageBuilder]:
     header_lines = build_header_lines()
     header_height = compute_header_height(layout, header_lines)
@@ -82,6 +92,10 @@ def build_staff_pages(
     total_pages = len(page_indices)
     pages: List[PageBuilder] = []
 
+    tempo_markers: tuple[tuple[int, str], ...] = ()
+    if tempo_changes and tempo_base is not None:
+        tempo_markers = scaled_tempo_marker_pairs(tempo_changes, tempo_base)
+
     for page_number, index in enumerate(page_indices, start=1):
         builder = PageBuilder(layout)
         _draw_staff_page(
@@ -101,6 +115,7 @@ def build_staff_pages(
             header_lines,
             header_height,
             header_gap,
+            tempo_markers,
         )
         pages.append(builder)
 
@@ -124,6 +139,7 @@ def _draw_staff_page(
     header_lines: Sequence[str],
     header_height: float,
     header_gap: float,
+    tempo_markers: Sequence[tuple[int, str]],
 ) -> None:
     layout = page.layout
     left = layout.margin_left
@@ -182,13 +198,15 @@ def _draw_staff_page(
 
         staff_width = max(1.0, staff_right - staff_left - 20)
         scale_x = staff_width / max(1.0, float(system_span))
+        system_left_x = staff_left + 10
+        system_right_x = system_left_x + system_span * scale_x
 
         tick = max(0, (system_start // ticks_per_measure) * ticks_per_measure)
         measure_font = max(6.0, layout.font_size - 3)
         while tick <= system_start + system_span:
             local = tick - system_start
             if local >= 0:
-                x = staff_left + 10 + local * scale_x
+                x = system_left_x + local * scale_x
                 line_top = system_box_top + 6
                 page.draw_line(x, line_top, x, staff_bottom + 18, gray=0.75, line_width=0.5)
                 measure_number = tick // max(1, ticks_per_measure) + 1
@@ -203,8 +221,22 @@ def _draw_staff_page(
             tick += ticks_per_measure
 
         system_end = system_start + system_span
-        system_right_x = staff_left + 10 + system_span * scale_x
-        system_left_x = staff_left + 10
+
+        system_markers = [
+            (tick, label)
+            for tick, label in tempo_markers
+            if system_start <= tick < system_end
+        ]
+        if system_markers:
+            tempo_font = max(6.0, layout.font_size - 2.0)
+            marker_y = system_box_top + 10
+            for tick, label in system_markers:
+                local = tick - system_start
+                anchor_x = system_left_x + local * scale_x + TEMPO_MARKER_BARLINE_PADDING
+                total_width = tempo_marker_total_width(page, label, tempo_font)
+                max_left = max(system_left_x, system_right_x - total_width)
+                left = max(system_left_x, min(max_left, anchor_x))
+                draw_tempo_marker(page, left, marker_y, label, font_size=tempo_font)
 
         system_events = [
             event

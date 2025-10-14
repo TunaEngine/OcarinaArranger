@@ -14,6 +14,7 @@ from viewmodels.preview_playback_viewmodel import (
     AudioRenderer,
     LoopRegion,
 )
+from shared.tempo import TempoChange
 
 from ..players import _AudioPlayer, _PlaybackHandle
 from .patches import _SynthPatch, _patch_for_program
@@ -21,6 +22,7 @@ from .rendering import (
     Event,
     MetronomeSettings,
     RenderConfig,
+    TempoMap,
     note_segment,
     render_events,
     tempo_cache_key,
@@ -82,6 +84,7 @@ class _SynthRenderer(AudioRenderer):
         self._ppq: int = 480
         self._loop: LoopRegion = LoopRegion()
         self._tempo: float = 120.0
+        self._tempo_changes: tuple[TempoChange, ...] = ()
         self._handle: Optional[_PlaybackHandle] = None
         self._position_tick: int = 0
         self._is_playing = False
@@ -108,11 +111,19 @@ class _SynthRenderer(AudioRenderer):
             t.join(timeout=1.0)
         self._resume_threads.clear()
 
-    def prepare(self, events: Sequence[Event], pulses_per_quarter: int) -> None:
+    def prepare(
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        tempo_changes: Sequence[TempoChange] | None = None,
+    ) -> None:
         self._stop_playback()
         self._events = tuple(events)
         self._ppq = max(1, pulses_per_quarter)
-        self._worker.update_source(self._events, self._ppq, self._tempo)
+        self._tempo_changes = tuple(tempo_changes or ())
+        self._worker.update_source(
+            self._events, self._ppq, self._tempo, self._tempo_changes
+        )
         self._position_tick = 0
         self._ensure_buffer(force=True, wait=False)
         _safe_debug(
@@ -274,6 +285,7 @@ class _SynthRenderer(AudioRenderer):
             )
         self._worker.ensure_buffer(
             tempo=self._tempo,
+            tempo_changes=self._tempo_changes,
             force=force,
             wait=wait,
             listener=self._render_listener,
@@ -287,7 +299,8 @@ class _SynthRenderer(AudioRenderer):
         pulses_per_quarter: int,
         metronome: MetronomeSettings,
         progress_callback: Callable[[float], None] | None = None,
-    ) -> tuple[bytes, float]:
+        tempo_changes: Sequence[TempoChange] | None = None,
+    ) -> tuple[bytes, TempoMap]:
         config = RenderConfig(
             sample_rate=self._SAMPLE_RATE,
             amplitude=self._AMPLITUDE,
@@ -295,7 +308,12 @@ class _SynthRenderer(AudioRenderer):
             metronome=metronome,
         )
         return render_events(
-            events, tempo, pulses_per_quarter, config, progress_callback
+            events,
+            tempo,
+            pulses_per_quarter,
+            config,
+            progress_callback,
+            tempo_changes=tempo_changes or self._tempo_changes,
         )
 
     def _restart_after_render(self, generation: int, position: int) -> None:
@@ -332,8 +350,7 @@ class _SynthRenderer(AudioRenderer):
                 _safe_debug("SynthRenderer._play_from_tick: no buffer to play")
                 return False
             self._stop_handle_only()
-            ticks_per_second = max(self._worker.ticks_per_second, 1e-3)
-            start_sample = int(round(tick / ticks_per_second * self._SAMPLE_RATE))
+            start_sample = self._worker.tick_to_sample(tick, self._SAMPLE_RATE)
             byte_offset = max(0, min(len(buffer), start_sample * 2))
             if byte_offset >= len(buffer):
                 self._is_playing = False

@@ -105,15 +105,27 @@ class PreviewInputHandlersMixin:
         self._update_playback_visuals(side)
 
     def _on_preview_tempo_changed(self, side: str, *_args: object) -> None:
-        if side in self._suspend_tempo_update:
-            return
         var = self._preview_tempo_vars.get(side)
         if var is None:
             return
         try:
             value = float(var.get())
         except (tk.TclError, ValueError):
+            if hasattr(self, "_refresh_tempo_summary"):
+                try:
+                    self._refresh_tempo_summary(side, tempo_value=None)
+                except Exception:
+                    pass
+            if side in self._suspend_tempo_update:
+                return
             self._update_preview_apply_cancel_state(side, valid=False)
+            return
+        if hasattr(self, "_refresh_tempo_summary"):
+            try:
+                self._refresh_tempo_summary(side, tempo_value=value)
+            except Exception:
+                pass
+        if side in self._suspend_tempo_update:
             return
         self._update_preview_apply_cancel_state(side, tempo=value)
 

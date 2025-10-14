@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from shared.tempo import TempoChange
+
 from viewmodels.preview_playback_viewmodel import (
     LoopRegion,
     PreviewPlaybackState,
@@ -26,10 +28,12 @@ class StubAudioRenderer:
         self.prepare_calls = 0
         self.auto_render = True
         self.volume_requires_render = False
+        self.tempo_changes: tuple = ()
 
-    def prepare(self, events, pulses_per_quarter: int) -> None:  # type: ignore[override]
+    def prepare(self, events, pulses_per_quarter: int, tempo_changes=None) -> None:  # type: ignore[override]
         self.prepare_calls += 1
         self.prepared = (tuple(events), pulses_per_quarter)
+        self.tempo_changes = tuple(tempo_changes or ())
         self._notify_render()
 
     def start(self, position_tick: int, tempo_bpm: float) -> bool:
@@ -179,6 +183,33 @@ def test_advance_updates_position_and_stops_at_end() -> None:
     # Advancing past the end should clamp to the duration and stop playback.
     viewmodel.advance(1.0)
     assert viewmodel.state.position_tick == viewmodel.state.duration_tick
+    assert not viewmodel.state.is_playing
+
+
+def test_advance_respects_variable_tempo_changes() -> None:
+    viewmodel, renderer = _build_viewmodel()
+    events = _make_events((0, 480, 60), (480, 480, 62))
+    tempo_changes = (
+        TempoChange(tick=0, tempo_bpm=120.0),
+        TempoChange(tick=480, tempo_bpm=60.0),
+    )
+
+    viewmodel.load(
+        events,
+        pulses_per_quarter=480,
+        tempo_bpm=120.0,
+        tempo_changes=tempo_changes,
+        beats_per_measure=4,
+        beat_unit=4,
+    )
+    renderer.trigger_render()
+    viewmodel.toggle_playback()
+
+    viewmodel.advance(0.5)
+    assert viewmodel.state.position_tick == 480
+
+    viewmodel.advance(1.0)
+    assert viewmodel.state.position_tick == 960
     assert not viewmodel.state.is_playing
 
 

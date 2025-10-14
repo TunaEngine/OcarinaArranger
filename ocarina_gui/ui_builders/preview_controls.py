@@ -194,7 +194,6 @@ def build_arranged_preview_controls(app: "App", parent: ttk.Frame, side: str) ->
         textvariable=app._preview_tempo_vars[side],
     )
     tempo_spin.pack(side="right")
-
     metronome_row = ttk.Frame(playback_box, style="Panel.TFrame")
     metronome_row.pack(fill="x", pady=(6, 0))
     metronome_check = ttk.Checkbutton(

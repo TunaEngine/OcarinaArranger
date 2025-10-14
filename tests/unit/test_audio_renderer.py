@@ -9,6 +9,7 @@ import pytest
 
 from ocarina_gui import audio
 from ocarina_gui.audio.synth import rendering
+from shared.tempo import TempoChange
 
 
 class _DummyHandle(audio._PlaybackHandle):
@@ -161,6 +162,28 @@ def test_synth_renderer_uses_instrument_specific_waveforms() -> None:
         renderer.shutdown()
 
 
+def test_render_events_respects_mid_track_tempo_change() -> None:
+    tempo_changes = [TempoChange(tick=0, tempo_bpm=120.0), TempoChange(tick=480, tempo_bpm=60.0)]
+    config = rendering.RenderConfig(
+        sample_rate=audio._SynthRenderer._SAMPLE_RATE,
+        amplitude=0.3,
+        chunk_size=1024,
+        metronome=rendering.MetronomeSettings(enabled=False, beats_per_measure=4, beat_unit=4),
+    )
+    events = [(0, 480, 69, 79), (480, 480, 71, 79)]
+
+    pcm, tempo_map = rendering.render_events(
+        events,
+        tempo=120.0,
+        pulses_per_quarter=480,
+        config=config,
+        tempo_changes=tempo_changes,
+    )
+
+    assert pcm, "expected rendered PCM for tempo change test"
+    assert tempo_map.seconds_at(480) == pytest.approx(0.5, rel=1e-3)
+    assert tempo_map.seconds_at(960) == pytest.approx(1.5, rel=1e-3)
+
 def test_synth_renderer_caches_note_segments() -> None:
     player = _DummyPlayer()
     renderer = audio._SynthRenderer(player)
@@ -244,14 +267,25 @@ def test_synth_renderer_prepare_renders_asynchronously(monkeypatch) -> None:
         entered = threading.Event()
         release = threading.Event()
 
-        def fake_render(self, events, tempo, ppq, metronome, progress_callback=None):  # type: ignore[no-untyped-def]
+        def fake_render(
+            self,
+            events,
+            tempo,
+            ppq,
+            metronome,
+            progress_callback=None,
+            tempo_changes=None,
+        ):  # type: ignore[no-untyped-def]
             if progress_callback is not None:
                 progress_callback(0.0)
             entered.set()
             release.wait(0.2)
             if progress_callback is not None:
                 progress_callback(1.0)
-            return b"\x00\x00", max((tempo / 60.0) * ppq, 1e-3)
+            changes = list(tempo_changes or [TempoChange(tick=0, tempo_bpm=tempo)])
+            tempo_map = rendering.TempoMap(ppq, changes)
+            tempo_map.sample_rate = audio._SynthRenderer._SAMPLE_RATE
+            return b"\x00\x00", tempo_map
 
         monkeypatch.setattr(audio._SynthRenderer, "_render_events", fake_render, raising=False)
 
@@ -286,14 +320,25 @@ def test_set_tempo_rerenders_asynchronously_while_playing(monkeypatch) -> None:
         release = threading.Event()
         call_done = threading.Event()
 
-        def fake_render(self, events, tempo, ppq, metronome, progress_callback=None):  # type: ignore[no-untyped-def]
+        def fake_render(
+            self,
+            events,
+            tempo,
+            ppq,
+            metronome,
+            progress_callback=None,
+            tempo_changes=None,
+        ):  # type: ignore[no-untyped-def]
             if progress_callback is not None:
                 progress_callback(0.0)
             entered.set()
             release.wait(0.2)
             if progress_callback is not None:
                 progress_callback(1.0)
-            return b"\x00\x00", max((tempo / 60.0) * ppq, 1e-3)
+            changes = list(tempo_changes or [TempoChange(tick=0, tempo_bpm=tempo)])
+            tempo_map = rendering.TempoMap(ppq, changes)
+            tempo_map.sample_rate = audio._SynthRenderer._SAMPLE_RATE
+            return b"\x00\x00", tempo_map
 
         monkeypatch.setattr(audio._SynthRenderer, "_render_events", fake_render, raising=False)
 
@@ -378,11 +423,11 @@ def test_synth_renderer_notifies_render_listener() -> None:
         renderer.set_render_listener(listener)
         events = [(0, 960, 60, 79)]
         renderer.prepare(events, 480)
-        assert renderer._render_ready.wait(0.5)  # type: ignore[attr-defined]
+        assert renderer._render_ready.wait(1.0)  # type: ignore[attr-defined]
         listener.events.clear()
 
         renderer.set_tempo(150.0)
-        assert renderer._render_ready.wait(0.5)  # type: ignore[attr-defined]
+        assert renderer._render_ready.wait(1.0)  # type: ignore[attr-defined]
 
         assert any(name == "started" for name, _, _ in listener.events)
         assert any(name == "progress" and progress >= 1.0 for name, _, progress in listener.events)

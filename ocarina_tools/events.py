@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import Iterable, List, Tuple
 import xml.etree.ElementTree as ET
 
 from .musicxml import first_divisions, get_pitch_data, qname
 from .instruments import OCARINA_GM_PROGRAM, part_programs
+from shared.tempo import TempoChange
 
 
 @dataclass(frozen=True)
@@ -199,28 +200,147 @@ def get_time_signature(root: ET.Element) -> tuple[int, int]:
 def detect_tempo_bpm(root: ET.Element, default_bpm: int = 120) -> int:
     """Return the first tempo marking found in ``root`` or ``default_bpm``."""
 
-    def _parse_tempo(value: str | None) -> int | None:
-        if not value:
-            return None
-        try:
-            bpm = int(float(value))
-        except (TypeError, ValueError):
-            return None
-        return max(20, min(300, bpm))
+    changes = get_tempo_changes(root, default_bpm=default_bpm)
+    if not changes:
+        return max(20, min(300, int(default_bpm)))
+    return int(round(changes[0].tempo_bpm))
+
+
+def get_tempo_changes(root: ET.Element, default_bpm: int = 120) -> list[TempoChange]:
+    """Extract tempo change events from ``root`` in ascending tick order."""
 
     q = lambda t: qname(root, t)
-    for part in root.findall(q('part')):
-        for measure in part.findall(q('measure')):
-            for direction in measure.findall(q('direction')):
-                sound = direction.find(q('sound'))
-                tempo = _parse_tempo(sound.get('tempo') if sound is not None else None)
-                if tempo is not None:
-                    return tempo
-            sound = measure.find(q('sound'))
-            tempo = _parse_tempo(sound.get('tempo') if sound is not None else None)
-            if tempo is not None:
-                return tempo
-    return max(20, min(300, int(default_bpm)))
+    ppq = 480
+    divisions = max(1, first_divisions(root))
+    scale = ppq / divisions
+
+    parts = root.findall(q('part'))
+    if not parts:
+        return [TempoChange(tick=0, tempo_bpm=float(_clamp_tempo(default_bpm)))]
+
+    changes: list[TempoChange] = []
+    for part in parts:
+        part_changes = list(_iter_tempo_changes_for_part(part, q, scale))
+        if part_changes:
+            changes = part_changes
+            break
+
+    if not changes:
+        return [TempoChange(tick=0, tempo_bpm=float(_clamp_tempo(default_bpm)))]
+
+    normalized: list[TempoChange] = []
+    seen_tick = None
+    for change in sorted(changes, key=lambda entry: max(0, entry.tick)):
+        tick = max(0, int(change.tick))
+        tempo_value = float(_clamp_tempo(change.tempo_bpm))
+        if seen_tick == tick:
+            normalized[-1] = TempoChange(tick=tick, tempo_bpm=tempo_value)
+            continue
+        normalized.append(TempoChange(tick=tick, tempo_bpm=tempo_value))
+        seen_tick = tick
+
+    if not normalized or normalized[0].tick > 0:
+        normalized.insert(0, TempoChange(tick=0, tempo_bpm=float(_clamp_tempo(default_bpm))))
+
+    pruned: list[TempoChange] = []
+    for change in normalized:
+        if pruned and abs(pruned[-1].tempo_bpm - change.tempo_bpm) <= 1e-6:
+            continue
+        pruned.append(change)
+    return pruned
+
+
+def _iter_tempo_changes_for_part(part: ET.Element, q, scale: float) -> Iterable[TempoChange]:
+    measure_start = 0.0
+    for measure in part.findall(q('measure')):
+        position = 0.0
+        max_position = 0.0
+        for element in list(measure):
+            tag = element.tag
+            if tag == q('direction'):
+                tempo_value = _tempo_from_direction(element, q)
+                if tempo_value is None:
+                    continue
+                offset = _parse_offset(element, q)
+                tick = int(round((measure_start + position + offset) * scale))
+                yield TempoChange(tick=tick, tempo_bpm=tempo_value)
+            elif tag == q('note'):
+                duration = _parse_duration(element.find(q('duration')))
+                if element.find(q('chord')) is None:
+                    position += duration
+                    if position > max_position:
+                        max_position = position
+            elif tag == q('backup'):
+                duration = _parse_duration(element.find(q('duration')))
+                position = max(0.0, position - duration)
+            elif tag == q('forward'):
+                duration = _parse_duration(element.find(q('duration')))
+                position += duration
+                if position > max_position:
+                    max_position = position
+        measure_start += max_position
+
+
+def _tempo_from_direction(direction: ET.Element, q) -> float | None:
+    sound = direction.find(q('sound'))
+    if sound is not None:
+        tempo_value = _parse_tempo(sound.get('tempo'))
+        if tempo_value is not None:
+            return tempo_value
+
+    for direction_type in direction.findall(q('direction-type')):
+        metronome = direction_type.find(q('metronome'))
+        if metronome is None:
+            continue
+        per_minute = metronome.find(q('per-minute'))
+        if per_minute is not None and per_minute.text:
+            tempo_value = _parse_tempo(per_minute.text)
+            if tempo_value is not None:
+                return tempo_value
+    return None
+
+
+def _parse_offset(direction: ET.Element, q) -> float:
+    offset_el = direction.find(q('offset'))
+    if offset_el is None or offset_el.text is None:
+        return 0.0
+    try:
+        return float(offset_el.text.strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _parse_duration(duration_el: ET.Element | None) -> float:
+    if duration_el is None or duration_el.text is None:
+        return 0.0
+    text = duration_el.text.strip()
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _parse_tempo(value: str | None) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        tempo = float(text)
+    except (TypeError, ValueError):
+        return None
+    return tempo
+
+
+def _clamp_tempo(value: float | int) -> float:
+    try:
+        tempo = float(value)
+    except (TypeError, ValueError):
+        tempo = 120.0
+    return max(20.0, min(300.0, tempo))
 
 
 __all__ = [
@@ -228,4 +348,6 @@ __all__ = [
     'get_note_events',
     'get_time_signature',
     'detect_tempo_bpm',
+    'get_tempo_changes',
+    'TempoChange',
 ]

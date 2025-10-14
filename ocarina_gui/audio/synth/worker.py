@@ -10,6 +10,7 @@ from typing import Callable, Optional, Sequence
 from viewmodels.preview_playback_viewmodel import AudioRenderListener
 
 from .rendering import Event, MetronomeSettings
+from shared.tempo import TempoChange, TempoMap
 
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,9 @@ class _RenderWorker:
                     int,
                     MetronomeSettings,
                     Optional[Callable[[float], None]],
+                    Sequence[TempoChange],
                 ],
-                tuple[bytes, float],
+                tuple[bytes, TempoMap],
             ],
         ],
     ) -> None:
@@ -59,10 +61,15 @@ class _RenderWorker:
         self._buffer_generation = 0
         self._render_target_tempo = 120.0
         self._render_target_metronome: MetronomeSettings | None = None
+        self._render_target_tempo_changes: tuple[TempoChange, ...] = ()
         self._render_tempo: float | None = None
         self._render_metronome: MetronomeSettings | None = None
+        self._render_tempo_changes: tuple[TempoChange, ...] = ()
         self._buffer: bytes = b""
         self._ticks_per_second: float = 1.0
+        self._tempo_changes: tuple[TempoChange, ...] = ()
+        self._tempo_map: TempoMap | None = None
+        self._sample_rate: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -112,7 +119,11 @@ class _RenderWorker:
         self._tasks = SimpleQueue()
 
     def update_source(
-        self, events: Sequence[Event], pulses_per_quarter: int, tempo: float
+        self,
+        events: Sequence[Event],
+        pulses_per_quarter: int,
+        tempo: float,
+        tempo_changes: Sequence[TempoChange],
     ) -> None:
         with self._lock:
             self._events = tuple(events)
@@ -120,12 +131,16 @@ class _RenderWorker:
             self._buffer = b""
             self._render_tempo = None
             self._render_metronome = None
+            self._render_tempo_changes = ()
             self._ticks_per_second = (tempo / 60.0) * self._ppq
+            self._tempo_changes = tuple(tempo_changes)
+            self._tempo_map = None
 
     def ensure_buffer(
         self,
         *,
         tempo: float,
+        tempo_changes: Sequence[TempoChange],
         force: bool,
         wait: bool,
         listener: AudioRenderListener | None,
@@ -141,12 +156,13 @@ class _RenderWorker:
             needs_render = self._is_render_needed(
                 force=force,
                 tempo=tempo,
+                tempo_changes=tempo_changes,
                 metronome=metronome_settings,
             )
             if not needs_render:
                 return
 
-            self._schedule_render_locked(tempo, listener, metronome_settings)
+            self._schedule_render_locked(tempo, tempo_changes, listener, metronome_settings)
 
         if wait:
             self._render_ready.wait()
@@ -156,6 +172,7 @@ class _RenderWorker:
         *,
         force: bool,
         tempo: float,
+        tempo_changes: Sequence[TempoChange],
         metronome: MetronomeSettings,
     ) -> bool:
         # This helper must be called with the lock held.
@@ -168,6 +185,7 @@ class _RenderWorker:
             target_matches = (
                 abs(self._render_target_tempo - tempo) < 1e-6
                 and self._render_target_metronome == metronome
+                and self._render_target_tempo_changes == tuple(tempo_changes)
             )
             if target_matches:
                 return False
@@ -182,6 +200,7 @@ class _RenderWorker:
             and self._buffer_generation == self._render_generation
             and abs((self._render_tempo or 0.0) - tempo) < 1e-6
             and self._render_metronome == metronome
+            and self._render_tempo_changes == tuple(tempo_changes)
         )
         return not buffer_is_valid
 
@@ -194,6 +213,16 @@ class _RenderWorker:
     def ticks_per_second(self) -> float:
         with self._lock:
             return self._ticks_per_second
+
+    def tick_to_sample(self, tick: int, sample_rate: int) -> int:
+        with self._lock:
+            tempo_map = self._tempo_map
+            stored_rate = self._sample_rate
+            ticks_per_second = self._ticks_per_second
+        if tempo_map is not None:
+            return tempo_map.tick_to_sample(tick, sample_rate or stored_rate or 1)
+        rate = max(sample_rate or stored_rate, 1)
+        return int(round(tick / max(ticks_per_second, 1e-3) * rate))
 
     @property
     def buffer_generation(self) -> int:
@@ -215,6 +244,7 @@ class _RenderWorker:
     def _schedule_render_locked(
         self,
         tempo: float,
+        tempo_changes: Sequence[TempoChange],
         listener: AudioRenderListener | None,
         metronome: MetronomeSettings,
     ) -> None:
@@ -223,11 +253,13 @@ class _RenderWorker:
         generation = self._render_generation
         self._render_target_tempo = tempo
         self._render_target_metronome = metronome
+        self._render_target_tempo_changes = tuple(tempo_changes)
         self._render_ready.clear()
 
         # Make local copies of data needed by the worker thread.
         events = self._events
         ppq = self._ppq
+        tempo_sequence = tuple(tempo_changes)
 
         active_listener = listener
         if active_listener is not None:
@@ -243,18 +275,19 @@ class _RenderWorker:
         def worker() -> None:
             try:
                 render_fn = self._render_factory()
-                buffer, ticks_per_second = render_fn(
+                buffer, tempo_map = render_fn(
                     events,
                     tempo,
                     ppq,
                     metronome,
                     report_progress if active_listener is not None else None,
+                    tempo_sequence,
                 )
                 success = True
             except Exception:  # pragma: no cover - defensive guard
                 logger.exception("SynthRenderer render failed")
                 buffer = b""
-                ticks_per_second = max((tempo / 60.0) * ppq, 1e-3)
+                tempo_map = None
                 self._notify_render_progress(active_listener, generation, 1.0)
                 success = False
 
@@ -263,9 +296,18 @@ class _RenderWorker:
                 if generation == self._render_generation:
                     self._buffer = buffer
                     self._render_tempo = tempo
-                    self._ticks_per_second = ticks_per_second
+                    if tempo_map is not None:
+                        self._tempo_map = tempo_map
+                        self._ticks_per_second = tempo_map.ticks_per_second_at(0)
+                        self._render_tempo_changes = tempo_sequence
+                    else:
+                        self._tempo_map = None
+                        self._render_tempo_changes = tempo_sequence
+                        self._ticks_per_second = max((tempo / 60.0) * ppq, 1e-3)
                     self._buffer_generation = generation
                     self._render_metronome = metronome
+                    if tempo_map is not None:
+                        self._sample_rate = tempo_map.sample_rate
 
             # Notifications can happen outside the lock.
             try:

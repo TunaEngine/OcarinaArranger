@@ -11,6 +11,7 @@ from typing import Callable, Optional, Sequence
 
 from .patches import _patch_for_program
 from .tone import _midi_to_frequency
+from shared.tempo import TempoChange, TempoMap, normalized_tempo_changes
 
 Event = tuple[int, int, int, int]
 
@@ -28,7 +29,6 @@ class RenderConfig:
     amplitude: float
     chunk_size: int
     metronome: MetronomeSettings
-
 
 def tempo_cache_key(tempo: float) -> int:
     return int(round(max(tempo, 1e-3) * 1000.0))
@@ -158,35 +158,40 @@ def render_events(
     pulses_per_quarter: int,
     config: RenderConfig,
     progress_callback: Callable[[float], None] | None = None,
-) -> tuple[bytes, float]:
+    *,
+    tempo_changes: Sequence[TempoChange] | None = None,
+) -> tuple[bytes, TempoMap]:
     sample_rate = config.sample_rate
-    ticks_per_second = max((tempo / 60.0) * pulses_per_quarter, 1e-3)
+    normalized_changes = normalized_tempo_changes(tempo, tempo_changes or ())
+    tempo_map = TempoMap(pulses_per_quarter, normalized_changes)
+    tempo_map.sample_rate = sample_rate
+
     if not events:
         if progress_callback is not None:
             progress_callback(1.0)
-        return b"", ticks_per_second
+        return b"", tempo_map
 
     max_tick = max((start + duration) for start, duration, _midi, _program in events)
-    total_seconds = max_tick / ticks_per_second if max_tick else 0.0
+    total_seconds = tempo_map.seconds_at(max_tick) if max_tick else 0.0
     sample_count = (
         max(1, int(math.ceil(total_seconds * sample_rate)) + int(sample_rate * 0.5))
     )
     mix = [0.0] * sample_count
 
-    tempo_key_value = tempo_cache_key(tempo)
     chunk_size = max(1, int(config.chunk_size))
 
     total_work = 0
     if progress_callback is not None:
-        for onset, duration, midi, program in events:
+        for onset, duration, midi, _program in events:
             if _midi_to_frequency(midi) <= 0.0:
                 continue
-            start_index = int(round(onset / ticks_per_second * sample_rate))
+            start_index = tempo_map.tick_to_sample(onset, sample_rate)
             if start_index >= sample_count:
                 continue
-            duration_ticks = max(1, int(duration))
-            segment_seconds = duration_ticks / ticks_per_second
-            estimated_samples = max(1, int(round(segment_seconds * sample_rate)))
+            duration_seconds = tempo_map.duration_between(onset, onset + int(duration))
+            if duration_seconds <= 1e-6:
+                continue
+            estimated_samples = max(1, int(round(duration_seconds * sample_rate)))
             limit = min(estimated_samples, sample_count - max(0, start_index))
             if limit <= 0:
                 continue
@@ -195,7 +200,8 @@ def render_events(
         if config.metronome.enabled:
             total_work += estimate_metronome_samples(
                 sample_count,
-                ticks_per_second,
+                tempo_map,
+                max_tick,
                 config.metronome,
                 pulses_per_quarter,
                 sample_rate,
@@ -219,13 +225,20 @@ def render_events(
         frequency = _midi_to_frequency(midi)
         if frequency <= 0.0:
             continue
-        start_index = int(round(onset / ticks_per_second * sample_rate))
+        start_index = tempo_map.tick_to_sample(onset, sample_rate)
         if start_index >= sample_count:
             continue
+        duration_ticks = max(1, int(duration))
+        duration_seconds = tempo_map.duration_between(onset, onset + duration_ticks)
+        if duration_seconds <= 1e-6:
+            continue
+        ticks_per_second = duration_ticks / max(duration_seconds, 1e-9)
+        effective_tempo = max(1e-3, (ticks_per_second / pulses_per_quarter) * 60.0)
+        tempo_key_value = tempo_cache_key(effective_tempo)
         segment = note_segment(
             program,
             midi,
-            int(duration),
+            duration_ticks,
             tempo_key_value,
             pulses_per_quarter,
             sample_rate,
@@ -258,7 +271,8 @@ def render_events(
     if config.metronome.enabled:
         overlay_metronome(
             mix,
-            ticks_per_second,
+            tempo_map,
+            max_tick,
             sample_count,
             config.metronome,
             pulses_per_quarter,
@@ -271,15 +285,16 @@ def render_events(
 
     peak = max((abs(val) for val in mix), default=0.0)
     if peak <= 1e-9:
-        return b"", ticks_per_second
+        return b"", tempo_map
     scale = (config.amplitude * 32767.0) / peak
     samples = array("h", (int(max(-32767, min(32767, val * scale))) for val in mix))
-    return samples.tobytes(), ticks_per_second
+    return samples.tobytes(), tempo_map
 
 
 def overlay_metronome(
     mix: list[float],
-    ticks_per_second: float,
+    tempo_map: TempoMap,
+    max_tick: int,
     sample_count: int,
     settings: MetronomeSettings,
     pulses_per_quarter: int,
@@ -292,7 +307,6 @@ def overlay_metronome(
     )
     if beat_length_ticks <= 0:
         return
-    max_tick = int(sample_count / max(sample_rate, 1) * ticks_per_second)
     if max_tick <= 0:
         return
     click_duration_samples = max(1, int(sample_rate * 0.08))
@@ -302,7 +316,7 @@ def overlay_metronome(
     tick = 0
     beat_index = 0
     while tick <= max_tick:
-        start_sample = int(round(tick / ticks_per_second * sample_rate))
+        start_sample = tempo_map.tick_to_sample(tick, sample_rate)
         if start_sample >= sample_count:
             break
         end_sample = min(sample_count, start_sample + click_duration_samples)
@@ -327,7 +341,8 @@ def overlay_metronome(
 
 def estimate_metronome_samples(
     sample_count: int,
-    ticks_per_second: float,
+    tempo_map: TempoMap,
+    max_tick: int,
     settings: MetronomeSettings,
     pulses_per_quarter: int,
     sample_rate: int,
@@ -337,14 +352,13 @@ def estimate_metronome_samples(
     )
     if beat_length_ticks <= 0:
         return 0
-    max_tick = int(sample_count / max(sample_rate, 1) * ticks_per_second)
     if max_tick <= 0:
         return 0
     click_duration_samples = max(1, int(sample_rate * 0.08))
     tick = 0
     total = 0
     while tick <= max_tick:
-        start_sample = int(round(tick / ticks_per_second * sample_rate))
+        start_sample = tempo_map.tick_to_sample(tick, sample_rate)
         if start_sample >= sample_count:
             break
         end_sample = min(sample_count, start_sample + click_duration_samples)
@@ -359,6 +373,7 @@ __all__ = [
     "Event",
     "MetronomeSettings",
     "RenderConfig",
+    "TempoMap",
     "tempo_cache_key",
     "note_segment",
     "render_events",

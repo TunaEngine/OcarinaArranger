@@ -6,6 +6,13 @@ from collections import defaultdict
 from typing import DefaultDict, List, Sequence
 
 from ocarina_tools import midi_to_name as pitch_midi_to_name
+from shared.tempo import TempoChange, scaled_tempo_marker_pairs
+
+from ._tempo import (
+    TEMPO_MARKER_BARLINE_PADDING,
+    draw_tempo_marker,
+    tempo_marker_total_width,
+)
 
 from ..layouts import PdfLayout
 from ..header import (
@@ -23,6 +30,9 @@ def build_piano_roll_pages(
     events: Sequence[NoteEvent],
     pulses_per_quarter: int,
     prefer_flats: bool,
+    *,
+    tempo_changes: Sequence[TempoChange] | None = None,
+    tempo_base: float | None = None,
 ) -> List[PageBuilder]:
     """Render one or more piano roll pages depending on song length."""
 
@@ -78,6 +88,10 @@ def build_piano_roll_pages(
     total_pages = len(page_indices)
     pages: List[PageBuilder] = []
 
+    tempo_markers: tuple[tuple[int, str], ...] = ()
+    if tempo_changes and tempo_base is not None:
+        tempo_markers = scaled_tempo_marker_pairs(tempo_changes, tempo_base)
+
     for page_number, index in enumerate(page_indices, start=1):
         builder = PageBuilder(layout)
         _draw_piano_roll_page(
@@ -101,6 +115,7 @@ def build_piano_roll_pages(
             header_lines,
             header_height,
             header_gap,
+            tempo_markers,
         )
         pages.append(builder)
 
@@ -128,6 +143,7 @@ def _draw_piano_roll_page(
     header_lines: Sequence[str],
     header_height: float,
     header_gap: float,
+    tempo_markers: Sequence[tuple[int, str]],
 ) -> None:
     layout = page.layout
     heading = "Arranged piano roll"
@@ -156,7 +172,14 @@ def _draw_piano_roll_page(
     summary_y = heading_top + layout.line_height
     page.draw_text(left, summary_y, summary, size=layout.font_size - 1)
 
-    grid_top = summary_y + layout.line_height + 6
+    markers_on_page = [
+        (tick, label)
+        for tick, label in tempo_markers
+        if page_start <= tick < page_start + page_span
+    ]
+    marker_height = layout.line_height if markers_on_page else 0.0
+    marker_y = summary_y + layout.line_height + 4
+    grid_top = summary_y + layout.line_height + 6 + marker_height
     grid_bottom = layout.height - layout.margin_bottom
     available_height = max(40.0, grid_bottom - grid_top)
 
@@ -184,6 +207,16 @@ def _draw_piano_roll_page(
 
     page.draw_rect(grid_left, grid_top, grid_width, actual_height, stroke_gray=0.6, fill_gray=None, line_width=0.8)
     page.draw_line(grid_left, grid_top, grid_left, grid_top + actual_height, gray=0.6, line_width=0.8)
+
+    if markers_on_page:
+        tempo_font = max(6.0, layout.font_size - 2.0)
+        for tick, label in markers_on_page:
+            local = tick - page_start
+            anchor_x = grid_left + local * scale_x + TEMPO_MARKER_BARLINE_PADDING
+            total_width = tempo_marker_total_width(page, label, tempo_font)
+            max_left = max(grid_left, grid_left + grid_width - total_width)
+            left = max(grid_left, min(max_left, anchor_x))
+            draw_tempo_marker(page, left, marker_y, label, font_size=tempo_font)
 
     tick = max(0, (page_start // quarter_ticks) * quarter_ticks)
     page_end = page_start + page_span
