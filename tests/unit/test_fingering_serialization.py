@@ -202,7 +202,7 @@ def test_instrument_specs_use_fallback_candidates_when_missing():
     assert rebuilt[0].candidate_range_max == fallback_spec.candidate_range_max
 
 
-def test_instrument_specs_merge_fallback_candidates_when_partial():
+def test_instrument_specs_respect_explicit_candidates_with_fallback():
     source = _instrument_entry()
     fallback_spec = fingering.InstrumentSpec.from_dict(copy.deepcopy(source))
 
@@ -219,10 +219,33 @@ def test_instrument_specs_merge_fallback_candidates_when_partial():
         fallback_specs=[fallback_spec],
     )
 
-    assert list(rebuilt[0].candidate_notes[: len(trimmed_candidates)]) == trimmed_candidates
-    assert set(rebuilt[0].candidate_notes) == set(fallback_spec.candidate_notes)
-    assert rebuilt[0].candidate_range_min == fallback_spec.candidate_range_min
-    assert rebuilt[0].candidate_range_max == fallback_spec.candidate_range_max
+    assert list(rebuilt[0].candidate_notes) == trimmed_candidates
+    assert rebuilt[0].candidate_range_min == retained_note
+    assert rebuilt[0].candidate_range_max == retained_note
+
+
+def test_instrument_specs_do_not_expand_explicit_candidate_range():
+    source = _instrument_entry()
+    fallback_spec = fingering.InstrumentSpec.from_dict(copy.deepcopy(source))
+
+    trimmed = copy.deepcopy(source)
+    trimmed["candidate_notes"] = ["C5", "D5"]
+    trimmed["candidate_range"] = {"min": "C5", "max": "D5"}
+    trimmed["note_order"] = ["C5", "D5"]
+    trimmed["note_map"] = {
+        "C5": fallback_spec.note_map["C5"],
+        "D5": fallback_spec.note_map["D5"],
+    }
+
+    rebuilt = fingering._instrument_specs_from_config(  # type: ignore[attr-defined]
+        {"instruments": [trimmed]},
+        fallback_specs=[fallback_spec],
+    )
+
+    rebuilt_spec = rebuilt[0]
+    assert rebuilt_spec.candidate_range_min == "C5"
+    assert rebuilt_spec.candidate_range_max == "D5"
+    assert list(rebuilt_spec.candidate_notes) == ["C5", "D5"]
 
 
 def test_update_library_from_config_replaces_instruments(sample_library):

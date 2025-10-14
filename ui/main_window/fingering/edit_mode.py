@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import logging
 from typing import Optional
 
@@ -9,6 +10,7 @@ from typing import Iterable
 
 from ocarina_gui.fingering import (
     InstrumentSpec,
+    FingeringConfigPersistenceError,
     get_available_instruments,
     get_current_instrument_id,
     get_instrument,
@@ -134,7 +136,7 @@ class FingeringEditModeMixin:
                 copy.deepcopy(backup),
                 current_instrument_id=get_current_instrument_id(),
             )
-        except ValueError as exc:
+        except (ValueError, FingeringConfigPersistenceError) as exc:
             if show_errors and not self._headless:
                 messagebox.showerror("Cancel fingering edits", str(exc), parent=self)
 
@@ -163,6 +165,10 @@ class FingeringEditModeMixin:
             try:
                 update_library_from_config(config, current_instrument_id=current_id)
             except ValueError as exc:
+                if not self._headless:
+                    messagebox.showerror("Update fingering", str(exc), parent=self)
+                return
+            except FingeringConfigPersistenceError as exc:
                 if not self._headless:
                     messagebox.showerror("Update fingering", str(exc), parent=self)
                 return
@@ -199,6 +205,43 @@ class FingeringEditModeMixin:
                 table.selection_set(focus_note)
                 table.focus(focus_note)
                 self._on_fingering_table_select()
+        self._update_fingering_note_actions_state()
+
+    def copy_fingerings_from_instrument(self) -> None:
+        if not self._fingering_edit_mode:
+            return
+
+        viewmodel = self._fingering_edit_vm
+        if viewmodel is None:
+            return
+
+        choices = viewmodel.copyable_instrument_choices()
+        if not choices:
+            if not self._headless:
+                messagebox.showinfo(
+                    "Copy fingerings",
+                    "No compatible instruments are available to copy from.",
+                    parent=self,
+                )
+            return
+
+        selection = _prompt_for_instrument_choice(
+            self,
+            choices,
+            title="Copy Fingerings",
+        )
+        if not selection:
+            return
+
+        try:
+            viewmodel.copy_fingerings_from(selection)
+        except ValueError as exc:
+            if not self._headless:
+                messagebox.showerror("Copy fingerings", str(exc), parent=self)
+            return
+
+        focus_note = self._selected_fingering_note()
+        self._apply_fingering_editor_changes(focus_note)
         self._update_fingering_note_actions_state()
 
     def _half_notes_enabled(self) -> bool:
@@ -351,3 +394,8 @@ class FingeringEditModeMixin:
             self._apply_fingering_editor_changes(focus)
         else:
             self._update_fingering_note_actions_state()
+
+
+def _prompt_for_instrument_choice(*args, **kwargs):
+    module = importlib.import_module("ui.main_window")
+    return module.prompt_for_instrument_choice(*args, **kwargs)

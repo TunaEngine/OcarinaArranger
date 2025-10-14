@@ -11,6 +11,7 @@ from shared.ttk import ttk
 
 from ocarina_gui import themes
 from ocarina_gui.fingering import (
+    FingeringConfigPersistenceError,
     get_available_instruments,
     get_current_instrument,
     get_current_instrument_id,
@@ -83,6 +84,46 @@ def test_add_note_uses_selection_dialog(gui_app, monkeypatch):
     assert isinstance(choices, tuple)
     assert any(choice not in existing for choice in choices)
     assert existing.issubset(disabled)
+
+
+def test_copy_fingerings_prompts_for_compatible_instruments(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False) or gui_app.fingering_table is None:
+        pytest.skip("Fingerings table requires Tk widgets")
+
+    gui_app.toggle_fingering_editing()
+    try:
+        viewmodel = gui_app._fingering_edit_vm
+        if viewmodel is None:
+            pytest.skip("Fingering editor view-model unavailable")
+
+        choices = viewmodel.copyable_instrument_choices()
+        if not choices:
+            pytest.skip("No compatible instruments available for copy")
+
+        captured: dict[str, object] = {}
+        called: dict[str, object] = {}
+
+        def _fake_prompt(parent, choices_arg, *, title):
+            captured["choices"] = tuple(choices_arg)
+            captured["title"] = title
+            return choices_arg[0][0]
+
+        def _fake_copy(self, instrument_id):  # pragma: no cover - signature validated
+            called["instrument_id"] = instrument_id
+
+        monkeypatch.setattr("ui.main_window.prompt_for_instrument_choice", _fake_prompt)
+        monkeypatch.setattr(type(viewmodel), "copy_fingerings_from", _fake_copy, raising=False)
+        monkeypatch.setattr("ui.main_window.messagebox.showinfo", lambda *a, **k: None)
+        monkeypatch.setattr("ui.main_window.messagebox.showerror", lambda *a, **k: None)
+
+        gui_app.copy_fingerings_from_instrument()
+    finally:
+        if gui_app._fingering_edit_mode:
+            gui_app.cancel_fingering_edits()
+
+    assert captured.get("choices") == tuple(choices)
+    assert captured.get("title") == "Copy Fingerings"
+    assert called.get("instrument_id") == choices[0][0]
 
 
 def test_remove_flat_note_disables_button(gui_app, monkeypatch):
@@ -405,3 +446,41 @@ def test_destroy_discards_pending_fingering_edits(gui_app):
 
     restored = get_current_instrument().note_map[target_note]
     assert restored == original_pattern
+
+
+def test_disk_full_during_save_shows_actionable_error(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Fingerings editor requires Tk widgets")
+
+    gui_app.toggle_fingering_editing()
+    try:
+        viewmodel = getattr(gui_app, "_fingering_edit_vm", None)
+        if viewmodel is None:
+            pytest.skip("Fingering editor view-model unavailable")
+
+        errors: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def _record_error(*args, **kwargs):
+            errors.append((args, kwargs))
+
+        monkeypatch.setattr("ui.main_window.messagebox.showerror", _record_error)
+
+        def _raise_failure(config):  # pragma: no cover - arguments exercised indirectly
+            raise FingeringConfigPersistenceError(
+                "Could not save fingering configuration at fingering_config.json. "
+                "Free up some disk space and try again."
+            )
+
+        monkeypatch.setattr(
+            "ocarina_gui.fingering.library.save_fingering_config",
+            _raise_failure,
+        )
+
+        gui_app._apply_fingering_editor_changes(persist=True)
+
+        assert errors, "Expected a save failure to trigger an error dialog"
+        message = errors[0][0][1]
+        assert "Free up some disk space" in message
+    finally:
+        if gui_app._fingering_edit_mode:
+            gui_app.cancel_fingering_edits(show_errors=False)

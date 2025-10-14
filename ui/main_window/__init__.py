@@ -9,7 +9,13 @@ from typing import Any
 time = _time
 messagebox = _messagebox
 
-__all__ = ["MainWindow", "messagebox", "prompt_for_note_name", "time"]
+__all__ = [
+    "MainWindow",
+    "messagebox",
+    "prompt_for_instrument_choice",
+    "prompt_for_note_name",
+    "time",
+]
 
 
 def __getattr__(name: str) -> Any:
@@ -21,4 +27,8 @@ def __getattr__(name: str) -> Any:
         from ocarina_gui.note_selection import prompt_for_note_name
 
         return prompt_for_note_name
+    if name == "prompt_for_instrument_choice":
+        from ocarina_gui.instrument_selection import prompt_for_instrument_choice
+
+        return prompt_for_instrument_choice
     raise AttributeError(f"module 'ui.main_window' has no attribute {name!r}")

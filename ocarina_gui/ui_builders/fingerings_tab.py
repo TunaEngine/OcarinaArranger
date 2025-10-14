@@ -173,3 +173,10 @@ def build_fingerings_tab(app: "App", notebook: ttk.Notebook) -> None:
     remove_button.state(["disabled"])
     remove_button.pack(side="left", padx=(0, pad))
     app._fingering_remove_button = remove_button
+    copy_button = ttk.Button(
+        buttons,
+        text="Copy from...",
+        command=app.copy_fingerings_from_instrument,
+    )
+    copy_button.pack(side="left", padx=(0, pad))
+    app._fingering_copy_button = copy_button

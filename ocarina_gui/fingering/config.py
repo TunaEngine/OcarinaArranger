@@ -7,7 +7,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name
 
@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_ENV_VAR = "OCARINA_GUI_FINGERING_CONFIG_PATH"
 _DEFAULT_CONFIG_FILENAME = "fingering_config.json"
+
+class FingeringConfigPersistenceError(RuntimeError):
+    """Raised when the fingering configuration cannot be persisted."""
+
 
 __all__ = [
     "_CONFIG_ENV_VAR",
@@ -28,6 +32,7 @@ __all__ = [
     "_user_config_path",
     "load_fingering_config",
     "save_fingering_config",
+    "FingeringConfigPersistenceError",
 ]
 
 
@@ -42,7 +47,11 @@ def _default_config_path() -> Path:
     return Path(__file__).resolve().parent / "config" / _DEFAULT_CONFIG_FILENAME
 
 
-def _load_config_from_path(path: Path) -> dict[str, object] | None:
+def _load_config_from_path(
+    path: Path,
+    *,
+    invalid_handler: Callable[[Path], None] | None = None,
+) -> dict[str, object] | None:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -54,7 +63,46 @@ def _load_config_from_path(path: Path) -> dict[str, object] | None:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
         logger.warning("Invalid fingering config at %s: %s", path, exc)
+        if invalid_handler is not None:
+            invalid_handler(path)
         return None
+
+
+def _next_backup_path(path: Path) -> Path:
+    candidate = path.with_name(path.name + ".bk")
+    if not candidate.exists():
+        return candidate
+
+    index = 1
+    while True:
+        candidate = path.with_name(f"{path.name}.bk{index}")
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _reset_invalid_user_config(path: Path) -> None:
+    backup_path = _next_backup_path(path)
+    try:
+        path.replace(backup_path)
+    except OSError as exc:
+        logger.warning(
+            "Failed to back up invalid fingering config from %s to %s: %s",
+            path,
+            backup_path,
+            exc,
+        )
+    else:
+        logger.warning(
+            "Moved invalid fingering config to backup %s",
+            backup_path,
+        )
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({}, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Failed to recreate fingering config at %s: %s", path, exc)
 
 
 @lru_cache(maxsize=1)
@@ -101,18 +149,7 @@ def _instrument_specs_from_config(
         if fallback_candidates:
             existing_candidates = [str(note) for note in data.get("candidate_notes", [])]
             if existing_candidates:
-                combined = list(dict.fromkeys(existing_candidates + list(fallback_candidates)))
-                if len(combined) > len(existing_candidates):
-                    logger.debug(
-                        "Extending candidate notes from fallback",
-                        extra={
-                            "instrument_id": instrument_id,
-                            "existing_candidates": existing_candidates,
-                            "fallback_candidates": list(fallback_candidates),
-                            "combined_count": len(combined),
-                        },
-                    )
-                data["candidate_notes"] = combined
+                data["candidate_notes"] = list(dict.fromkeys(existing_candidates))
             else:
                 logger.debug(
                     "Restoring candidate notes from fallback",
@@ -135,12 +172,8 @@ def _instrument_specs_from_config(
             current_min = parse_note_name_safe(current_min_name) if current_min_name else None
             current_max = parse_note_name_safe(current_max_name) if current_max_name else None
 
-            combined_min = current_min
-            combined_max = current_max
-            if fallback_min is not None and (combined_min is None or fallback_min < combined_min):
-                combined_min = fallback_min
-            if fallback_max is not None and (combined_max is None or fallback_max > combined_max):
-                combined_max = fallback_max
+            combined_min = current_min if current_min is not None else fallback_min
+            combined_max = current_max if current_max is not None else fallback_max
 
             if combined_min is not None and combined_max is not None:
                 data["candidate_range"] = {
@@ -157,9 +190,21 @@ def load_fingering_config() -> dict[str, object]:
     """Load the fingering configuration, preferring the user override if present."""
 
     override_path = _user_config_path()
-    data = _load_config_from_path(override_path)
-    if data is not None:
+    data = _load_config_from_path(
+        override_path,
+        invalid_handler=_reset_invalid_user_config,
+    )
+    if data:
         return data
+    if data == {}:
+        logger.warning(
+            "User fingering config at %s is empty; falling back to defaults.",
+            override_path,
+        )
+    if data is not None:
+        fallback = _load_config_from_path(_default_config_path())
+        if fallback is not None:
+            return fallback
 
     default_path = _default_config_path()
     try:
@@ -186,3 +231,8 @@ def save_fingering_config(config: dict[str, object]) -> None:
         path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     except OSError as exc:  # pragma: no cover - filesystem failures are environment-specific
         logger.warning("Failed to write fingering config to %s: %s", path, exc)
+        message = (
+            f"Could not save fingering configuration at {path}. "
+            "Free up some disk space and try again."
+        )
+        raise FingeringConfigPersistenceError(message) from exc

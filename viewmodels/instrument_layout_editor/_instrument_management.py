@@ -9,7 +9,7 @@ from ocarina_tools.pitch import midi_to_name as pitch_midi_to_name
 from ocarina_gui.fingering import InstrumentSpec, parse_note_name_safe
 
 from .models import InstrumentLayoutState, clone_state, state_from_spec, state_to_dict
-from .note_patterns import sort_note_order
+from .note_patterns import normalize_pattern, sort_note_order
 
 
 class InstrumentManagementMixin:
@@ -202,10 +202,9 @@ class InstrumentManagementMixin:
                         str(note) for note in data.get("candidate_notes", [])
                     ]
                     if existing_candidates:
-                        combined = list(
-                            dict.fromkeys(existing_candidates + list(fallback_candidates))
+                        data["candidate_notes"] = list(
+                            dict.fromkeys(existing_candidates)
                         )
-                        data["candidate_notes"] = combined
                     else:
                         data["candidate_notes"] = list(fallback_candidates)
 
@@ -226,12 +225,8 @@ class InstrumentManagementMixin:
                     parse_note_name_safe(current_max_name) if current_max_name else None
                 )
 
-                combined_min = current_min
-                combined_max = current_max
-                if fallback_min is not None and (combined_min is None or fallback_min < combined_min):
-                    combined_min = fallback_min
-                if fallback_max is not None and (combined_max is None or fallback_max > combined_max):
-                    combined_max = fallback_max
+                combined_min = current_min if current_min is not None else fallback_min
+                combined_max = current_max if current_max is not None else fallback_max
 
                 if combined_min is not None and combined_max is not None:
                     data["candidate_range"] = {
@@ -273,6 +268,202 @@ class InstrumentManagementMixin:
 
     def get_state(self, instrument_id: str) -> InstrumentLayoutState:
         return self._states[instrument_id]
+
+    # ------------------------------------------------------------------
+    def copyable_instrument_choices(self) -> List[tuple[str, str]]:
+        """Return instruments that match the current layout geometry."""
+
+        target = self.state
+        hole_count = len(target.holes)
+        windway_count = len(target.windways)
+
+        compatible: List[tuple[str, str]] = []
+        for identifier in self._order:
+            if identifier == target.instrument_id:
+                continue
+            state = self._states[identifier]
+            if len(state.holes) != hole_count or len(state.windways) != windway_count:
+                continue
+            compatible.append((identifier, state.name))
+
+        compatible.sort(key=lambda choice: choice[1].lower())
+        return compatible
+
+    def copy_fingerings_from(self, instrument_id: str) -> None:
+        """Copy fingering patterns from ``instrument_id`` into the current state."""
+
+        if instrument_id not in self._states:
+            raise ValueError(f"Instrument '{instrument_id}' is not available")
+
+        source = self._states[instrument_id]
+        target = self.state
+
+        if len(source.holes) != len(target.holes) or len(source.windways) != len(target.windways):
+            raise ValueError(
+                "Fingerings can only be copied from instruments with the same number of holes "
+                "and windways"
+            )
+
+        hole_count = len(target.holes)
+        windway_count = len(target.windways)
+
+        range_min = self._safe_parse(target.candidate_range_min)
+        range_max = self._safe_parse(target.candidate_range_max)
+
+        source_range_min = self._safe_parse(source.candidate_range_min)
+        source_range_max = self._safe_parse(source.candidate_range_max)
+
+        def _note_bounds(names: Sequence[str]) -> tuple[Optional[int], Optional[int]]:
+            values = [self._safe_parse(name) for name in names]
+            filtered = [value for value in values if value is not None]
+            if not filtered:
+                return (None, None)
+            return (min(filtered), max(filtered))
+
+        note_range_min, note_range_max = _note_bounds(tuple(source.note_map.keys()))
+
+        if source_range_min is None or source_range_max is None:
+            inferred_min, inferred_max = _note_bounds(
+                tuple(source.note_map.keys()) + tuple(source.candidate_notes)
+            )
+            if source_range_min is None:
+                source_range_min = inferred_min
+            if source_range_max is None:
+                source_range_max = inferred_max
+
+        candidate_offsets: List[int] = []
+
+        def _add_offset(value: Optional[int]) -> None:
+            if value is None:
+                return
+            candidate_offsets.append(int(value))
+
+        _add_offset(0)
+        if range_min is not None:
+            if source_range_min is not None:
+                _add_offset(range_min - source_range_min)
+            if note_range_min is not None:
+                _add_offset(range_min - note_range_min)
+        if range_max is not None:
+            if source_range_max is not None:
+                _add_offset(range_max - source_range_max)
+            if note_range_max is not None:
+                _add_offset(range_max - note_range_max)
+
+        candidate_offsets = list(dict.fromkeys(candidate_offsets))
+
+        def _score_offset(offset: int) -> tuple[int, int, int, int, int]:
+            included: List[int] = []
+            hits_min = False
+            hits_max = False
+
+            for name in source.note_map.keys():
+                midi = self._safe_parse(name)
+                if midi is None:
+                    continue
+                midi += offset
+                if range_min is not None and midi < range_min:
+                    continue
+                if range_max is not None and midi > range_max:
+                    continue
+                included.append(midi)
+                if range_min is not None and midi == range_min:
+                    hits_min = True
+                if range_max is not None and midi == range_max:
+                    hits_max = True
+
+            if not included:
+                return (0, 1 if range_min is None else 0, 1 if range_max is None else 0, -10**6, -abs(offset))
+
+            included.sort()
+            span = included[-1] - included[0] if len(included) > 1 else 0
+            min_score = 1 if range_min is None else int(hits_min)
+            max_score = 1 if range_max is None else int(hits_max)
+            return (len(included), min_score, max_score, span, -abs(offset))
+
+        transpose: Optional[int]
+        if candidate_offsets:
+            transpose = max(candidate_offsets, key=_score_offset)
+        else:
+            transpose = None
+
+        def _within_range(note: str) -> bool:
+            midi = self._safe_parse(note)
+            if midi is None:
+                return True
+            if range_min is not None and midi < range_min:
+                return False
+            if range_max is not None and midi > range_max:
+                return False
+            return True
+
+        new_map: Dict[str, List[int]] = {}
+        for note, pattern in source.note_map.items():
+            midi = self._safe_parse(note)
+            if transpose is not None:
+                if midi is None:
+                    continue
+                note = pitch_midi_to_name(midi + transpose, flats=False)
+            if not _within_range(note):
+                continue
+            new_map[note] = normalize_pattern(pattern, hole_count, windway_count)
+
+        new_order: List[str] = []
+        seen_order: set[str] = set()
+        for note in source.note_order:
+            midi = self._safe_parse(note)
+            if transpose is not None:
+                if midi is None:
+                    continue
+                note = pitch_midi_to_name(midi + transpose, flats=False)
+            if note in new_map and note not in seen_order:
+                new_order.append(note)
+                seen_order.add(note)
+        for note in new_map:
+            if note not in new_order:
+                new_order.append(note)
+
+        candidate_notes: List[str] = []
+        seen: set[str] = set()
+
+        def _add_candidate(name: str) -> None:
+            normalized = str(name).strip()
+            if not normalized or normalized in seen:
+                return
+            if not _within_range(normalized):
+                return
+            candidate_notes.append(normalized)
+            seen.add(normalized)
+
+        if range_min is not None and range_max is not None and range_min <= range_max:
+            for generated in self._generate_range_names(range_min, range_max):
+                _add_candidate(generated)
+        else:
+            for existing in target.candidate_notes:
+                _add_candidate(existing)
+
+        for existing in target.candidate_notes:
+            _add_candidate(existing)
+        for existing in source.candidate_notes:
+            _add_candidate(existing)
+        for note in new_order:
+            _add_candidate(note)
+
+        changed = (
+            target.note_map != new_map
+            or target.note_order != new_order
+            or list(target.candidate_notes) != candidate_notes
+        )
+
+        target.note_map = new_map
+        target.note_order = new_order
+        target.candidate_notes = candidate_notes
+
+        sort_note_order(target)
+        self._normalize_preferred_range(target)
+
+        if changed:
+            target.dirty = True
 
     # ------------------------------------------------------------------
     def _generate_unique_instrument_id(self, base: str) -> str:

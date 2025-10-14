@@ -17,6 +17,7 @@ from .config import (
     _user_config_path,
     load_fingering_config,
     save_fingering_config,
+    FingeringConfigPersistenceError,
 )
 from .grid import FingeringGridView, calculate_grid_columns
 from .library import FingeringLibrary, update_instrument_spec as _update_instrument_spec
@@ -131,4 +132,5 @@ __all__ = [
     "set_active_instrument",
     "update_instrument_spec",
     "update_library_from_config",
+    "FingeringConfigPersistenceError",
 ]
