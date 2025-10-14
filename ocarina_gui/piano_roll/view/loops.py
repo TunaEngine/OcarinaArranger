@@ -10,7 +10,7 @@ from ...themes import PianoRollPalette
 from ..wrapped import WrappedLayout
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .widget import PianoRoll
+    from .piano_roll import PianoRoll
 
 
 class LoopMixin:

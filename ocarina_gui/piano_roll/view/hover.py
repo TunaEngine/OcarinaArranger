@@ -7,7 +7,7 @@ from typing import Optional, TYPE_CHECKING, Callable
 import tkinter as tk
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .widget import PianoRoll
+    from .piano_roll import PianoRoll
 
 
 class HoverMixin:

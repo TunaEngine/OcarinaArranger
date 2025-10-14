@@ -93,9 +93,9 @@ project/
 - Create and activate a local virtual environment for Python-based tooling **and keep it active for every test/tooling command**:
   - `python3 -m venv .venv`
   - `source .venv/bin/activate`
-- Tests pass locally from the activated virtual environment: `xvfb-run -a pytest` (always run this command for verification).
+- Tests pass locally from the activated virtual environment: `xvfb-run -a .venv/bin/pytest` (always run this command for verification).
 - Run the Linux accessibility E2E suite following [docs/e2e-linux-accessibility.md](docs/e2e-linux-accessibility.md) to verify the Dogtail-powered scenarios.
-- When sharing E2E screenshots, run pytest with `--e2e-upload-screenshots` to publish the PNGs to Litterbox and include the printed URLs in the PR description instead of committing binary artifacts.
+- When sharing E2E screenshots, run `.venv/bin/pytest` with `--e2e-upload-screenshots` to publish the PNGs to Litterbox and include the printed URLs in the PR description instead of committing binary artifacts.
 - Coverage ≥ **85%** overall; new/changed lines covered.
 - No lints/formatting errors; types clean on changed files.
 - UI behavior verified for changed screens (manual or scripted smoke).
@@ -207,7 +207,7 @@ project/
 
 - **Formatting/Linting**: Black, isort, Ruff.
 - **Types**: mypy (strict on changed files).
-- **Tests**: pytest + coverage; `pytest -q --maxfail=1 --disable-warnings`.
+- **Tests**: `.venv/bin/pytest` + coverage; `.venv/bin/pytest -q --maxfail=1 --disable-warnings`.
 - **Pre-commit**: run format/lint/tests for changed files before push.
 - **CI**: run unit + view-model tests; optionally mark `gui` tests to run in nightly.
 

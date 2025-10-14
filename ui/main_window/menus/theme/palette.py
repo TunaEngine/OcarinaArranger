@@ -1,14 +1,10 @@
-"""Palette application helpers shared by theme-related mixins."""
-
 from __future__ import annotations
 
-import logging
 import sys
 import tkinter as tk
 import types
 from typing import Dict, List
 
-from shared.tk_style import configure_style, map_style
 from shared.ttk import ttk
 
 from ocarina_gui.color_utils import hex_to_rgb, mix_colors, rgb_to_hex
@@ -21,8 +17,6 @@ from ..windows_theme import (
     schedule_window_frame_refresh,
 )
 
-logger = logging.getLogger(__name__)
-
 
 class ThemePaletteMixin:
     """Provide helpers for applying palette values to widgets."""
@@ -30,72 +24,301 @@ class ThemePaletteMixin:
     _headless: bool
     _style: ttk.Style | None
     _fingering_table_style: str | None
-    fingering_table: ttk.Treeview | None
     _registered_menus: List[tk.Menu]
+    _menubar: tk.Menu | None
+    _menu_palette_snapshot: Dict[str, str] | None
+    _last_title_hwnd_attempt: int | None
+    _last_title_geometry_nudge: tuple[int, int] | None
+    _pending_title_geometry_nudge: bool
+    _pending_menubar_refresh: bool
+    _last_menubar_brush_color_attempt: str | None
+    _menubar_brush_handle: int | None
+    _windows_dark_mode_app_allowed: bool | None
+    _last_dark_mode_window_attempt: bool | None
+    _last_dark_mode_window_result: bool | None
+    fingering_table: object | None
+
+    def _apply_runtime_base_widget_palette(self, palette: ThemePalette) -> None:
+        """Update core ttk widget colors for the active palette."""
+
+        if self._headless:
+            return
+        style = getattr(self, "_style", None)
+        if style is None:
+            return
+        if getattr(style, "__module__", "").startswith("ttkbootstrap"):
+            return
+
+        base_bg = palette.window_background
+        fg = palette.text_primary
+        muted = palette.text_muted
+        entry_bg = palette.listbox.background
+        selection_bg = palette.table.selection_background
+        selection_fg = palette.table.selection_foreground
+
+        def _safe_config(name: str, **kwargs) -> None:
+            try:
+                style.configure(name, **kwargs)
+            except (tk.TclError, KeyError):
+                pass
+
+        for name in (
+            "TFrame",
+            "TLabelframe",
+            "TLabelframe.Label",
+            "TLabel",
+            "TNotebook",
+            "TNotebook.Tab",
+        ):
+            _safe_config(name, background=base_bg, foreground=fg)
+
+        for name in ("TEntry", "TCombobox", "TSpinbox"):
+            _safe_config(
+                name,
+                fieldbackground=entry_bg,
+                foreground=fg,
+                insertcolor=palette.text_cursor,
+            )
+
+        for name in ("TRadiobutton", "TCheckbutton"):
+            _safe_config(name, background=base_bg, foreground=fg)
+
+        _safe_config("TButton", foreground=fg)
+
+        if getattr(self, "_supports_bootstyle", False):
+            try:
+                style.map(
+                    "TNotebook.Tab",
+                    background=[("selected", selection_bg)],
+                    foreground=[("selected", selection_fg)],
+                )
+            except tk.TclError:
+                pass
+
+        try:
+            style.map("TButton", foreground=[("disabled", muted)])
+        except tk.TclError:
+            pass
+
+        _safe_config("Hint.TLabel", background=base_bg, foreground=muted)
+
+    def _apply_app_widget_styles(self, palette: ThemePalette) -> None:
+        """Create derived ``App.*`` ttk styles and assign them to widgets."""
+
+        if self._headless:
+            return
+        style = getattr(self, "_style", None)
+        if style is None:
+            return
+        if getattr(style, "__module__", "").startswith("ttkbootstrap"):
+            return
+
+        try:
+            from .windows_theme import is_dark_color as _is_dark_color  # type: ignore
+        except Exception:  # pragma: no cover
+
+            def _is_dark_color(_c: str) -> bool:  # type: ignore
+                return False
+
+        dark = _is_dark_color(palette.window_background)
+
+        def _blend(base: str, other: str, ratio: float) -> str:
+            mixed = _blend_colors(base, other, ratio)
+            return mixed or base
+
+        base_bg = palette.window_background
+        fg = palette.text_primary
+        muted = palette.text_muted
+        entry_bg = palette.listbox.background
+        select_bg = palette.table.selection_background
+        select_fg = palette.table.selection_foreground
+
+        if dark:
+            surface = _blend(base_bg, "#ffffff", 0.07)
+            hover = _blend(base_bg, "#ffffff", 0.14)
+            active = _blend(base_bg, "#000000", 0.25)
+            disabled_bg = _blend(base_bg, "#000000", 0.18)
+            border = _blend(base_bg, "#ffffff", 0.22)
+        else:
+            surface = _blend(base_bg, "#000000", 0.02)
+            hover = _blend(base_bg, "#000000", 0.06)
+            active = _blend(base_bg, "#000000", 0.12)
+            disabled_bg = _blend(base_bg, "#000000", 0.08)
+            border = _blend(base_bg, "#000000", 0.10)
+
+        try:
+            style.configure(
+                "App.TButton",
+                background=surface,
+                foreground=fg,
+                focusthickness=1,
+                focuscolor=border,
+                bordercolor=border,
+                padding=4,
+            )
+            style.map(
+                "App.TButton",
+                background=[
+                    ("disabled", disabled_bg),
+                    ("pressed", active),
+                    ("active", hover),
+                ],
+                foreground=[("disabled", muted)],
+            )
+        except tk.TclError:
+            pass
+
+        for base_name, dest in (
+            ("TEntry", "App.TEntry"),
+            ("TCombobox", "App.TCombobox"),
+            ("TSpinbox", "App.TSpinbox"),
+        ):
+            try:
+                style.configure(
+                    dest,
+                    fieldbackground=entry_bg,
+                    background=entry_bg,
+                    foreground=fg,
+                    bordercolor=border,
+                    focusthickness=1,
+                    focuscolor=border,
+                    insertcolor=palette.text_cursor,
+                    padding=2,
+                )
+                style.map(
+                    dest,
+                    fieldbackground=[
+                        ("disabled", disabled_bg),
+                        ("readonly", surface),
+                        ("active", hover),
+                    ],
+                    foreground=[("disabled", muted)],
+                )
+            except tk.TclError:
+                continue
+
+        try:
+            style.configure("App.TNotebook", background=base_bg, bordercolor=border)
+            style.configure(
+                "App.TNotebook.Tab",
+                background=surface,
+                foreground=fg,
+                padding=(10, 4),
+            )
+            style.map(
+                "App.TNotebook.Tab",
+                background=[
+                    ("selected", _blend(base_bg, "#ffffff" if dark else "#000000", 0.10)),
+                    ("active", hover),
+                    ("disabled", disabled_bg),
+                ],
+                foreground=[("disabled", muted), ("selected", fg)],
+            )
+        except tk.TclError:
+            pass
+
+        def _apply_to_children(widget: tk.Misc) -> None:
+            try:
+                children = widget.winfo_children()
+            except tk.TclError:
+                return
+            for child in children:
+                try:
+                    style_name = child.cget("style")  # type: ignore[attr-defined]
+                except Exception:
+                    style_name = ""
+
+                cls = child.winfo_class().lower()
+                target = None
+                if cls == "tbutton" and (not style_name or style_name == "TButton"):
+                    target = "App.TButton"
+                elif cls == "tentry" and (not style_name or style_name == "TEntry"):
+                    target = "App.TEntry"
+                elif cls == "tcombobox" and (not style_name or style_name == "TCombobox"):
+                    target = "App.TCombobox"
+                elif cls == "tspinbox" and (not style_name or style_name == "TSpinbox"):
+                    target = "App.TSpinbox"
+                elif cls == "tnotebook" and (not style_name or style_name == "TNotebook"):
+                    target = "App.TNotebook"
+                elif cls == "tnotebook.tab" and (not style_name or style_name == "TNotebook.Tab"):
+                    target = "App.TNotebook.Tab"
+
+                if target is not None:
+                    try:
+                        child.configure(style=target)  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+
+                _apply_to_children(child)
+
+        _apply_to_children(self)
 
     def _apply_table_palette(self, palette: TablePalette) -> Dict[str, List[str]]:
         if self._headless:
             return {}
-        style = self._style
+        style = getattr(self, "_style", None)
         if style is None:
             return {}
 
         applied: Dict[str, List[str]] = {}
         style_names = ["Treeview"]
-        if self._fingering_table_style:
-            style_names.append(self._fingering_table_style)
+        table_style = getattr(self, "_fingering_table_style", None)
+        if table_style:
+            style_names.append(table_style)
 
         for style_name in style_names:
-            configure_style(
-                style,
-                style_name,
-                background=palette.background,
-                fieldbackground=palette.background,
-                foreground=palette.foreground,
-            )
+            try:
+                style.configure(
+                    style_name,
+                    background=palette.background,
+                    fieldbackground=palette.background,
+                    foreground=palette.foreground,
+                )
+            except (tk.TclError, KeyError):
+                pass
 
             heading_style = f"{style_name}.Heading"
-            configure_style(
-                style,
-                heading_style,
-                background=palette.heading_background,
-                foreground=palette.heading_foreground,
-            )
+            try:
+                style.configure(
+                    heading_style,
+                    background=palette.heading_background,
+                    foreground=palette.heading_foreground,
+                )
+            except tk.TclError:
+                pass
 
-            if not map_style(
-                style,
-                heading_style,
-                background=[
-                    ("pressed", palette.selection_background),
-                    ("active", palette.selection_background),
-                ],
-                foreground=[
-                    ("pressed", palette.selection_foreground),
-                    ("active", palette.selection_foreground),
-                ],
-            ):
+            try:
+                style.map(
+                    heading_style,
+                    background=[
+                        ("pressed", palette.selection_background),
+                        ("active", palette.selection_background),
+                    ],
+                    foreground=[
+                        ("pressed", palette.selection_foreground),
+                        ("active", palette.selection_foreground),
+                    ],
+                )
+            except (tk.TclError, KeyError):
                 continue
             applied[heading_style] = ["background", "foreground"]
 
         for style_name in style_names:
-            if not map_style(
-                style,
-                style_name,
-                background=[("selected", palette.selection_background)],
-                foreground=[("selected", palette.selection_foreground)],
-            ):
+            try:
+                style.map(
+                    style_name,
+                    background=[("selected", palette.selection_background)],
+                    foreground=[("selected", palette.selection_foreground)],
+                )
+            except (tk.TclError, KeyError):
                 continue
             applied[style_name] = ["background", "foreground"]
 
-        table = self.fingering_table
+        table = getattr(self, "fingering_table", None)
         if table is not None:
             try:
-                table.tag_configure(
-                    "even", background=palette.background, foreground=palette.foreground
-                )
-                table.tag_configure(
-                    "odd", background=palette.row_stripe, foreground=palette.foreground
-                )
+                table.tag_configure("even", background=palette.background, foreground=palette.foreground)
+                table.tag_configure("odd", background=palette.row_stripe, foreground=palette.foreground)
             except tk.TclError:
                 pass
 
@@ -140,67 +363,54 @@ class ThemePaletteMixin:
             ("*Menu.indicatorForeground", indicator_foreground),
         ):
             try:
-                self.option_add(pattern, value, 100)
+                self.option_add(pattern, value)
             except tk.TclError:
                 continue
 
         for menu in getattr(self, "_registered_menus", []):
             self._configure_menu_widget(menu, colors)
 
-        style = self._style
+        style = getattr(self, "_style", None)
         if style is not None:
-            tk_app = getattr(style, "tk", None)
-            if tk_app is None:
-                master_widget = getattr(style, "master", None)
-                if master_widget is not None:
-                    tk_app = getattr(master_widget, "tk", None)
-            if tk_app is not None:
+            is_bootstrap = type(style).__module__.startswith("ttkbootstrap")
+            if not is_bootstrap:
                 try:
-                    tk_app.call(
-                        "ttk::style",
-                        "configure",
+                    style.configure(
                         "MenuBar.TLabel",
-                        "-background",
-                        background,
-                        "-foreground",
-                        foreground,
+                        background=background,
+                        foreground=foreground,
                     )
-                    tk_app.call(
-                        "ttk::style",
-                        "map",
+                    style.map(
                         "MenuBar.TLabel",
-                        "-background",
-                        ("active", selection_background),
-                        "-foreground",
-                        ("active", selection_foreground),
+                        background=[("active", selection_background)],
+                        foreground=[("active", selection_foreground)],
                     )
-                except tk.TclError:
+                except Exception:
                     pass
             else:
-                configure_style(
-                    style,
-                    "MenuBar.TLabel",
-                    background=background,
-                    foreground=foreground,
-                )
-                map_style(
-                    style,
-                    "MenuBar.TLabel",
-                    background=[("active", selection_background)],
-                    foreground=[("active", selection_foreground)],
-                )
+                try:
+                    menubar = getattr(self, "_menubar", None)
+                    if menubar is not None:
+                        menubar.configure(background=background, foreground=foreground)
+                except Exception:
+                    pass
 
         custom_bar = getattr(self, "_custom_menubar", None)
         if custom_bar is not None:
             try:
+                hover_color = (
+                    selection_background
+                    if background != selection_background
+                    else foreground
+                )
                 custom_bar.apply_palette(
                     background=background,
                     foreground=foreground,
-                    active_background=selection_background,
+                    active_background=hover_color,
                     active_foreground=selection_foreground,
                 )
             except Exception:
-                logger.debug("Failed to apply custom menubar palette", exc_info=True)
+                pass
 
     def _configure_menu_widget(self, menu: tk.Menu, colors: Dict[str, str]) -> None:
         configure = getattr(menu, "configure", None)
@@ -261,11 +471,7 @@ class ThemePaletteMixin:
 
         setattr(self, "_last_title_background_attempt", palette.window_background)
         setattr(self, "_last_title_color_attempt", palette.text_primary)
-        setattr(
-            self,
-            "_last_title_dark_mode_attempt",
-            is_dark_color(palette.window_background),
-        )
+        setattr(self, "_last_title_dark_mode_attempt", is_dark_color(palette.window_background))
         setattr(self, "_last_title_hwnd_attempt", None)
         setattr(self, "_last_title_geometry_nudge", None)
         setattr(self, "_pending_title_geometry_nudge", False)
@@ -294,11 +500,7 @@ class ThemePaletteMixin:
             if getattr(self, "_use_native_menubar", False):
                 apply_menu_bar_colors(self, palette)
             else:
-                setattr(
-                    self,
-                    "_last_menubar_brush_color_attempt",
-                    palette.window_background,
-                )
+                setattr(self, "_last_menubar_brush_color_attempt", palette.window_background)
             schedule_window_frame_refresh(self)
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Callable, Dict
 
 import tkinter as tk
@@ -22,6 +23,9 @@ from .actions import _LayoutEditorActionsMixin
 from .config import _LayoutEditorConfigMixin
 from .state import _LayoutEditorStateMixin
 from .ui import _LayoutEditorUIMixin
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class InstrumentLayoutEditor(
@@ -197,10 +201,11 @@ class InstrumentLayoutEditor(
         self.update_idletasks()
         requested_width = self.winfo_reqwidth()
         requested_height = self.winfo_reqheight()
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
+        screen_width = max(1, self.winfo_screenwidth())
+        screen_height = max(1, self.winfo_screenheight())
         max_width = max(640, screen_width - 80)
-        max_height = max(520, screen_height - 80)
+        usable_height = max(720, screen_height - 40)
+        min_required_height = max(requested_height, 520)
 
         sidebar_canvas = self._sidebar_canvas
         sidebar_frame = self._sidebar_frame
@@ -208,7 +213,10 @@ class InstrumentLayoutEditor(
             sidebar_canvas_req = sidebar_canvas.winfo_reqheight()
             sidebar_content_req = sidebar_frame.winfo_reqheight()
             other_height = max(0, requested_height - sidebar_canvas_req)
-            available_sidebar_height = max(0, max_height - other_height)
+            min_required_height = max(
+                min_required_height, other_height + sidebar_content_req
+            )
+            available_sidebar_height = max(0, screen_height - other_height)
             if (
                 sidebar_content_req > 0
                 and sidebar_content_req <= available_sidebar_height
@@ -218,11 +226,26 @@ class InstrumentLayoutEditor(
                 self.update_idletasks()
                 requested_width = self.winfo_reqwidth()
                 requested_height = self.winfo_reqheight()
+                min_required_height = max(min_required_height, requested_height)
 
         width = min(requested_width, max_width)
-        height = min(requested_height, max_height)
-        self.geometry(f"{width}x{height}")
-        self.minsize(min(requested_width, max_width), min(requested_height, max_height))
+        resolved_height = min(screen_height, max(min_required_height, usable_height))
+        min_height = min(min_required_height, screen_height)
+        self.geometry(f"{width}x{resolved_height}")
+        self.minsize(min(requested_width, max_width), min_height)
+
+        LOGGER.debug(
+            "Instrument layout editor initial geometry width=%s height=%s screen=(%s,%s) "
+            "requested=(%s,%s) min_required=%s usable_height=%s",
+            width,
+            resolved_height,
+            screen_width,
+            screen_height,
+            requested_width,
+            requested_height,
+            min_required_height,
+            usable_height,
+        )
 
         center_window_over_parent(self, master)
         self.deiconify()

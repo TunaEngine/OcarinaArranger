@@ -36,6 +36,13 @@ class MenuBuilderMixin:
             menubar = self._register_menu(menubar, role="submenu")
             # Defer creation of the CustomMenuBar until after items are added.
 
+        shortcuts_flag = os.environ.get("OCARINA_E2E_SHORTCUTS", "").strip().lower()
+        self._menu_shortcuts_enabled = shortcuts_flag not in {"", "0", "false", "no"}
+        if self._menu_shortcuts_enabled:
+            logger.info("Menu accelerators enabled for E2E shortcuts")
+        else:
+            logger.debug("Menu accelerators disabled for regular usage")
+
         file_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Open Project...", command=self._open_project_command)
@@ -156,12 +163,12 @@ class MenuBuilderMixin:
         if update_entries_added:
             tools_menu.add_separator()
 
-        tools_menu.add_command(
-            label="Instrument Layout Editor...",
-            accelerator="Ctrl+Shift+L",
-            command=self.open_instrument_layout_editor,
-        )
-        self._bind_menu_accelerator("<Control-Shift-L>", self.open_instrument_layout_editor)
+        layout_kwargs: dict[str, object] = {"label": "Instrument Layout Editor...", "command": self.open_instrument_layout_editor}
+        if self._menu_shortcuts_enabled:
+            layout_kwargs["accelerator"] = "Ctrl+Shift+L"
+        tools_menu.add_command(**layout_kwargs)
+        if self._menu_shortcuts_enabled:
+            self._bind_menu_accelerator("<Control-Shift-L>", self.open_instrument_layout_editor)
 
         help_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -185,12 +192,12 @@ class MenuBuilderMixin:
 
         about_menu = self._register_menu(tk.Menu(menubar, tearoff=False))
         menubar.add_cascade(label="About", menu=about_menu)
-        about_menu.add_command(
-            label="Licenses",
-            accelerator="Ctrl+Shift+P",
-            command=self._show_licenses_window,
-        )
-        self._bind_menu_accelerator("<Control-Shift-P>", self._show_licenses_window)
+        licenses_kwargs: dict[str, object] = {"label": "Licenses", "command": self._show_licenses_window}
+        if self._menu_shortcuts_enabled:
+            licenses_kwargs["accelerator"] = "Ctrl+Shift+P"
+        about_menu.add_command(**licenses_kwargs)
+        if self._menu_shortcuts_enabled:
+            self._bind_menu_accelerator("<Control-Shift-P>", self._show_licenses_window)
 
         # If using the custom menubar, build it now that cascades are defined.
         if not getattr(self, "_use_native_menubar", False) and not getattr(self, "_headless", False):

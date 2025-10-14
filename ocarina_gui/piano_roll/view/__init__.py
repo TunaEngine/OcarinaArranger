@@ -1,5 +1,5 @@
 """View layer package for the piano roll widget."""
 
-from .widget import PianoRoll
+from .piano_roll import PianoRoll
 
 __all__ = ["PianoRoll"]

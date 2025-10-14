@@ -154,6 +154,9 @@ class PreviewPlaybackControlMixin:
         if not isinstance(widget, ttk.Button):
             return
 
+        if not getattr(self, "_supports_bootstyle", False):
+            return
+
         play_buttons = getattr(self, "_preview_play_buttons", None)
         is_play_button = isinstance(play_buttons, dict) and widget in play_buttons.values()
 
@@ -172,10 +175,10 @@ class PreviewPlaybackControlMixin:
 
         try:
             widget.configure(bootstyle=bootstyle)
-        except (tk.TclError, TypeError):
+        except (tk.TclError, TypeError, KeyError):
             try:
                 widget.configure(style="Toolbutton")
-            except tk.TclError:
+            except (tk.TclError, KeyError):
                 return
 
     def _refresh_preview_theme_assets(self) -> None:
@@ -193,10 +196,11 @@ class PreviewPlaybackControlMixin:
         if playback is not None:
             muted = playback.state.volume <= 1e-6
         bootstyle = ("danger", "outline") if muted else ("info", "outline")
-        try:
-            button.configure(bootstyle=bootstyle)
-        except (tk.TclError, TypeError):
-            pass
+        if getattr(self, "_supports_bootstyle", False):
+            try:
+                button.configure(bootstyle=bootstyle)
+            except (tk.TclError, TypeError, KeyError):
+                pass
         icon_sets = getattr(self, "_preview_volume_icons", {})
         icon_map = icon_sets.get(side) if isinstance(icon_sets, dict) else None
         desired_icon = None

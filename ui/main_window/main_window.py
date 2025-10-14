@@ -13,6 +13,7 @@ from ui.main_window.fingering import FingeringEditorMixin
 from ui.main_window.initialisation import MainWindowInitialisationMixin
 from ui.main_window.instrument_settings import InstrumentSettingsMixin
 from ui.main_window.menus import MenuActionsMixin
+from ui.main_window.linux_automation import LinuxAutomationMixin
 from ui.main_window.preview import PreviewPlaybackMixin
 from ui.main_window.runtime import MainWindowRuntimeMixin
 from ui.main_window.state_sync import MainWindowStateSyncMixin
@@ -33,6 +34,7 @@ class MainWindow(
     InstrumentSettingsMixin,
     MainWindowStateSyncMixin,
     MainWindowRuntimeMixin,
+    LinuxAutomationMixin,
     MainWindowInitialisationMixin,
     _TkBase,
 ):
@@ -80,6 +82,8 @@ class MainWindow(
         self._transpose_trace_id = self.transpose_offset.trace_add(
             "write", self._on_transpose_value_changed
         )
+
+        self._setup_linux_automation()
 
 
 __all__ = ["MainWindow"]

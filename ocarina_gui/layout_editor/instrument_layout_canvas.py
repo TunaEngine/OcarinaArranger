@@ -50,7 +50,11 @@ class InstrumentLayoutCanvas(tk.Canvas):
         self._tooltip = CanvasTooltip(self)
         self._outline_image: OutlineImage | None = None
         self._outline_cache_key: tuple | None = None
-        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        self._theme_unsubscribe: Callable[[], None] | None = None
+        try:
+            self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        except Exception:
+            self._theme_unsubscribe = None
         self._palette: LayoutEditorPalette = palette
         self._workspace_background = palette.workspace_background
         self._instrument_surface = palette.instrument_surface

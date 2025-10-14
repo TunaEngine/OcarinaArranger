@@ -12,6 +12,23 @@ from ocarina_gui.color_utils import hex_to_rgb, mix_colors, rgb_to_hex
 pytestmark = pytest.mark.usefixtures("ensure_original_preview")
 
 
+def _find_menu_entry_index(menu: tk.Menu, label: str) -> int | None:
+    try:
+        end_index = menu.index("end")
+    except tk.TclError:
+        return None
+    if end_index is None:
+        return None
+
+    for index in range(end_index + 1):
+        try:
+            if menu.entrycget(index, "label") == label:
+                return index
+        except tk.TclError:
+            continue
+    return None
+
+
 def _lookup_state_value(style, style_name: str, option: str, state: str) -> str | None:
     entries = style.map(style_name, query_opt=option)
     for entry in entries:
@@ -215,3 +232,89 @@ def test_dark_theme_updates_menu_and_title(gui_app):
         assert getattr(gui_app, "_last_dark_mode_window_attempt", None) is True
         assert getattr(gui_app, "_last_dark_mode_window_result", None) is not None
 
+
+def _collect_menu_accelerators(app) -> dict[str, str]:
+    menus = [
+        menu for menu in getattr(app, "_registered_menus", []) if hasattr(menu, "entrycget")
+    ]
+    accelerators: dict[str, str] = {}
+    for menu in menus:
+        for label in ("Instrument Layout Editor...", "Licenses"):
+            index = _find_menu_entry_index(menu, label)
+            if index is None:
+                continue
+            accelerators[label] = menu.entrycget(index, "accelerator")
+    return accelerators
+
+
+def _rebuild_menus_for_test(app) -> None:
+    menus = list(getattr(app, "_registered_menus", []))
+    for menu in menus:
+        try:
+            menu.destroy()
+        except tk.TclError:
+            continue
+    app._registered_menus = []  # type: ignore[attr-defined]
+    try:
+        custom_bar = getattr(app, "_custom_menubar", None)
+        if custom_bar is not None:
+            custom_bar.destroy()
+    except tk.TclError:
+        pass
+    setattr(app, "_custom_menubar", None)
+    setattr(app, "_menubar", None)
+    try:
+        app.config(menu=None)
+    except tk.TclError:
+        pass
+    app._build_menus()  # type: ignore[attr-defined]
+
+
+@pytest.mark.gui
+def test_menu_accelerators_disabled_by_default(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Requires Tk display to inspect menu accelerators")
+
+    monkeypatch.delenv("OCARINA_E2E_SHORTCUTS", raising=False)
+    _rebuild_menus_for_test(gui_app)
+    accelerators = _collect_menu_accelerators(gui_app)
+    assert accelerators.get("Instrument Layout Editor...") in {"", None}
+    assert accelerators.get("Licenses") in {"", None}
+
+
+@pytest.mark.gui
+def test_menu_accelerators_enabled_when_e2e_shortcuts_set(gui_app, monkeypatch):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Requires Tk display to inspect menu accelerators")
+
+    monkeypatch.setenv("OCARINA_E2E_SHORTCUTS", "1")
+    _rebuild_menus_for_test(gui_app)
+    accelerators = _collect_menu_accelerators(gui_app)
+    assert accelerators.get("Instrument Layout Editor...") == "Ctrl+Shift+L"
+    assert accelerators.get("Licenses") == "Ctrl+Shift+P"
+
+
+@pytest.mark.gui
+def test_dark_theme_applies_palette_to_custom_menubar(gui_app):
+    if getattr(gui_app, "_headless", False):
+        pytest.skip("Requires Tk display to inspect custom menubar")
+
+    custom_bar = getattr(gui_app, "_custom_menubar", None)
+    if custom_bar is None:
+        pytest.skip("Custom menubar not available on this platform")
+
+    themes.set_active_theme("dark")
+    gui_app.update_idletasks()
+
+    palette = themes.get_current_theme().palette
+    assert str(custom_bar.cget("background")) == palette.window_background
+
+    labels = getattr(custom_bar, "_labels", [])
+    if not labels:
+        pytest.skip("Custom menubar has no rendered labels")
+
+    label = labels[0]
+    assert str(label.cget("background")) == palette.window_background
+    assert str(label.cget("foreground")) == palette.text_primary
+    assert str(label.cget("activebackground")) == palette.table.selection_background
+    assert str(label.cget("activeforeground")) == palette.table.selection_foreground

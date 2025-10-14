@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
-from pathlib import Path
+import logging
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Callable, Dict, Optional
 
 import tkinter as tk
@@ -17,6 +18,9 @@ from ...fingering import (
     get_instrument,
     update_library_from_config,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _resolve_instrument_entry(
@@ -281,6 +285,13 @@ class _LayoutEditorConfigMixin:
     def _on_destroy(self, event: tk.Event) -> None:
         if event.widget is not self:
             return
+
+        cancel_callbacks = getattr(self, "_cancel_footer_layout_callbacks", None)
+        if callable(cancel_callbacks):
+            try:
+                cancel_callbacks()
+            except Exception:
+                LOGGER.debug("Failed to cancel footer layout callbacks on destroy", exc_info=True)
 
         callback = self._on_close
         self._on_close = None

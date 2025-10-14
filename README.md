@@ -130,20 +130,29 @@ location.
 
 ## Running Tests
 
-Install the test dependencies first:
+Install the test dependencies inside the project virtual environment first:
 
 ```
-python -m pip install pytest pytest-bdd
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Then run the suite:
+Then run the suite from the same activated environment (or by invoking the
+virtualenv binaries directly):
 
 ```
-python -m pytest
+xvfb-run -a .venv/bin/pytest
 ```
+
+On Windows the activation command is `\.venv\\Scripts\\activate` and the
+pytest binary lives under `\.venv\\Scripts\\pytest.exe`.
 
 For the roadmap that tracks behaviour-driven UI coverage, see
 [`docs/e2e_test_plan.md`](docs/e2e_test_plan.md).
+
+Troubleshooting tips and additional guidance for running the suite live in
+[`docs/testing/README.md`](docs/testing/README.md).
 
 ## Third-party license manifest
 

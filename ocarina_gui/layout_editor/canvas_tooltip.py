@@ -19,9 +19,11 @@ class CanvasTooltip:
         self._label: tk.Label | None = None
         self._text: str = ""
         self._colors = self._resolve_colors(get_current_theme())
-        self._unsubscribe: Callable[[], None] | None = register_theme_listener(
-            self._on_theme_changed
-        )
+        self._unsubscribe: Callable[[], None] | None = None
+        try:
+            self._unsubscribe = register_theme_listener(self._on_theme_changed)
+        except Exception:
+            self._unsubscribe = None
 
     def show(self, text: str, x: int, y: int) -> None:
         if not text:

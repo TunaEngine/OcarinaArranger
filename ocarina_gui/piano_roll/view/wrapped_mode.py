@@ -12,7 +12,7 @@ from ...themes import PianoRollPalette
 from .types import SupportsGeometry
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
-    from .widget import PianoRoll
+    from .piano_roll import PianoRoll
 
 
 class WrappedModeMixin:

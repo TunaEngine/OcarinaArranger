@@ -44,7 +44,11 @@ class StaffViewBase(ttk.Frame):
         apply_round_scrollbar_style(self.hbar)
         self.vbar = ttk.Scrollbar(self, orient="vertical")
         apply_round_scrollbar_style(self.vbar)
-        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        try:
+            self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        except Exception:
+            logger.debug("Failed to register staff theme listener", exc_info=True)
+            self._theme_unsubscribe = None
 
         self.canvas.grid(row=0, column=1, sticky="nsew")
         self.vbar.grid(row=0, column=2, sticky="ns")

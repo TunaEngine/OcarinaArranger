@@ -106,6 +106,7 @@ class _SynthRenderer(AudioRenderer):
         """Cleanly stop playback and all background worker threads."""
         self._stop_playback()
         self._worker.shutdown()
+        self._render_ready.set()
         threads = list(self._resume_threads)
         for t in threads:
             t.join(timeout=1.0)
@@ -317,20 +318,31 @@ class _SynthRenderer(AudioRenderer):
         )
 
     def _restart_after_render(self, generation: int, position: int) -> None:
+        if sys.is_finalizing():
+            return
+
         def resume() -> None:
             try:
-                self._render_ready.wait()
+                while not self._render_ready.wait(timeout=0.05):
+                    if sys.is_finalizing():
+                        return
+                if sys.is_finalizing():
+                    return
                 with self._playback_lock:
+                    if sys.is_finalizing():
+                        return
                     if self._worker.buffer_generation != generation:
                         return
                     try:
                         self._play_from_tick(position)
                     except Exception:  # pragma: no cover - defensive guard
-                        _safe_warning(
-                            "SynthRenderer resume playback failed", exc_info=True
-                        )
+                        if not sys.is_finalizing():
+                            _safe_warning(
+                                "SynthRenderer resume playback failed", exc_info=True
+                            )
             except Exception:  # pragma: no cover - defensive guard
-                _safe_warning("SynthRenderer resume wait failed", exc_info=True)
+                if not sys.is_finalizing():
+                    _safe_warning("SynthRenderer resume wait failed", exc_info=True)
 
         self._resume_threads = [t for t in self._resume_threads if t.is_alive()]
         thread = threading.Thread(

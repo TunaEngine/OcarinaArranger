@@ -18,8 +18,8 @@ from ocarina_gui.themes import (
     set_ttk_caret_color,
 )
 from shared.logging_config import get_file_log_verbosity
-from shared.tk_style import get_ttk_style
 from ui.logging_preferences import LOG_VERBOSITY_CHOICES
+from ocarina_gui.themes.runtime import resolve_theme_style
 
 from ._logging import LOGGER
 from .resources import get_main_window_resource
@@ -75,14 +75,8 @@ class ThemeInitialisationMixin:
         except tk.TclError:
             pass
 
-        style: ttk.Style | None = getattr(self, "style", None)
-        if style is not None:
-            try:
-                style.theme_use(theme.ttk_theme)
-            except tk.TclError:
-                style = None
-        if style is None:
-            style = get_ttk_style(self, theme=theme.ttk_theme)
+        resolution = resolve_theme_style(self, theme)
+        style = resolution.style
         self._style = style
         try:
             ensure_insert_bindings(self, palette.text_cursor)
@@ -121,18 +115,16 @@ class ThemeInitialisationMixin:
                 )
 
             self.title(APP_TITLE)
-            self.geometry("860x560")
+            screen_width = max(1, self.winfo_screenwidth())
+            screen_height = max(1, self.winfo_screenheight())
+            usable_width = max(960, screen_width - 80)
+            usable_height = max(720, screen_height - 80)
+            target_width = min(max(1100, int(screen_width * 0.72)), usable_width)
+            target_height = min(max(780, int(screen_height * 0.72)), usable_height)
+            self.geometry(f"{target_width}x{target_height}")
             self.resizable(True, True)
             current_theme = get_current_theme()
-            style: ttk.Style | None = getattr(self, "style", None)
-            if style is not None:
-                try:
-                    style.theme_use(current_theme.ttk_theme)
-                except tk.TclError:
-                    style = None
-            if style is None:
-                style = get_ttk_style(self, theme=current_theme.ttk_theme)
-            self._style = style
+            self._style = resolve_theme_style(self, current_theme).style
             self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._build_theme_actions()
         if not self._headless:

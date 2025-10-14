@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from collections import deque
+from dataclasses import dataclass
+from tkinter import ttk as tkttk
 from typing import Deque, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from shared.tk_style import configure_style, get_ttk_style
-from shared.ttk import ttk
+from shared.tk_style import configure_style, get_ttk_style, _reset_bootstrap_instance
+from shared.ttk import ttk, use_bootstrap_ttk, use_native_ttk
 
 from .library import get_current_theme
 from .palettes import ThemePalette
+from .spec import ThemeSpec
+
+logger = logging.getLogger(__name__)
 
 INSERT_BACKGROUND_PATTERNS: Tuple[str, ...] = (
     "*insertBackground",
@@ -56,11 +62,55 @@ def _ensure_default_ttk_insert_colors(style: ttk.Style, color: str) -> None:
         _configure_ttk_insert_color(style, style_name, color)
 
 
+def _widget_style_candidates(widget: tk.Misc) -> Iterable[Optional[ttk.Style]]:
+    try:
+        root = widget.winfo_toplevel()
+    except tk.TclError:
+        root = None
+
+    if root is not None:
+        style = getattr(root, "_style", None)
+        if isinstance(style, ttk.Style):
+            yield style
+
+        parent = widget
+        for _ in range(10):
+            try:
+                parent = parent.nametowidget(parent.winfo_parent())
+            except (tk.TclError, AttributeError, KeyError):
+                break
+            style = getattr(parent, "_style", None)
+            if isinstance(style, ttk.Style):
+                yield style
+            if parent is root:
+                break
+
+    try:
+        from shared import tk_style as tk_style_module
+    except ImportError:
+        tk_style_module = None
+
+    if tk_style_module is not None:
+        cached = getattr(tk_style_module, "_STYLE", None)
+        if isinstance(cached, ttk.Style):
+            yield cached
+
+
+def _resolve_widget_style(widget: tk.Misc) -> Optional[ttk.Style]:
+    for candidate in _widget_style_candidates(widget):
+        if candidate is not None:
+            return candidate
+
+    try:
+        return get_ttk_style(widget)
+    except (tk.TclError, ModuleNotFoundError):
+        return None
+
+
 def _maybe_set_widget_style_insert_color(widget: tk.Misc, color: str) -> None:
     if not _TTK_INSERT_WIDGET_TYPES or not isinstance(widget, _TTK_INSERT_WIDGET_TYPES):
         return
 
-    style_name = ""
     try:
         style_name = widget.cget("style")
     except tk.TclError:
@@ -69,50 +119,10 @@ def _maybe_set_widget_style_insert_color(widget: tk.Misc, color: str) -> None:
     if not style_name:
         style_name = widget.winfo_class()
 
-    # CRITICAL FIX: Avoid calling get_ttk_style() without theme parameter
-    # This was causing the theme to reset to the default "litera"
-    
-    # Strategy 1: Try to find existing style instance from widget hierarchy
-    style = None
-    try:
-        # Check if the widget's toplevel has the style
-        root = widget.winfo_toplevel()
-        if hasattr(root, '_style') and root._style is not None:
-            style = root._style
-        
-        # Check if any parent widget has a style attribute
-        if style is None:
-            parent = widget
-            for _ in range(10):  # Max 10 levels up
-                parent = parent.nametowidget(parent.winfo_parent())
-                if hasattr(parent, '_style') and parent._style is not None:
-                    style = parent._style
-                    break
-                if parent == root:
-                    break
-    except (tk.TclError, AttributeError):
-        pass
-    
-    # Strategy 2: Use global style if available and preserve its current theme
+    style = _resolve_widget_style(widget)
     if style is None:
-        try:
-            from shared.tk_style import _STYLE
-            if _STYLE is not None:
-                # Use the existing global style which should have the correct theme
-                style = _STYLE
-        except (ImportError, AttributeError):
-            pass
-    
-    # Strategy 3: Only if no style found, get one without changing theme
-    if style is None:
-        try:
-            # Get style but try to preserve current theme by not specifying theme parameter
-            # This is risky as it may still default to "litera"
-            style = get_ttk_style(widget)
-        except tk.TclError:
-            # If that fails, give up on setting insert color for this widget
-            return
-    
+        return
+
     _configure_ttk_insert_color(style, style_name, color)
 
 
@@ -224,6 +234,128 @@ def _schedule_insert_refresh(
         return
 
 
+@dataclass(frozen=True)
+class ResolvedStyle:
+    """Container describing the ttk style selected for a theme."""
+
+    style: ttk.Style
+    bootstrap_active: bool
+
+
+def _is_bootstrap_style(style: ttk.Style) -> bool:
+    module_name = type(style).__module__
+    return "ttkbootstrap" in module_name
+
+
+def _ensure_theme_selected(style: ttk.Style, theme_name: Optional[str]) -> bool:
+    if not theme_name:
+        return True
+
+    try:
+        current_theme = str(style.theme_use())
+    except Exception:
+        return False
+
+    if current_theme == theme_name:
+        return True
+
+    try:
+        style.theme_use(theme_name)
+    except Exception:
+        return False
+
+    try:
+        return str(style.theme_use()) == theme_name
+    except Exception:
+        return False
+
+
+def _ensure_ttk_theme(style: ttk.Style, theme_name: str, fallback: str = "clam") -> bool:
+    """Activate ``theme_name`` for ``style`` or fall back to ``fallback``."""
+
+    if not theme_name:
+        return True
+
+    try:
+        style.theme_use(theme_name)
+        return True
+    except Exception:
+        pass
+
+    try:
+        names: Set[str] = {str(name) for name in style.theme_names()}
+    except Exception:
+        names = set()
+
+    if theme_name not in names:
+        try:
+            style.theme_create(theme_name, parent=fallback)
+        except Exception:
+            pass
+
+    try:
+        style.theme_use(theme_name)
+        return True
+    except Exception:
+        if fallback:
+            try:
+                style.theme_use(fallback)
+            except Exception:
+                pass
+        return False
+
+
+def resolve_theme_style(master: tk.Misc, theme: ThemeSpec) -> ResolvedStyle:
+    """Return a ttk ``Style`` configured for ``theme`` with graceful fallbacks."""
+
+    style: Optional[ttk.Style] = None
+    bootstrap_active = False
+
+    try:
+        candidate = get_ttk_style(master, theme=theme.ttk_theme)
+    except ModuleNotFoundError:
+        logger.debug("ttkbootstrap unavailable; using native ttk style")
+    except Exception:
+        logger.debug("Failed to create ttkbootstrap style; falling back to native ttk", exc_info=True)
+    else:
+        style = candidate
+        bootstrap_active = _is_bootstrap_style(candidate) and _ensure_theme_selected(
+            candidate, theme.ttk_theme
+        )
+        if bootstrap_active:
+            _guard_bootstyle_theme_updates()
+        else:
+            logger.debug(
+                "Requested ttkbootstrap theme '%s' missing; using native ttk", theme.ttk_theme
+            )
+
+    if style is None or not bootstrap_active:
+        style = tkttk.Style(master=master)
+        _ensure_ttk_theme(style, theme.ttk_theme)
+        _reset_bootstrap_instance()
+        bootstrap_active = False
+
+    return ResolvedStyle(style=style, bootstrap_active=bootstrap_active)
+
+
+def _activate_ttk_namespace(bootstrap_active: bool) -> bool:
+    if not bootstrap_active:
+        use_native_ttk()
+        return False
+
+    try:
+        use_bootstrap_ttk()
+    except ModuleNotFoundError:
+        logger.debug(
+            "ttkbootstrap reported as active but import now fails; reverting to native ttk",
+            exc_info=True,
+        )
+        use_native_ttk()
+        return False
+
+    return True
+
+
 def apply_theme_to_toplevel(window: tk.Misc) -> ThemePalette:
     """Apply the current theme's Tk option defaults to ``window``."""
 
@@ -248,32 +380,33 @@ def apply_theme_to_toplevel(window: tk.Misc) -> ThemePalette:
         except tk.TclError:
             continue
 
+    resolution = resolve_theme_style(window, theme)
+    style = resolution.style
+    bootstrap_active = _activate_ttk_namespace(resolution.bootstrap_active)
+
     try:
-        style = get_ttk_style(window, theme=theme.ttk_theme)
-    except tk.TclError:
-        style = None
-    else:
         set_ttk_caret_color(style, palette.text_cursor)
+    except Exception:
+        logger.debug("Unable to update ttk caret colour", exc_info=True)
 
     apply_insert_cursor_color(window, palette.text_cursor)
     _apply_window_background(window, palette.window_background)
-    
-    # Configure Panel styles for standalone windows that contain Panel.TFrame/Panel.TLabelframe widgets
-    if style is not None:
+
+    try:
         from shared.tk_style import configure_panel_styles
-        try:
-            configure_panel_styles(style, palette.window_background, palette.text_primary)
-            # Apply Panel styles again after a brief delay to handle ttkbootstrap resets
-            def _apply_panel_styles_later():
-                try:
-                    configure_panel_styles(style, palette.window_background, palette.text_primary)
-                except Exception:
-                    pass
-            window.after(1, _apply_panel_styles_later)
-        except Exception:
-            # Don't fail if Panel style configuration fails
-            pass
-    
+
+        configure_panel_styles(style, palette.window_background, palette.text_primary)
+
+        def _apply_panel_styles_later() -> None:
+            try:
+                configure_panel_styles(style, palette.window_background, palette.text_primary)
+            except Exception:
+                pass
+
+        window.after(1, _apply_panel_styles_later)
+    except Exception:
+        pass
+
     _schedule_insert_refresh(
         window,
         insert_color=palette.text_cursor,
@@ -284,10 +417,40 @@ def apply_theme_to_toplevel(window: tk.Misc) -> ThemePalette:
     return palette
 
 
+def _guard_bootstyle_theme_updates() -> None:
+    """Prevent ttkbootstrap from raising when a requested theme is unavailable."""
+
+    try:
+        from ttkbootstrap.style import Bootstyle
+    except ModuleNotFoundError:  # pragma: no cover - ttkbootstrap missing entirely
+        return
+
+    if getattr(Bootstyle, "_ocarina_guard_installed", False):
+        return
+
+    original_update = Bootstyle.update_ttk_widget_style
+
+    def safe_update(widget=None, style_string=None, **kwargs):
+        try:
+            return original_update(widget, style_string, **kwargs)
+        except KeyError:
+            resolved = style_string
+            if isinstance(style_string, (tuple, list)):
+                resolved = " ".join(str(token) for token in style_string if token)
+            if isinstance(resolved, str) and resolved and resolved.lower() != "default":
+                return resolved
+            return ""
+
+    Bootstyle.update_ttk_widget_style = staticmethod(safe_update)
+    Bootstyle._ocarina_guard_installed = True
+
+
 __all__ = [
     "INSERT_BACKGROUND_PATTERNS",
+    "ResolvedStyle",
     "apply_insert_cursor_color",
     "apply_theme_to_toplevel",
     "ensure_insert_bindings",
+    "resolve_theme_style",
     "set_ttk_caret_color",
 ]

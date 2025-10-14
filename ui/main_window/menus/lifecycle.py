@@ -57,6 +57,13 @@ class LifecycleMixin:
                 except Exception:  # pragma: no cover - defensive safeguard
                     logger.exception("Failed to cancel fingering edits during destroy")
 
+        teardown_linux = getattr(self, "_teardown_linux_automation", None)
+        if callable(teardown_linux):
+            try:
+                teardown_linux()
+            except Exception:
+                logger.debug("Linux automation teardown raised", exc_info=True)
+
         if self._theme_unsubscribe is not None:
             self._theme_unsubscribe()
             self._theme_unsubscribe = None

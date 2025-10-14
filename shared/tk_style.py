@@ -15,7 +15,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - triggered when dependen
 else:
     _IMPORT_ERROR = None
 
-from shared.ttk import ttk
+from shared.ttk import ttk, is_bootstrap_enabled, use_native_ttk
 
 logger = logging.getLogger(__name__)
 
@@ -156,12 +156,27 @@ def _create_style(theme: str, master: Optional[tk.Misc]) -> ttk.Style:
         managed_root = bool(getattr(root, "_tk_style_managed", False))
         _ = root  # pragma: no cover - keep reference alive to prevent Tk GC
         try:
+            try:
+                root.tk.call("package", "require", "Ttk")
+            except tk.TclError as exc:
+                logger.warning(
+                    "Tk interpreter does not provide ttk widgets (%s); falling back to native ttk",
+                    exc,
+                )
+                use_native_ttk()
+                return ttk.Style(master=root)
             style = _instantiate_bootstrap_style(root, theme)
         except tk.TclError as exc:
             last_error = exc
             logger.debug(
                 "ttkbootstrap Style creation failed on attempt %s: %s", attempts, exc, exc_info=True
             )
+            if "ttk::style" in str(exc) and is_bootstrap_enabled():
+                logger.warning(
+                    "Bootstrap style commands unavailable; falling back to native ttk"
+                )
+                use_native_ttk()
+                return ttk.Style(master=root)
             try:
                 if managed_root:
                     root.destroy()

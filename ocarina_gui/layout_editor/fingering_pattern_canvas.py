@@ -49,7 +49,11 @@ class FingeringPatternCanvas(tk.Canvas):
         self.bind("<ButtonPress-1>", self._on_click)
         self._outline_image: OutlineImage | None = None
         self._outline_cache_key: tuple | None = None
-        self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        self._theme_unsubscribe: Callable[[], None] | None = None
+        try:
+            self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        except Exception:
+            self._theme_unsubscribe = None
 
     def render(self, state: InstrumentLayoutState, pattern: Sequence[int]) -> None:
         self._state = state

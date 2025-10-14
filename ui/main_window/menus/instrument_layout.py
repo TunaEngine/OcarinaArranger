@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Dict
 
+import tkinter as tk
+
 from ocarina_gui.layout_editor import InstrumentLayoutEditor
 
 from ._logger import logger
@@ -23,6 +25,21 @@ class InstrumentLayoutMixin:
                 pass
             logger.warning("Instrument layout editor unavailable in headless mode")
             return
+
+        try:
+            was_withdrawn = self.state() == "withdrawn"  # type: ignore[attr-defined]
+        except tk.TclError:
+            was_withdrawn = False
+
+        if was_withdrawn:
+            logger.debug("Temporarily deiconifying main window for layout editor launch")
+            try:
+                self.deiconify()
+                self.update_idletasks()
+            except tk.TclError:
+                logger.debug("Failed to deiconify main window before layout editor", exc_info=True)
+                was_withdrawn = False
+
         window = self._layout_editor_window
         if window is not None and window.winfo_exists():
             logger.info("Instrument layout editor already open; focusing existing window")
@@ -48,3 +65,4 @@ class InstrumentLayoutMixin:
             on_half_toggle=on_half_toggle if callable(on_half_toggle) else None,
         )
         logger.info("Instrument layout editor window created")
+

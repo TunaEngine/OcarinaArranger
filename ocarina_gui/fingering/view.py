@@ -54,9 +54,11 @@ class FingeringView(FingeringStaticCanvasMixin, FingeringInteractionMixin, tk.Ca
         self._instrument_revision: int = 0
         self._static_revision: int = -1
         self._unsubscribe = register_instrument_listener(self._on_instrument_changed)
-        self._theme_unsubscribe: Optional[Callable[[], None]] = register_theme_listener(
-            self._on_theme_changed
-        )
+        self._theme_unsubscribe: Optional[Callable[[], None]] | None = None
+        try:
+            self._theme_unsubscribe = register_theme_listener(self._on_theme_changed)
+        except Exception:
+            self._theme_unsubscribe = None
         self._outline_image: OutlineImage | None = None
         self._outline_canvas_id: int | None = None
         self._static_signature: tuple | None = None
