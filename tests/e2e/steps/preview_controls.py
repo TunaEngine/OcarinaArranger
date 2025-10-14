@@ -11,6 +11,8 @@ from tests.helpers import require_ttkbootstrap
 require_ttkbootstrap()
 
 from tests.e2e.harness import E2EHarness
+from shared.tk_style import get_ttk_style
+from ocarina_gui import themes
 
 
 logger = logging.getLogger(__name__)
@@ -191,6 +193,65 @@ def assert_arranged_playback_volume(arranger_app: E2EHarness, value: float) -> N
     playback = arranger_app.window._preview_playback.get("arranged")
     assert playback is not None
     assert playback.state.volume == pytest.approx(value, abs=1e-6)
+
+
+@then("the arranged preview volume slider uses the light theme high contrast colors")
+def assert_volume_slider_high_contrast(arranger_app: E2EHarness) -> None:
+    window = arranger_app.window
+    window._ensure_preview_tab_initialized("arranged")
+    controls = window._preview_volume_controls.get("arranged")
+    assert controls, "Preview volume controls were not initialised"
+
+    theme = themes.get_theme("light")
+    slider_spec = theme.styles.get("info.Horizontal.TScale", {})
+    trough_spec = (slider_spec.get("troughcolor") or "").lower()
+    border_spec = (slider_spec.get("bordercolor") or "").lower()
+    background_spec = (slider_spec.get("background") or "").lower()
+    light_spec = (slider_spec.get("lightcolor") or "").lower()
+    dark_spec = (slider_spec.get("darkcolor") or "").lower()
+    trough_element = theme.styles.get("Horizontal.Scale.trough", {})
+    trough_background_spec = (trough_element.get("background") or "").lower()
+    trough_fill_spec = (trough_element.get("troughcolor") or "").lower()
+    assert trough_spec == "#ced4da"
+    assert border_spec == "#ced4da"
+    assert background_spec == "#e9ecef"
+    assert light_spec == "#f8f9fa"
+    assert dark_spec == "#ced4da"
+    assert trough_background_spec == "#495057"
+    assert trough_fill_spec == "#495057"
+
+    if getattr(window, "_headless", False):
+        return
+
+    slider = controls[-1]
+    style = getattr(window, "_style", None) or get_ttk_style(window)
+    cget = getattr(slider, "cget", None)
+    if callable(cget):
+        style_name = str(cget("style") or "")
+    else:
+        style_name = ""
+    if not style_name:
+        style_name = "info.Horizontal.TScale"
+
+    trough = (style.lookup(style_name, "troughcolor") or "").lower()
+    border = (style.lookup(style_name, "bordercolor") or "").lower()
+    background = (style.lookup(style_name, "background") or "").lower()
+    light = (style.lookup(style_name, "lightcolor") or "").lower()
+    dark = (style.lookup(style_name, "darkcolor") or "").lower()
+    trough_background = (
+        style.lookup("Horizontal.Scale.trough", "background") or ""
+    ).lower()
+    trough_fill = (
+        style.lookup("Horizontal.Scale.trough", "troughcolor") or ""
+    ).lower()
+
+    assert trough == "#ced4da"
+    assert border == "#ced4da"
+    assert background == "#e9ecef"
+    assert light == "#f8f9fa"
+    assert dark == "#ced4da"
+    assert trough_background == "#495057"
+    assert trough_fill == "#495057"
 
 
 @then("the arranged preview mute button is pressed")

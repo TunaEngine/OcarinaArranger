@@ -12,7 +12,7 @@
         "text_cursor": "#212529",
         "piano_roll": {
           "background": "#f8f9fa",
-          "natural_row_fill": "#f8f9fa",
+          "natural_row_fill": "#e9ecef",
           "accidental_row_fill": "#ffffff",
           "grid_line": "#dee2e6",
           "measure_line": "#adb5bd",
@@ -71,7 +71,26 @@
           "handle_outline": "#2c7be5"
         }
       },
-      "styles": {},
+      "styles": {
+        "Horizontal.TScale": {
+          "troughcolor": "#ced4da",
+          "bordercolor": "#ced4da",
+          "background": "#e9ecef",
+          "lightcolor": "#f8f9fa",
+          "darkcolor": "#ced4da"
+        },
+        "info.Horizontal.TScale": {
+          "troughcolor": "#ced4da",
+          "bordercolor": "#ced4da",
+          "background": "#e9ecef",
+          "lightcolor": "#f8f9fa",
+          "darkcolor": "#ced4da"
+        },
+        "Horizontal.Scale.trough": {
+          "background": "#495057",
+          "troughcolor": "#495057"
+        }
+      },
       "style_maps": {
         "TNotebook.Tab": {
           "foreground": [
@@ -115,8 +134,8 @@
           "grid_line": "#343a40",
           "measure_line": "#495057",
           "measure_number_text": "#dee2e6",
-          "note_fill_sharp": "#4dabf7",
-          "note_fill_natural": "#339af0",
+          "note_fill_sharp": "#1c7ed6",
+          "note_fill_natural": "#1864ab",
           "note_outline": "#74c0fc",
           "note_label_text": "#f8f9fa",
           "placeholder_text": "#ced4da",

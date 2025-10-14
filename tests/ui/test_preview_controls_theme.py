@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from shared.ttk import ttk
-from shared.tk_style import get_ttk_style
+from shared.tk_style import configure_style, get_ttk_style
 from ocarina_gui.themes import set_active_theme, get_current_theme, apply_theme_to_toplevel
 from ocarina_gui.ui_builders.preview_controls import build_preview_controls, build_arranged_preview_controls
 
@@ -48,6 +48,69 @@ class MockApp:
     def _apply_transpose_offset(self): pass
     def _cancel_transpose_offset(self): pass
     def _register_transpose_spinbox(self, spinbox, **kwargs): pass
+
+
+@pytest.mark.gui
+def test_light_theme_volume_slider_uses_high_contrast_colors(reset_theme):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter display is not available")
+
+    root.withdraw()
+    slider = None
+    window = None
+
+    try:
+        set_active_theme("light")
+        window = tk.Toplevel(root)
+        apply_theme_to_toplevel(window)
+
+        theme = get_current_theme()
+        style = get_ttk_style(window, theme=theme.ttk_theme)
+        for style_name, options in theme.styles.items():
+            configure_style(style, style_name, **options)
+
+        slider = ttk.Scale(
+            window,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            bootstyle="info",
+        )
+        slider.pack()
+        window.update_idletasks()
+
+        style_name = slider.cget("style") or slider.winfo_class()
+        trough = (style.lookup(style_name, "troughcolor") or "").lower()
+        border = (style.lookup(style_name, "bordercolor") or "").lower()
+        background = (style.lookup(style_name, "background") or "").lower()
+        light = (style.lookup(style_name, "lightcolor") or "").lower()
+        dark = (style.lookup(style_name, "darkcolor") or "").lower()
+        trough_background = (
+            style.lookup("Horizontal.Scale.trough", "background") or ""
+        ).lower()
+
+        trough_fill = (
+            style.lookup("Horizontal.Scale.trough", "troughcolor") or ""
+        ).lower()
+
+        assert trough == "#ced4da"
+        assert border == "#ced4da"
+        assert background == "#e9ecef"
+        assert light == "#f8f9fa"
+        assert dark == "#ced4da"
+        assert trough_background == "#495057"
+        assert trough_fill == "#495057"
+    finally:
+        with suppress(Exception):
+            if slider is not None:
+                slider.destroy()
+        with suppress(Exception):
+            if window is not None:
+                window.destroy()
+        with suppress(Exception):
+            root.destroy()
 
 
 @pytest.mark.gui

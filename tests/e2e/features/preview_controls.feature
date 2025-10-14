@@ -37,3 +37,7 @@ Feature: Preview playback controls
     Then the arranged preview volume slider reads 65 percent
     And the arranged preview playback volume is 0.65
     And the arranged preview mute button is released
+
+  Scenario: Light theme volume slider uses high contrast colors
+    Given the arranger app uses the light theme
+    Then the arranged preview volume slider uses the light theme high contrast colors

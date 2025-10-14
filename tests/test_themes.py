@@ -87,6 +87,68 @@ def test_set_active_theme_preserves_log_verbosity(reset_theme):
     assert payload["log_verbosity"] == "info"
 
 
+def test_light_theme_defines_high_contrast_volume_slider(reset_theme):
+    """Light theme should ensure the volume slider trough remains visible."""
+
+    theme = themes.get_theme("light")
+    slider_style = theme.styles.get("info.Horizontal.TScale", {})
+
+    assert slider_style, "Expected light theme to define info.Horizontal.TScale style"
+    trough = slider_style.get("troughcolor")
+    assert trough is not None, "Volume slider style must provide a troughcolor"
+    assert trough.lower() == "#ced4da", trough
+
+    border = slider_style.get("bordercolor")
+    assert border is not None, "Volume slider style must provide a bordercolor"
+    assert border.lower() == "#ced4da", border
+
+    background = slider_style.get("background")
+    assert background is not None, "Volume slider style must provide a background"
+    assert background.lower() == "#e9ecef", background
+
+    light = slider_style.get("lightcolor")
+    assert light is not None, "Volume slider style must provide a lightcolor"
+    assert light.lower() == "#f8f9fa", light
+
+    dark = slider_style.get("darkcolor")
+    assert dark is not None, "Volume slider style must provide a darkcolor"
+    assert dark.lower() == "#ced4da", dark
+
+    trough_element = theme.styles.get("Horizontal.Scale.trough", {})
+    assert trough_element, "Expected explicit Horizontal.Scale.trough style for light theme"
+    trough_background = trough_element.get("background")
+    assert (
+        trough_background is not None
+    ), "Volume slider trough must provide a background override"
+    assert trough_background.lower() == "#495057", trough_background
+
+    trough_fill = trough_element.get("troughcolor")
+    assert trough_fill is not None, "Volume slider trough must provide a troughcolor override"
+    assert trough_fill.lower() == "#495057", trough_fill
+
+
+def test_light_theme_piano_roll_rows_use_contrasting_fills(reset_theme):
+    theme = themes.get_theme("light")
+    palette = theme.palette.piano_roll
+
+    assert palette.background.lower() == "#f8f9fa"
+    assert palette.natural_row_fill.lower() == "#e9ecef"
+    assert palette.accidental_row_fill.lower() == "#ffffff"
+    assert palette.natural_row_fill.lower() != palette.accidental_row_fill.lower()
+    assert palette.natural_row_fill.lower() != palette.background.lower()
+
+
+def test_dark_theme_piano_roll_notes_use_high_contrast_fills(reset_theme):
+    theme = themes.get_theme("dark")
+    palette = theme.palette.piano_roll
+
+    assert palette.note_fill_sharp.lower() == "#1c7ed6"
+    assert palette.note_fill_natural.lower() == "#1864ab"
+    assert palette.note_label_text.lower() == "#f8f9fa"
+    assert palette.note_fill_natural.lower() != palette.note_label_text.lower()
+    assert palette.note_fill_sharp.lower() != palette.note_label_text.lower()
+
+
 def test_load_library_uses_saved_theme(monkeypatch, tmp_path):
     pref_path = tmp_path / "prefs.json"
     pref_path.write_text(json.dumps({"theme_id": "dark"}), encoding="utf-8")

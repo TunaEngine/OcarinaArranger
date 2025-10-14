@@ -4,6 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from ocarina_gui import themes
+from ocarina_gui.piano_roll.notes import is_accidental
+
 
 pytestmark = pytest.mark.usefixtures("ensure_original_preview")
 
@@ -101,6 +104,83 @@ def test_piano_roll_hover_handles_notes_below_range(gui_app):
     roll._hover_emit(int(y))
     status = getattr(fingering, "status", getattr(fingering, "_status_message", ""))
     assert status == "No fingering available"
+
+
+def test_piano_roll_background_rows_follow_light_theme_palette(gui_app):
+    roll = gui_app.roll_orig
+    assert roll is not None
+    canvas = getattr(roll, "canvas", None)
+    if canvas is None or not hasattr(canvas, "find_withtag"):
+        pytest.skip("Piano roll rendering requires Tk-based widgets")
+
+    themes.set_active_theme("light")
+    palette = themes.get_current_theme().palette.piano_roll
+    roll.apply_palette(palette)
+
+    events = [(0, 120, roll.min_midi), (240, 120, roll.min_midi + 1)]
+    roll.render(events, pulses_per_quarter=480)
+    gui_app.update_idletasks()
+
+    backgrounds = canvas.find_withtag("row_background")
+    assert backgrounds, "expected piano roll to draw row background stripes"
+
+    fills = {canvas.itemcget(item, "fill").lower() for item in backgrounds}
+    expected = {
+        palette.natural_row_fill.lower(),
+        palette.accidental_row_fill.lower(),
+    }
+    assert fills == expected, fills
+
+
+def test_piano_roll_notes_follow_dark_theme_palette(gui_app):
+    roll = gui_app.roll_orig
+    assert roll is not None
+    canvas = getattr(roll, "canvas", None)
+    if canvas is None or not hasattr(canvas, "find_withtag"):
+        pytest.skip("Piano roll rendering requires Tk-based widgets")
+
+    themes.set_active_theme("dark")
+    palette = themes.get_current_theme().palette.piano_roll
+    roll.apply_palette(palette)
+
+    natural_midi = None
+    accidental_midi = None
+    for midi in range(roll.min_midi, roll.max_midi + 1):
+        if is_accidental(midi):
+            if accidental_midi is None:
+                accidental_midi = midi
+        else:
+            if natural_midi is None:
+                natural_midi = midi
+        if natural_midi is not None and accidental_midi is not None:
+            break
+
+    if natural_midi is None or accidental_midi is None:
+        pytest.skip("Piano roll does not expose both natural and accidental rows")
+
+    events = [
+        (0, 480, natural_midi),
+        (240, 480, accidental_midi),
+    ]
+    roll.render(events, pulses_per_quarter=480)
+    gui_app.update_idletasks()
+
+    note_rects = canvas.find_withtag("note_rect")
+    assert note_rects, "expected piano roll to draw note rectangles"
+    fills = {canvas.itemcget(item, "fill").lower() for item in note_rects}
+    expected = {
+        palette.note_fill_natural.lower(),
+        palette.note_fill_sharp.lower(),
+    }
+    assert fills == expected, fills
+
+    labels = [
+        canvas.itemcget(item, "fill").lower()
+        for item in canvas.find_withtag("note_value_label")
+        if canvas.type(item) == "text"
+    ]
+    assert labels, "expected note labels to be drawn"
+    assert all(label == palette.note_label_text.lower() for label in labels)
 
 
 def test_piano_roll_draws_measure_numbers(gui_app):

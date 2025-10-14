@@ -7,6 +7,7 @@ require_ttkbootstrap()
 from pathlib import Path
 from pytest_bdd import given, then, when, parsers
 
+from ocarina_gui import themes
 from ocarina_gui.pdf_export.types import PdfExportOptions
 
 from tests.e2e.harness import E2EHarness
@@ -16,6 +17,12 @@ from tests.e2e.harness import E2EHarness
 def arranger_app(e2e_app: E2EHarness) -> E2EHarness:
     e2e_app.ensure_preview_successes(4)
     return e2e_app
+
+
+@given("the arranger app uses the light theme")
+def ensure_light_theme(arranger_app: E2EHarness) -> None:
+    themes.set_active_theme("light")
+    arranger_app.window.update_idletasks()
 
 
 @given(parsers.parse('the next file open selection is "{filename}"'))
