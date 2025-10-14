@@ -85,6 +85,7 @@ class MainViewModel:
         self._last_conversion: ConversionResult | None = None
         self._last_pdf_options: PdfExportOptions | None = None
         self._pitch_entries: list[str] = []
+        self._pending_input_confirmation = False
         self._state_lock = RLock()
         logger.info("MainViewModel initialised")
 
@@ -131,6 +132,7 @@ class MainViewModel:
                     self.state.arranger_telemetry = ()
                     self.state.pitch_list = []
                     self._pitch_entries = []
+                    self._pending_input_confirmation = bool(normalized_path)
                 self.state.input_path = normalized_path
             if prefer_mode is not None:
                 self.state.prefer_mode = prefer_mode
@@ -278,6 +280,7 @@ class MainViewModel:
         normalized = normalize_selected_part_ids(part_ids, allowed)
         self.update_settings(selected_part_ids=normalized)
         with self._state_lock:
+            self._pending_input_confirmation = False
             return self.state.selected_part_ids
 
     def ask_select_parts(
@@ -302,12 +305,19 @@ class MainViewModel:
         logger.info("Prompting for input file")
         with self._state_lock:
             previous_path = self.state.input_path
+            awaiting_confirmation = self._pending_input_confirmation
         path = self._dialogs.ask_open_path()
         if not path:
             logger.info("Input file selection cancelled")
             return False
-        if previous_path and path == previous_path:
-            logger.info("Input file unchanged; skipping preview reload")
+        if (
+            previous_path
+            and path == previous_path
+            and not awaiting_confirmation
+        ):
+            logger.info(
+                "Input file unchanged and selection confirmed; skipping preview reload"
+            )
             return False
         self.update_settings(input_path=path)
         with self._state_lock:
