@@ -115,7 +115,23 @@ def gui_app(request, monkeypatch):
             "candidate_notes": ["A4", "B4", "C5"],
         }
     )
-    stub_library = FingeringLibrary([stub_instrument])
+    secondary_instrument = InstrumentSpec.from_dict(
+        {
+            "id": "test_alt",
+            "name": "Secondary test instrument",
+            "title": "Secondary test instrument",
+            "canvas": {"width": 160, "height": 120},
+            "holes": [
+                {"id": "hole_1", "x": 35, "y": 35, "radius": 10},
+                {"id": "hole_2", "x": 75, "y": 35, "radius": 10},
+                {"id": "hole_3", "x": 115, "y": 35, "radius": 10},
+            ],
+            "note_order": ["G4", "A4"],
+            "note_map": {"G4": [1, 1, 1], "A4": [0, 0, 0]},
+            "candidate_notes": ["G4", "A4", "B4"],
+        }
+    )
+    stub_library = FingeringLibrary([stub_instrument, secondary_instrument])
     monkeypatch.setattr("ocarina_gui.fingering._LIBRARY", stub_library)
 
     monkeypatch.setattr(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
+from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
+from viewmodels.arranger_models import ArrangerBudgetSettings
+from viewmodels.main_viewmodel import DEFAULT_ARRANGER_STRATEGY
 
 
 class MainWindowStateSyncMixin:
@@ -17,6 +20,28 @@ class MainWindowStateSyncMixin:
             self.favor_lower.set(bool(state.favor_lower))
             self.range_min.set(state.range_min or DEFAULT_MIN)
             self.range_max.set(state.range_max or DEFAULT_MAX)
+            self._suppress_arranger_mode_trace = True
+            try:
+                self.arranger_mode.set(state.arranger_mode or DEFAULT_ARRANGER_MODE)
+            finally:
+                self._suppress_arranger_mode_trace = False
+            if hasattr(self, "arranger_strategy"):
+                self._suppress_arranger_strategy_trace = True
+                try:
+                    self.arranger_strategy.set(
+                        getattr(state, "arranger_strategy", DEFAULT_ARRANGER_STRATEGY)
+                        or DEFAULT_ARRANGER_STRATEGY
+                    )
+                finally:
+                    self._suppress_arranger_strategy_trace = False
+            if hasattr(self, "arranger_dp_slack"):
+                self._suspend_arranger_dp_trace = True
+                try:
+                    self.arranger_dp_slack.set(
+                        bool(getattr(state, "arranger_dp_slack_enabled", False))
+                    )
+                finally:
+                    self._suspend_arranger_dp_trace = False
             applied_offset = int(state.transpose_offset)
             self._transpose_applied_offset = applied_offset
             self._suspend_transpose_update = True
@@ -31,6 +56,19 @@ class MainWindowStateSyncMixin:
                 name = self._instrument_name_by_id.get(instrument_id, "")
                 self.convert_instrument_var.set(name)
                 self._selected_instrument_id = instrument_id
+            if hasattr(self, "_sync_starred_instruments_from_state"):
+                try:
+                    self._sync_starred_instruments_from_state(
+                        getattr(state, "starred_instrument_ids", ())
+                    )
+                except Exception:
+                    pass
+            if hasattr(self, "_sync_arranger_budgets_from_state"):
+                try:
+                    budgets = getattr(state, "arranger_budgets", ArrangerBudgetSettings())
+                    self._sync_arranger_budgets_from_state(budgets)
+                except Exception:
+                    pass
         finally:
             self._suspend_state_sync = False
         self.status.set(state.status_message)
@@ -43,6 +81,28 @@ class MainWindowStateSyncMixin:
             if not hasattr(snapshot, "tempo_bpm"):
                 continue
             self._apply_preview_snapshot(side, snapshot)
+        if hasattr(self, "_render_arranger_summary"):
+            try:
+                self._render_arranger_summary()
+            except Exception:
+                pass
+        if hasattr(self, "_refresh_arranger_results_from_state"):
+            try:
+                self._refresh_arranger_results_from_state()
+            except Exception:
+                pass
+        refresh = getattr(self, "_update_arranger_mode_layout", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception:
+                pass
+        advanced_refresh = getattr(self, "_update_arranger_advanced_visibility", None)
+        if callable(advanced_refresh):
+            try:
+                advanced_refresh()
+            except Exception:
+                pass
 
 
 __all__ = ["MainWindowStateSyncMixin"]

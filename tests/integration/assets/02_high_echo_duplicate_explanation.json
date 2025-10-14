@@ -1,0 +1,11 @@
+{
+  "instrumentId": "TEST_ALTO",
+  "actions": [
+    {
+      "measure": 2,
+      "action": "DROP_HIGH_DUPLICATE",
+      "reason": "salience*contrast < added_difficulty",
+      "dropped_voice": 2
+    }
+  ]
+}

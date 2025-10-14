@@ -67,6 +67,16 @@ class PreviewCommandsMixin:
             },
         )
         self._apply_preview_data(preview_data)
+        if hasattr(self, "_render_arranger_summary"):
+            try:
+                self._render_arranger_summary()
+            except Exception:
+                logger.exception("Failed to refresh arranger summary after preview")
+        if hasattr(self, "_refresh_arranger_results_from_state"):
+            try:
+                self._refresh_arranger_results_from_state()
+            except Exception:
+                logger.exception("Failed to refresh arranger results after preview")
         self.status.set(self._viewmodel.state.status_message)
         self._record_preview_import()
         return result

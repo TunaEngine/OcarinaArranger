@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
+from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
-
 from adapters.file_dialog import FileDialogAdapter
 from services.project_service import (
     LoadedProject,
@@ -25,8 +25,32 @@ from services.project_service import (
 from services.score_service import ScoreService
 from shared.result import Result
 
+from domain.arrangement.api import ArrangementStrategyResult
+
+from services.arranger_preview import ArrangerComputation, compute_arranger_preview
+from viewmodels.arranger_models import (
+    ArrangerBudgetSettings,
+    ArrangerEditBreakdown,
+    ArrangerExplanationRow,
+    ArrangerInstrumentSummary,
+    ArrangerResultSummary,
+    ArrangerTelemetryHint,
+)
+
 
 logger = logging.getLogger(__name__)
+
+
+ARRANGER_STRATEGY_CURRENT = "current"
+ARRANGER_STRATEGY_STARRED_BEST = "starred-best"
+ARRANGER_STRATEGIES = (
+    ARRANGER_STRATEGY_CURRENT,
+    ARRANGER_STRATEGY_STARRED_BEST,
+)
+DEFAULT_ARRANGER_STRATEGY = ARRANGER_STRATEGY_CURRENT
+
+
+_UNSET = object()
 
 
 @dataclass(slots=True)
@@ -43,6 +67,23 @@ class MainViewModelState:
     transpose_offset: int = 0
     instrument_id: str = ""
     preview_settings: dict[str, PreviewPlaybackSnapshot] = field(default_factory=dict)
+    arranger_mode: str = DEFAULT_ARRANGER_MODE
+    arranger_strategy: str = DEFAULT_ARRANGER_STRATEGY
+    starred_instrument_ids: tuple[str, ...] = field(default_factory=tuple)
+    arranger_strategy_summary: tuple[ArrangerInstrumentSummary, ...] = field(
+        default_factory=tuple
+    )
+    arranger_dp_slack_enabled: bool = False
+    arranger_budgets: ArrangerBudgetSettings = field(
+        default_factory=ArrangerBudgetSettings
+    )
+    arranger_result_summary: ArrangerResultSummary | None = None
+    arranger_explanations: tuple[ArrangerExplanationRow, ...] = field(
+        default_factory=tuple
+    )
+    arranger_telemetry: tuple[ArrangerTelemetryHint, ...] = field(
+        default_factory=tuple
+    )
 
 
 class MainViewModel:
@@ -78,6 +119,13 @@ class MainViewModel:
         range_max: Optional[str] = None,
         transpose_offset: Optional[int] = None,
         instrument_id: Optional[str] = None,
+        arranger_mode: Optional[str] = None,
+        arranger_strategy: Optional[str] = None,
+        starred_instrument_ids: Optional[tuple[str, ...] | list[str]] = None,
+        arranger_dp_slack_enabled: Optional[bool] = None,
+        arranger_budgets: Optional[
+            ArrangerBudgetSettings | dict[str, int] | tuple[int, int, int, int]
+        ] = None,
     ) -> None:
         if input_path is not None:
             normalized_path = input_path
@@ -100,6 +148,80 @@ class MainViewModel:
             self.state.transpose_offset = transpose_offset
         if instrument_id is not None:
             self.state.instrument_id = instrument_id
+        if arranger_mode is not None:
+            self.state.arranger_mode = arranger_mode
+        if arranger_strategy is not None:
+            normalized_strategy = (
+                arranger_strategy if arranger_strategy in ARRANGER_STRATEGIES else DEFAULT_ARRANGER_STRATEGY
+            )
+            self.state.arranger_strategy = normalized_strategy
+        if starred_instrument_ids is not None:
+            ordered: list[str] = []
+            seen = set()
+            for identifier in starred_instrument_ids:
+                if not isinstance(identifier, str):
+                    continue
+                if identifier in seen:
+                    continue
+                seen.add(identifier)
+                ordered.append(identifier)
+            self.state.starred_instrument_ids = tuple(ordered)
+        if arranger_dp_slack_enabled is not None:
+            self.state.arranger_dp_slack_enabled = bool(arranger_dp_slack_enabled)
+        if arranger_budgets is not None:
+            if isinstance(arranger_budgets, ArrangerBudgetSettings):
+                budgets = arranger_budgets
+            elif isinstance(arranger_budgets, dict):
+                budgets = ArrangerBudgetSettings(
+                    max_octave_edits=int(arranger_budgets.get("max_octave_edits", 1)),
+                    max_rhythm_edits=int(arranger_budgets.get("max_rhythm_edits", 1)),
+                    max_substitutions=int(arranger_budgets.get("max_substitutions", 1)),
+                    max_steps_per_span=int(arranger_budgets.get("max_steps_per_span", 3)),
+                )
+            elif isinstance(arranger_budgets, tuple) and len(arranger_budgets) == 4:
+                budgets = ArrangerBudgetSettings(
+                    max_octave_edits=int(arranger_budgets[0]),
+                    max_rhythm_edits=int(arranger_budgets[1]),
+                    max_substitutions=int(arranger_budgets[2]),
+                    max_steps_per_span=int(arranger_budgets[3]),
+                )
+            else:
+                budgets = ArrangerBudgetSettings()
+            self.state.arranger_budgets = budgets.normalized()
+
+    def update_arranger_summary(
+        self,
+        *,
+        summaries: Optional[list[ArrangerInstrumentSummary] | tuple[ArrangerInstrumentSummary, ...]] = None,
+        strategy: Optional[str] = None,
+    ) -> None:
+        """Refresh arranger v2 summary data exposed to the UI."""
+
+        if strategy is not None and strategy in ARRANGER_STRATEGIES:
+            self.state.arranger_strategy = strategy
+        if summaries is not None:
+            self.state.arranger_strategy_summary = tuple(summaries)
+
+    def update_arranger_results(
+        self,
+        *,
+        summary: ArrangerResultSummary | None | object = _UNSET,
+        explanations: Optional[Iterable[ArrangerExplanationRow]] = None,
+        telemetry: Optional[Iterable[ArrangerTelemetryHint]] = None,
+    ) -> None:
+        """Refresh arranger v2 outcome details used by the results panel."""
+
+        if summary is not _UNSET:
+            self.state.arranger_result_summary = summary  # type: ignore[assignment]
+        if explanations is not None:
+            self.state.arranger_explanations = tuple(explanations)
+        if telemetry is not None:
+            self.state.arranger_telemetry = tuple(telemetry)
+
+    def reset_arranger_budgets(self) -> None:
+        """Restore arranger salvage budgets to default values."""
+
+        self.state.arranger_budgets = ArrangerBudgetSettings()
 
     def settings(self) -> TransformSettings:
         return TransformSettings(
@@ -145,8 +267,16 @@ class MainViewModel:
             logger.exception("Failed to build preview", extra={"path": path})
             return Result.err(str(exc))
         self.state.status_message = "Preview rendered."
+        computation: ArrangerComputation | None = None
+        try:
+            computation = self._apply_arranger_results_from_preview(preview)
+        except Exception:
+            logger.exception("Failed to apply arranger results from preview")
+            self.update_arranger_summary(summaries=(), strategy=self.state.arranger_strategy)
+            self.update_arranger_results(summary=None, explanations=(), telemetry=())
+        updated_preview = self._preview_with_arranger_events(preview, computation)
         logger.info("Preview build completed", extra={"path": path})
-        return Result.ok(preview)
+        return Result.ok(updated_preview)
 
     def convert(
         self, pdf_options: Optional[PdfExportOptions] = None
@@ -284,6 +414,68 @@ class MainViewModel:
 
     def preview_settings(self) -> dict[str, PreviewPlaybackSnapshot]:
         return dict(self.state.preview_settings)
+
+    # ------------------------------------------------------------------
+    # Arranger helpers
+    # ------------------------------------------------------------------
+    def _apply_arranger_results_from_preview(self, preview: PreviewData) -> ArrangerComputation:
+        """Compute arranger summaries from ``preview`` when v2 is active."""
+
+        computation = compute_arranger_preview(
+            preview,
+            arranger_mode=self.state.arranger_mode,
+            instrument_id=self.state.instrument_id,
+            starred_instrument_ids=self.state.starred_instrument_ids,
+            strategy=self.state.arranger_strategy,
+            dp_slack_enabled=self.state.arranger_dp_slack_enabled,
+            budgets=self.state.arranger_budgets,
+        )
+
+        if (
+            computation.resolved_instrument_id
+            and computation.resolved_instrument_id != self.state.instrument_id
+        ):
+            self.state.instrument_id = computation.resolved_instrument_id
+
+        if computation.resolved_starred_ids and computation.resolved_starred_ids != self.state.starred_instrument_ids:
+            self.state.starred_instrument_ids = computation.resolved_starred_ids
+
+        self.update_arranger_summary(
+            summaries=computation.summaries,
+            strategy=computation.strategy,
+        )
+        self.update_arranger_results(
+            summary=computation.result_summary,
+            explanations=computation.explanations,
+            telemetry=computation.telemetry,
+        )
+
+        return computation
+
+    def _preview_with_arranger_events(
+        self,
+        preview: PreviewData,
+        computation: ArrangerComputation | None,
+    ) -> PreviewData:
+        if (
+            computation is None
+            or self.state.arranger_mode != "best_effort"
+            or computation.arranged_events is None
+        ):
+            return preview
+
+        arranged_events = computation.arranged_events
+        arranged_range = preview.arranged_range
+        if arranged_events:
+            lowest = min(event.midi for event in arranged_events)
+            highest = max(event.midi for event in arranged_events)
+            arranged_range = (lowest, highest)
+
+        return replace(
+            preview,
+            arranged_events=arranged_events,
+            arranged_range=arranged_range,
+        )
 
 
 __all__ = [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Iterable, List, Tuple
 import xml.etree.ElementTree as ET
@@ -9,6 +10,7 @@ import xml.etree.ElementTree as ET
 from .musicxml import first_divisions, get_pitch_data, qname
 from .instruments import OCARINA_GM_PROGRAM, part_programs
 from shared.tempo import TempoChange
+from shared.ottava import OttavaShift
 
 
 @dataclass(frozen=True)
@@ -20,11 +22,14 @@ class NoteEvent:
     midi: int
     program: int
     tied_durations: Tuple[int, ...] = field(default_factory=tuple)
+    ottava_shifts: Tuple[OttavaShift, ...] = field(default_factory=tuple)
     _tuple: Tuple[int, int, int, int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.tied_durations:
             object.__setattr__(self, "tied_durations", (self.duration,))
+        if not self.ottava_shifts:
+            object.__setattr__(self, "ottava_shifts", tuple())
         object.__setattr__(
             self,
             "_tuple",
@@ -49,6 +54,7 @@ class NoteEvent:
             self.midi,
             self.program,
             self.tied_durations,
+            self.ottava_shifts,
         )
 
     @property
@@ -61,6 +67,97 @@ class NoteEvent:
             running += segment
             offsets.append(running)
         return tuple(offsets)
+
+
+def _parse_size(value: str | None) -> int:
+    if value is None:
+        return 8
+    try:
+        return max(1, int(float(value.strip())))
+    except (TypeError, ValueError, AttributeError):
+        return 8
+
+
+def _resolve_direction_voices(direction: ET.Element, q, voice_pos: dict[str, int]) -> list[str]:
+    voice_el = direction.find(q('voice'))
+    if voice_el is not None and voice_el.text and voice_el.text.strip():
+        return [voice_el.text.strip()]
+    if voice_pos:
+        return list(voice_pos.keys())
+    return ['1']
+
+
+def _pop_ottava(stack: list[tuple[OttavaShift, str | None]], number: str | None) -> None:
+    if not stack:
+        return
+    if number is None:
+        stack.pop()
+        return
+    for idx in range(len(stack) - 1, -1, -1):
+        _, current = stack[idx]
+        if current == number:
+            stack.pop(idx)
+            return
+    stack.pop()
+
+
+def _active_shifts(stack: list[tuple[OttavaShift, str | None]]) -> Tuple[OttavaShift, ...]:
+    return tuple(shift for shift, _ in stack)
+
+
+def _total_shift(stack: list[tuple[OttavaShift, str | None]]) -> int:
+    return sum(shift.semitones for shift, _ in stack)
+
+
+def _handle_direction_octaves(
+    direction: ET.Element,
+    q,
+    voice_ottavas: defaultdict[str, list[tuple[OttavaShift, str | None]]],
+    voice_pos: dict[str, int],
+) -> None:
+    direction_type = direction.find(q('direction-type'))
+    if direction_type is None:
+        return
+    voices = _resolve_direction_voices(direction, q, voice_pos)
+    for shift_el in direction_type.findall(q('octave-shift')):
+        shift_type = (shift_el.get('type') or '').strip().lower()
+        number = (shift_el.get('number') or '').strip() or None
+        if shift_type in {'up', 'down'}:
+            size = _parse_size(shift_el.get('size'))
+            shift = OttavaShift(
+                source='octave-shift',
+                direction='up' if shift_type == 'up' else 'down',
+                size=size,
+                number=number,
+            )
+            for voice in voices:
+                voice_ottavas[voice].append((shift, number))
+        elif shift_type == 'stop':
+            for voice in voices:
+                _pop_ottava(voice_ottavas[voice], number)
+
+
+def _extract_note_ottavas(note: ET.Element, q) -> tuple[list[OttavaShift], list[str | None]]:
+    starts: list[OttavaShift] = []
+    stops: list[str | None] = []
+    for notation in note.findall(q('notations')):
+        for technical in notation.findall(q('technical')):
+            for ottava_el in technical.findall(q('ottava')):
+                ott_type = (ottava_el.get('type') or '').strip().lower()
+                number = (ottava_el.get('number') or '').strip() or None
+                if ott_type in {'up', 'down'}:
+                    size = _parse_size(ottava_el.get('size'))
+                    starts.append(
+                        OttavaShift(
+                            source='ottava',
+                            direction='up' if ott_type == 'up' else 'down',
+                            size=size,
+                            number=number,
+                        )
+                    )
+                elif ott_type == 'stop':
+                    stops.append(number)
+    return starts, stops
 
 
 def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
@@ -76,16 +173,27 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
             part_id = f'P{index + 1}'
         program = programs.get(part_id, OCARINA_GM_PROGRAM)
         voice_pos: dict[str, int] = {}
-        tie_states: dict[tuple[str, int], tuple[int, List[int], int]] = {}
+        voice_ottavas: defaultdict[str, list[tuple[OttavaShift, str | None]]] = defaultdict(list)
+        tie_states: dict[tuple[str, int], tuple[int, List[int], int, Tuple[OttavaShift, ...]]] = {}
         for measure in part.findall(q('measure')):
-            for note in measure.findall(q('note')):
+            measure_start = max(voice_pos.values(), default=0)
+            for element in list(measure):
+                if element.tag == q('direction'):
+                    _handle_direction_octaves(element, q, voice_ottavas, voice_pos)
+                    continue
+                if element.tag != q('note'):
+                    continue
+                note = element
                 voice_el = note.find(q('voice'))
                 voice = (voice_el.text.strip() if (voice_el is not None and voice_el.text) else '1')
-                pos = voice_pos.get(voice, 0)
+                pos = voice_pos.get(voice, measure_start)
                 dur_el = note.find(q('duration'))
                 dur_text = (dur_el.text or '').strip() if dur_el is not None and dur_el.text else ''
                 dur_div = int(dur_text) if dur_text.isdigit() else 0
                 is_chord = note.find(q('chord')) is not None
+                starts, stops = _extract_note_ottavas(note, q)
+                for shift in starts:
+                    voice_ottavas[voice].append((shift, shift.number))
                 is_rest = note.find(q('rest')) is not None
                 if not is_rest:
                     pitch_data = get_pitch_data(note, q)
@@ -103,52 +211,58 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
                                 if tie_type:
                                     tie_types.add(tie_type)
 
-                        tie_key = (voice, pitch_data.midi)
+                        active_stack = voice_ottavas[voice]
+                        active_shifts = _active_shifts(active_stack)
+                        midi = pitch_data.midi + _total_shift(active_stack)
+                        tie_key = (voice, midi)
                         existing = tie_states.get(tie_key)
 
                         if 'stop' in tie_types and existing:
-                            start_tick, segments, stored_program = existing
+                            start_tick, segments, stored_program, stored_shifts = existing
                             segments.append(dur_ticks)
                             if 'start' in tie_types:
-                                tie_states[tie_key] = (start_tick, segments, stored_program)
+                                tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
                             else:
                                 events.append(
                                     NoteEvent(
                                         start_tick,
                                         sum(segments),
-                                        pitch_data.midi,
+                                        midi,
                                         stored_program,
                                         tuple(segments),
+                                        stored_shifts,
                                     )
                                 )
                                 tie_states.pop(tie_key, None)
                         elif 'start' in tie_types:
                             if existing:
-                                start_tick, segments, stored_program = existing
+                                start_tick, segments, stored_program, stored_shifts = existing
                                 segments.append(dur_ticks)
-                                tie_states[tie_key] = (start_tick, segments, stored_program)
+                                tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
                             else:
-                                tie_states[tie_key] = (onset_ticks, [dur_ticks], program)
+                                tie_states[tie_key] = (onset_ticks, [dur_ticks], program, active_shifts)
                         elif 'stop' in tie_types:
                             events.append(
                                 NoteEvent(
                                     onset_ticks,
                                     dur_ticks,
-                                    pitch_data.midi,
+                                    midi,
                                     program,
                                     (dur_ticks,),
+                                    active_shifts,
                                 )
                             )
                         elif existing:
-                            start_tick, segments, stored_program = existing
+                            start_tick, segments, stored_program, stored_shifts = existing
                             segments.append(dur_ticks)
                             events.append(
                                 NoteEvent(
                                     start_tick,
                                     sum(segments),
-                                    pitch_data.midi,
+                                    midi,
                                     stored_program,
                                     tuple(segments),
+                                    stored_shifts,
                                 )
                             )
                             tie_states.pop(tie_key, None)
@@ -157,13 +271,17 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
                                 NoteEvent(
                                     onset_ticks,
                                     dur_ticks,
-                                    pitch_data.midi,
+                                    midi,
                                     program,
+                                    (dur_ticks,),
+                                    active_shifts,
                                 )
                             )
+                for number in stops:
+                    _pop_ottava(voice_ottavas[voice], number)
                 if not is_chord:
                     voice_pos[voice] = pos + dur_div
-        for (voice, midi), (start_tick, segments, stored_program) in tie_states.items():
+        for (voice, midi), (start_tick, segments, stored_program, stored_shifts) in tie_states.items():
             events.append(
                 NoteEvent(
                     start_tick,
@@ -171,6 +289,7 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
                     midi,
                     stored_program,
                     tuple(segments),
+                    stored_shifts,
                 )
             )
     return events, ppq

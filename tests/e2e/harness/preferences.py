@@ -18,6 +18,7 @@ def build_preferences() -> Preferences:
         preview_layout_mode="piano_staff",
         auto_update_enabled=False,
         update_channel="stable",
+        arranger_mode="classic",
     )
 
 
@@ -30,6 +31,7 @@ def clone_preferences(source: object) -> Preferences:
         preview_layout_mode=getattr(source, "preview_layout_mode", None),
         auto_update_enabled=getattr(source, "auto_update_enabled", None),
         update_channel=getattr(source, "update_channel", "stable"),
+        arranger_mode=getattr(source, "arranger_mode", None),
     )
 
 
@@ -46,6 +48,7 @@ def create_save_preferences_stub(
         preferences.preview_layout_mode = snapshot.preview_layout_mode
         preferences.auto_update_enabled = snapshot.auto_update_enabled
         preferences.update_channel = snapshot.update_channel
+        preferences.arranger_mode = snapshot.arranger_mode
         if getattr(updated, _SKIPPED_ATTR, False):
             try:
                 delattr(updated, _SKIPPED_ATTR)

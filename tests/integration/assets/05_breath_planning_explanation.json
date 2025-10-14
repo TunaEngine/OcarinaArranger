@@ -1,0 +1,11 @@
+{
+  "instrumentId": "TEST_ALTO",
+  "actions": [
+    {
+      "measure": 1,
+      "action": "BREATH_INSERT",
+      "reason": "continuous_blow_time > T",
+      "split": "G4 whole \u2192 G4 half (breath) + G4 half (tie)"
+    }
+  ]
+}

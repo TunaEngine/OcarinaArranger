@@ -87,6 +87,12 @@ class InstrumentSettingsMixin:
             choice.name: choice.instrument_id for choice in choices
         }
         self._instrument_display_names = [choice.name for choice in choices]
+        refresher = getattr(self, "_refresh_starred_instrument_controls", None)
+        if callable(refresher):
+            try:
+                refresher()
+            except Exception:
+                logger.debug("Failed to refresh starred instrument controls", exc_info=True)
 
     def _safe_current_instrument_id(self) -> str:
         try:

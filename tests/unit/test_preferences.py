@@ -12,6 +12,7 @@ def test_preferences_round_trip(tmp_path):
         auto_scroll_mode="continuous",
         preview_layout_mode="piano_vertical",
         auto_update_enabled=False,
+        arranger_mode="best_effort",
     )
 
     save_preferences(preferences, path)
@@ -23,6 +24,7 @@ def test_preferences_round_trip(tmp_path):
     assert loaded.auto_scroll_mode == "continuous"
     assert loaded.preview_layout_mode == "piano_vertical"
     assert loaded.auto_update_enabled is False
+    assert loaded.arranger_mode == "best_effort"
 
 
 def test_load_preferences_with_invalid_types(tmp_path):
@@ -36,6 +38,7 @@ def test_load_preferences_with_invalid_types(tmp_path):
                 "auto_scroll_mode": 123,
                 "preview_layout_mode": "unsupported",
                 "auto_update_enabled": "nope",
+                "arranger_mode": 17,
             }
         ),
         encoding="utf-8",
@@ -48,3 +51,4 @@ def test_load_preferences_with_invalid_types(tmp_path):
     assert loaded.auto_scroll_mode is None
     assert loaded.preview_layout_mode is None
     assert loaded.auto_update_enabled is None
+    assert loaded.arranger_mode is None

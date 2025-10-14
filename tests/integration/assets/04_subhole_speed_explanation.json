@@ -1,0 +1,10 @@
+{
+  "instrumentId": "TEST_ALTO",
+  "actions": [
+    {
+      "measure": 1,
+      "action": "SUBHOLE_RATE_REPLACE",
+      "reason": "subhole_changes/sec > cap"
+    }
+  ]
+}

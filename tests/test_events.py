@@ -4,6 +4,7 @@ import textwrap
 import xml.etree.ElementTree as ET
 
 from ocarina_tools import NoteEvent, get_note_events, get_time_signature
+from shared.ottava import OttavaShift
 
 from helpers import make_linear_score
 
@@ -99,3 +100,119 @@ def test_get_note_events_merges_tied_notes():
         NoteEvent(960, 480, 64, 79, (480,)),
     ]
     assert events[0].tie_offsets == (480,)
+
+
+def test_get_note_events_normalizes_octave_shift_direction():
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1">
+              <part-name>Lead</part-name>
+            </score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>4</divisions>
+              </attributes>
+              <direction>
+                <direction-type>
+                  <octave-shift type="up" size="8" number="1"/>
+                </direction-type>
+              </direction>
+              <note>
+                <pitch>
+                  <step>C</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>4</duration>
+                <voice>1</voice>
+              </note>
+              <direction>
+                <direction-type>
+                  <octave-shift type="stop" number="1"/>
+                </direction-type>
+              </direction>
+              <note>
+                <pitch>
+                  <step>D</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>4</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    root = ET.fromstring(xml)
+    events, _ = get_note_events(root)
+    assert len(events) == 2
+    first = events[0]
+    assert first.midi == 72
+    assert first.ottava_shifts == (
+        OttavaShift(source="octave-shift", direction="up", size=8, number="1"),
+    )
+    second = events[1]
+    assert second.midi == 62
+    assert second.ottava_shifts == ()
+
+
+def test_get_note_events_normalizes_notation_ottava():
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1">
+              <part-name>Lead</part-name>
+            </score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>4</divisions>
+              </attributes>
+              <note>
+                <pitch>
+                  <step>E</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>2</duration>
+                <voice>1</voice>
+                <notations>
+                  <technical>
+                    <ottava type="up" number="1" size="8"/>
+                  </technical>
+                </notations>
+              </note>
+              <note>
+                <pitch>
+                  <step>F</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>2</duration>
+                <voice>1</voice>
+                <notations>
+                  <technical>
+                    <ottava type="stop" number="1"/>
+                  </technical>
+                </notations>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    root = ET.fromstring(xml)
+    events, _ = get_note_events(root)
+    assert len(events) == 2
+    first = events[0]
+    assert first.midi == 76
+    assert first.ottava_shifts == (
+        OttavaShift(source="ottava", direction="up", size=8, number="1"),
+    )
+    second = events[1]
+    assert second.midi == 77
+    assert second.ottava_shifts == first.ottava_shifts

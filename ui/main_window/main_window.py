@@ -4,6 +4,11 @@ import tkinter as tk
 from adapters.file_dialog import FileDialogAdapter
 from services.score_service import ScoreService
 
+from ocarina_gui.preferences import (
+    ARRANGER_MODES,
+    DEFAULT_ARRANGER_MODE,
+    Preferences,
+)
 from ocarina_gui.scrolling import normalize_auto_scroll_mode
 from ocarina_gui.themes import get_current_theme
 from shared.ttk import ttk
@@ -57,6 +62,13 @@ class MainWindow(
 
         self._viewmodel = resolve_viewmodel(viewmodel, dialogs, score_service)
         state = self._viewmodel.state
+
+        selected_mode = DEFAULT_ARRANGER_MODE
+        if isinstance(preferences, Preferences):
+            stored_mode = getattr(preferences, "arranger_mode", None)
+            if isinstance(stored_mode, str) and stored_mode in ARRANGER_MODES:
+                selected_mode = stored_mode
+        state.arranger_mode = selected_mode
 
         self._setup_instrument_attributes(state)
         self._create_convert_controls(state)

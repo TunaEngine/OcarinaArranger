@@ -20,6 +20,9 @@ PREVIEW_LAYOUT_MODES = {
     "staff",
 }
 
+ARRANGER_MODES = {"classic", "best_effort"}
+DEFAULT_ARRANGER_MODE = "classic"
+
 
 @dataclass
 class Preferences:
@@ -32,6 +35,7 @@ class Preferences:
     preview_layout_mode: str | None = None
     auto_update_enabled: bool | None = None
     update_channel: str | None = UPDATE_CHANNEL_STABLE
+    arranger_mode: str | None = None
 
 
 def _default_preferences_path() -> Path:
@@ -110,6 +114,20 @@ def load_preferences(path: Path | None = None) -> Preferences:
     else:
         update_channel = UPDATE_CHANNEL_STABLE
 
+    raw_arranger_mode = data.get("arranger_mode")
+    if isinstance(raw_arranger_mode, str):
+        normalized_mode = raw_arranger_mode.strip().lower()
+        if normalized_mode in {"v1", "classic"}:
+            arranger_mode = "classic"
+        elif normalized_mode in {"v2", "best_effort"}:
+            arranger_mode = "best_effort"
+        elif normalized_mode in ARRANGER_MODES:
+            arranger_mode = normalized_mode
+        else:
+            arranger_mode = None
+    else:
+        arranger_mode = None
+
     return Preferences(
         theme_id=theme_id,
         log_verbosity=log_verbosity,
@@ -118,6 +136,7 @@ def load_preferences(path: Path | None = None) -> Preferences:
         preview_layout_mode=preview_layout_mode,
         auto_update_enabled=auto_update_enabled,
         update_channel=update_channel,
+        arranger_mode=arranger_mode,
     )
 
 
@@ -139,8 +158,16 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
         data["preview_layout_mode"] = preferences.preview_layout_mode
     if isinstance(preferences.auto_update_enabled, bool):
         data["auto_update_enabled"] = preferences.auto_update_enabled
-    if isinstance(preferences.update_channel, str) and preferences.update_channel in UPDATE_CHANNELS:
+    if (
+        isinstance(preferences.update_channel, str)
+        and preferences.update_channel in UPDATE_CHANNELS
+    ):
         data["update_channel"] = preferences.update_channel
+    if (
+        isinstance(preferences.arranger_mode, str)
+        and preferences.arranger_mode in ARRANGER_MODES
+    ):
+        data["arranger_mode"] = preferences.arranger_mode
 
     try:
         location.parent.mkdir(parents=True, exist_ok=True)
@@ -151,5 +178,12 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
         return
 
 
-__all__ = ["Preferences", "load_preferences", "save_preferences", "PREVIEW_LAYOUT_MODES"]
+__all__ = [
+    "Preferences",
+    "load_preferences",
+    "save_preferences",
+    "PREVIEW_LAYOUT_MODES",
+    "ARRANGER_MODES",
+    "DEFAULT_ARRANGER_MODE",
+]
 

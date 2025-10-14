@@ -1,0 +1,11 @@
+{
+  "instrumentId": "TEST_ALTO",
+  "actions": [
+    {
+      "measure": 2,
+      "span": "beats 3-4",
+      "action": "OCTAVE_DOWN_LOCAL",
+      "reason": "RANGE_EDGE (G5..A5 > max G5)"
+    }
+  ]
+}

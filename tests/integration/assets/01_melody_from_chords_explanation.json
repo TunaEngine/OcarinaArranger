@@ -1,0 +1,19 @@
+{
+  "instrumentId": "TEST_ALTO",
+  "actions": [
+    {
+      "measure": 1,
+      "action": "MELODY_ISOLATION",
+      "reason": "highest_voice + onbeat + longer_durations",
+      "kept_voice": 1,
+      "removed_voice": 2
+    },
+    {
+      "measure": 2,
+      "action": "MELODY_ISOLATION",
+      "reason": "highest_voice + onbeat",
+      "kept_voice": 1,
+      "removed_voice": 2
+    }
+  ]
+}

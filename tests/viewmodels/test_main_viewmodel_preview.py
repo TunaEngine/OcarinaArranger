@@ -1,9 +1,17 @@
 from pathlib import Path
 
+import pytest
+
+from domain.arrangement.config import clear_instrument_registry
+from ocarina_gui.fingering import InstrumentChoice, InstrumentSpec
 from ocarina_gui.preview import PreviewData
+from ocarina_tools.events import NoteEvent
 from services.project_service import PreviewPlaybackSnapshot
 from tests.viewmodels._fakes import FakeDialogs, StubScoreService
-from viewmodels.main_viewmodel import MainViewModel
+from viewmodels.main_viewmodel import (
+    ARRANGER_STRATEGY_STARRED_BEST,
+    MainViewModel,
+)
 
 
 def test_browse_for_input_updates_state(tmp_path: Path) -> None:
@@ -68,6 +76,101 @@ def test_render_previews_passes_manual_transpose(preview_data: PreviewData, tmp_
     assert service.last_preview_settings.transpose_offset == -4
 
 
+def test_render_previews_populates_arranger_results(
+    monkeypatch, tmp_path: Path
+) -> None:
+    clear_instrument_registry()
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    events = [
+        NoteEvent(onset=0, duration=480, midi=72, program=0),
+        NoteEvent(onset=480, duration=480, midi=79, program=0),
+        NoteEvent(onset=960, duration=480, midi=83, program=0),
+    ]
+    preview = PreviewData(
+        original_events=events,
+        arranged_events=events,
+        pulses_per_quarter=480,
+        beats=4,
+        beat_type=4,
+        original_range=(60, 90),
+        arranged_range=(60, 90),
+        tempo_bpm=120,
+        tempo_changes=(),
+    )
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(
+        input_path=str(file_path),
+        arranger_mode="best_effort",
+        instrument_id="alto_c",
+    )
+    viewmodel.state.arranger_strategy = ARRANGER_STRATEGY_STARRED_BEST
+    viewmodel.state.starred_instrument_ids = ("soprano_c",)
+
+    def _instrument_spec(
+        instrument_id: str,
+        candidate_min: str,
+        candidate_max: str,
+        preferred_min: str,
+        preferred_max: str,
+    ) -> InstrumentSpec:
+        return InstrumentSpec.from_dict(
+            {
+                "id": instrument_id,
+                "name": instrument_id.replace("_", " ").title(),
+                "title": instrument_id,
+                "canvas": {"width": 100, "height": 100},
+                "style": {
+                    "background_color": "#ffffff",
+                    "outline_color": "#000000",
+                    "outline_width": 2.0,
+                    "outline_smooth": True,
+                    "outline_spline_steps": 16,
+                    "hole_outline_color": "#000000",
+                    "covered_fill_color": "#000000",
+                },
+                "holes": [],
+                "windways": [],
+                "note_order": ["C4"],
+                "note_map": {"C4": []},
+                "preferred_range": {"min": preferred_min, "max": preferred_max},
+                "candidate_range": {"min": candidate_min, "max": candidate_max},
+            }
+        )
+
+    alto_spec = _instrument_spec("alto_c", "B3", "A5", "C4", "G5")
+    soprano_spec = _instrument_spec("soprano_c", "C4", "C6", "D4", "A5")
+
+    monkeypatch.setattr(
+        "services.arranger_preview.get_instrument",
+        lambda instrument_id: alto_spec if instrument_id == "alto_c" else soprano_spec,
+    )
+    monkeypatch.setattr(
+        "services.arranger_preview.get_available_instruments",
+        lambda: [
+            InstrumentChoice("alto_c", "Alto C"),
+            InstrumentChoice("soprano_c", "Soprano C"),
+        ],
+    )
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    comparisons = viewmodel.state.arranger_strategy_summary
+    assert len(comparisons) == 2
+    assert sum(1 for row in comparisons if row.is_winner) == 1
+    summary = viewmodel.state.arranger_result_summary
+    assert summary is not None
+    assert summary.instrument_name in {"Alto C", "Soprano C"}
+    assert isinstance(summary.transposition, int)
+    total_ratio = summary.easy + summary.medium + summary.hard + summary.very_hard
+    assert total_ratio == pytest.approx(1.0, abs=1e-6)
+    preview_out = result.unwrap()
+    assert isinstance(preview_out, PreviewData)
+
+
 def test_new_input_path_clears_preview_settings(tmp_path: Path) -> None:
     first = tmp_path / "first.musicxml"
     first.write_text("<score />", encoding="utf-8")
@@ -98,3 +201,79 @@ def test_new_input_path_clears_preview_settings(tmp_path: Path) -> None:
     # Selecting a different file clears any prior playback adjustments
     viewmodel.update_settings(input_path=str(second))
     assert viewmodel.state.preview_settings == {}
+
+
+def test_render_previews_applies_best_effort_transposition(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    clear_instrument_registry()
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    events = [
+        NoteEvent(onset=i * 480, duration=480, midi=midi, program=0)
+        for i, midi in enumerate([84, 86, 88, 79, 88])
+    ]
+    preview = PreviewData(
+        original_events=tuple(events),
+        arranged_events=tuple(events),
+        pulses_per_quarter=480,
+        beats=4,
+        beat_type=4,
+        original_range=(60, 90),
+        arranged_range=(60, 90),
+        tempo_bpm=120,
+        tempo_changes=(),
+    )
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(
+        input_path=str(file_path),
+        arranger_mode="best_effort",
+        instrument_id="alto_c_12",
+    )
+
+    def _spec(identifier: str) -> InstrumentSpec:
+        return InstrumentSpec.from_dict(
+            {
+                "id": identifier,
+                "name": identifier,
+                "title": identifier,
+                "canvas": {"width": 120, "height": 120},
+                "style": {
+                    "background_color": "#ffffff",
+                    "outline_color": "#000000",
+                    "outline_width": 2.0,
+                    "outline_smooth": True,
+                    "outline_spline_steps": 16,
+                    "hole_outline_color": "#000000",
+                    "covered_fill_color": "#000000",
+                },
+                "holes": [],
+                "windways": [],
+                "note_order": ["C4"],
+                "note_map": {"C4": []},
+                "preferred_range": {"min": "C4", "max": "G5"},
+                "candidate_range": {"min": "B3", "max": "A5"},
+            }
+        )
+
+    monkeypatch.setattr(
+        "services.arranger_preview.get_available_instruments",
+        lambda: [InstrumentChoice("alto_c_12", "12-hole Alto C")],
+    )
+    monkeypatch.setattr(
+        "services.arranger_preview.get_instrument",
+        lambda instrument_id: _spec(instrument_id),
+    )
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    preview_out = result.unwrap()
+    arranged_midis = [event.midi for event in preview_out.arranged_events]
+    assert arranged_midis == [77, 79, 81, 72, 69]
+    summary = viewmodel.state.arranger_result_summary
+    assert summary is not None
+    assert summary.transposition == -7

@@ -10,6 +10,7 @@ from tkinter import messagebox
 from typing import Optional
 
 from ocarina_gui.conversion import ConversionResult
+from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.scrolling import move_canvas_to_pixel_fraction
 from services.project_service import PreviewPlaybackSnapshot
@@ -52,6 +53,11 @@ class PreviewUtilitiesMixin:
             range_max=self.range_max.get(),
             transpose_offset=self._transpose_applied_offset,
             instrument_id=getattr(self, "_selected_instrument_id", ""),
+            arranger_mode=(
+                self.arranger_mode.get()
+                if hasattr(self, "arranger_mode")
+                else DEFAULT_ARRANGER_MODE
+            ),
         )
         preview_settings: dict[str, PreviewPlaybackSnapshot] = {}
         applied_by_side = getattr(self, "_preview_applied_settings", {})
@@ -105,6 +111,12 @@ class PreviewUtilitiesMixin:
             transpose = int(self.transpose_offset.get())
         except (tk.TclError, ValueError, AttributeError):
             transpose = getattr(self, "_transpose_applied_offset", 0)
+        def _safe_int(var: tk.Variable, fallback: int) -> int:
+            try:
+                return int(var.get())
+            except Exception:
+                return fallback
+
         return {
             "prefer_mode": self.prefer_mode.get(),
             "prefer_flats": bool(self.prefer_flats.get()),
@@ -114,6 +126,22 @@ class PreviewUtilitiesMixin:
             "range_max": self.range_max.get(),
             "instrument_id": getattr(self, "_selected_instrument_id", ""),
             "transpose_offset": transpose,
+            "arranger_mode": getattr(self, "arranger_mode", None).get()
+            if hasattr(self, "arranger_mode")
+            else DEFAULT_ARRANGER_MODE,
+            "arranger_dp_slack": (
+                bool(self.arranger_dp_slack.get()) if hasattr(self, "arranger_dp_slack") else False
+            ),
+            "arranger_budgets": (
+                (
+                    _safe_int(self.arranger_budget_octave, 1),
+                    _safe_int(self.arranger_budget_rhythm, 1),
+                    _safe_int(self.arranger_budget_substitution, 1),
+                    _safe_int(self.arranger_budget_total, 3),
+                )
+                if hasattr(self, "arranger_budget_octave")
+                else (1, 1, 1, 3)
+            ),
         }
 
     def _record_preview_import(self) -> None:
