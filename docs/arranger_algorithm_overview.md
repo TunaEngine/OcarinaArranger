@@ -24,14 +24,22 @@ flowchart LR
     B --> F
     C --> F
 
-    F --> G[Difficulty Summary]
-    F --> H[Edited Phrase Span]
-    F --> I[Explanation Events]
+    F -->|Best-Effort (v2)| G[Difficulty Summary]
+    F -->|Best-Effort (v2)| H[Edited Phrase Span]
+    F -->|Best-Effort (v2)| I[Explanation Events]
+    F -->|GP Strategy| GP[arrange_v3_gp]
+
+    GP --> G2[GP Difficulty Summary]
+    GP --> H2[GP Edited Phrase]
+    GP --> I2[GP Explanations & Telemetry]
 
     subgraph Output
         G --> J[Convert Tab – Summary]
         H --> K[Arranged Preview]
         I --> L[Explanations & Telemetry Tabs]
+        G2 --> J
+        H2 --> K
+        I2 --> L
     end
 ```
 
@@ -40,7 +48,9 @@ Key takeaways:
 - Importers resolve notation (8va/8vb, tuplets, voices) into normalized events
   before the domain layer reasons about pitches.
 - `domain.arrangement.api.arrange` is the orchestration point that applies key
-  search, octave folding, constraints, and salvage budgets.
+  search, octave folding, constraints, and salvage budgets, while
+  `domain.arrangement.gp.arrange_v3_gp` invokes the genetic-programming branch
+  before mapping results back into the shared view-model DTOs.
 - The UI consumes three products: edited phrases for playback/preview,
   difficulty summaries for ranking instruments, and explanation payloads for
   transparency.
@@ -75,6 +85,12 @@ flowchart TD
         S3[explanations.ExplanationEvent]
     end
 
+    subgraph GP Strategy
+        G1[gp.session.run_gp_session]
+        G2[gp.strategy.arrange_v3_gp]
+        G3[services.arranger_preview_gp]
+    end
+
     subgraph Strategy & Learning
         R1[api.arrange / arrange_span]
         R2[config.FeatureFlags]
@@ -93,12 +109,29 @@ flowchart TD
     S1 --> S3 --> R1
     R1 --> R3
     R2 --> R1
+    R1 -. GP preview .-> G1
+    G1 --> G2 --> G3 --> R1
 ```
 
 Highlights:
 
 - Melody isolation runs before key search so polyphonic MusicXML inputs reduce
   to a single melodic voice.
+- When polyphonic passages include octave-duplicated chord tones, melody
+  isolation now anchors the chosen voice to the lower register before continuity
+  heuristics run, and emits a `register_anchor` explanation so UI/analytics flows
+  record when we suppress upper-octave harmonies.
+- Continuity heuristics relax the anchor toward newly selected, shorter melody
+  notes so sustained upper harmonies can no longer drag the voice up an octave
+  or mask downstream phrases (e.g., the “Shire” excerpt regression).
+- GP comparison now weights melodic fidelity ahead of difficulty (tripling the
+  penalty for modified programs and incorporating pitch-drift penalties) so
+  octave-raising programs no longer outrank register-faithful spans when their
+  difficulty scores tie.【F:domain/arrangement/gp/strategy.py†L82-L104】【F:domain/arrangement/gp/fitness.py†L11-L204】
+- The Convert tab’s GP panel now exposes archive sizing, random-program counts,
+  crossover/mutation rates, logging controls, random seeding, and fitness-weight
+  sliders (including the new pitch-weight control) so advanced users can tune the
+  session without editing config files.【F:ocarina_gui/ui_builders/convert_tab_sections.py†L332-L420】【F:viewmodels/arranger_models.py†L58-L136】
 - Soft key search ranks transpositions; the winning candidates enter the octave
   folding DP before the salvage cascade applies micro edits.
 - Constraint helpers (subhole speed, breath planning) and the difficulty model

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
-from types import MappingProxyType
 from typing import Iterable, Sequence, Tuple
-
-from ocarina_tools import midi_to_name
 
 from .config import (
     DEFAULT_FEATURE_FLAGS,
@@ -15,18 +13,34 @@ from .config import (
 )
 from .constraints import BreathSettings, SubholeConstraintSettings
 from .difficulty import DifficultySummary, difficulty_score, summarize_difficulty
-from .explanations import (
-    ExplanationEvent,
-    octave_shifted_notes,
-    span_label_for_notes,
-)
-from .folding import FoldingResult, FoldingSettings, fold_octaves_with_slack
+from .explanations import ExplanationEvent
+from .folding import FoldingResult, FoldingSettings
 from .melody import MelodyIsolationAction, isolate_melody
 from .phrase import PhraseNote, PhraseSpan
-from .preprocessing import apply_breath_planning, apply_subhole_constraints
 from .range_guard import enforce_instrument_range
 from .salvage import SalvageCascade, SalvageResult
 from .soft_key import InstrumentRange, soft_key_search
+from .v2_pipeline import run_candidate_pipeline
+from .api_logging import (
+    log_arrange_complete,
+    log_arrange_start,
+    log_candidate_result,
+    log_candidate_start,
+    log_instrument_result,
+    log_melody_actions,
+    log_no_candidates,
+    log_pipeline_complete,
+    log_pipeline_stage,
+    log_pipeline_start,
+    log_selection,
+    log_transpositions,
+)
+
+
+logger = logging.getLogger(__name__)
+
+# Backwards-compatible alias for legacy imports in downstream tests.
+_run_candidate_pipeline = run_candidate_pipeline
 
 
 @dataclass(frozen=True)
@@ -45,9 +59,6 @@ def _difficulty_score(summary: DifficultySummary) -> float:
     """Backwards-compatible wrapper for the moved difficulty helper."""
 
     return difficulty_score(summary)
-
-
-_OCTAVE_DOWN_ACTION = "OCTAVE_DOWN_LOCAL"
 
 
 @dataclass(frozen=True)
@@ -88,100 +99,6 @@ def _candidate_transpositions(
     return tuple(ordered)
 
 
-def _run_candidate_pipeline(
-    span: PhraseSpan,
-    instrument: InstrumentRange,
-    *,
-    flags: FeatureFlags,
-    folding_settings: FoldingSettings | None,
-    salvage_cascade: SalvageCascade | None,
-    tempo_bpm: float | None = None,
-    subhole_settings: SubholeConstraintSettings | None = None,
-    breath_settings: BreathSettings | None = None,
-) -> ArrangementResult:
-    current_span = span
-    folding_result: FoldingResult | None = None
-    if flags.dp_slack:
-        folding_result = fold_octaves_with_slack(
-            span,
-            instrument,
-            settings=folding_settings,
-        )
-        current_span = folding_result.span
-
-    preprocessing_events: list[ExplanationEvent] = []
-
-    if tempo_bpm is not None and tempo_bpm > 0:
-        if subhole_settings is not None:
-            constrained_span, events = apply_subhole_constraints(
-                current_span,
-                instrument,
-                tempo_bpm=tempo_bpm,
-                subhole_settings=subhole_settings,
-            )
-            if events:
-                preprocessing_events.extend(events)
-                current_span = constrained_span
-
-        if breath_settings is not None:
-            planned_span, events = apply_breath_planning(
-                current_span,
-                instrument,
-                tempo_bpm=tempo_bpm,
-                settings=breath_settings,
-            )
-            if events:
-                preprocessing_events.extend(events)
-                current_span = planned_span
-
-    salvage_result: SalvageResult | None = None
-    if salvage_cascade is not None:
-        def _difficulty(candidate: PhraseSpan) -> float:
-            summary = summarize_difficulty(candidate, instrument)
-            return difficulty_score(summary)
-
-        salvage_result = salvage_cascade.run(current_span, _difficulty)
-        salvage_result = _enrich_salvage_explanations(
-            salvage_result,
-            instrument,
-            beats_per_measure=salvage_cascade.beats_per_measure,
-        )
-        current_span = salvage_result.span
-
-    clamped_span, range_event, after_difficulty = enforce_instrument_range(
-        current_span,
-        instrument,
-        beats_per_measure=salvage_cascade.beats_per_measure if salvage_cascade else 4,
-    )
-    if range_event is not None:
-        current_span = clamped_span
-        if salvage_result is not None:
-            updated_steps = salvage_result.applied_steps + ("range-clamp",)
-            updated_explanations = salvage_result.explanations + (range_event,)
-            usage = dict(salvage_result.edits_used)
-            usage["range-clamp"] = usage.get("range-clamp", 0) + 1
-            usage["total"] = usage.get("total", 0) + 1
-            salvage_result = replace(
-                salvage_result,
-                span=current_span,
-                difficulty=after_difficulty
-                if after_difficulty is not None
-                else salvage_result.difficulty,
-                applied_steps=updated_steps,
-                explanations=updated_explanations,
-                edits_used=MappingProxyType(usage),
-            )
-        else:
-            preprocessing_events.append(range_event)
-
-    return ArrangementResult(
-        span=current_span,
-        folding=folding_result,
-        salvage=salvage_result,
-        preprocessing=tuple(preprocessing_events),
-    )
-
-
 def arrange_span(
     span: PhraseSpan,
     *,
@@ -205,14 +122,27 @@ def arrange_span(
     active_flags = flags or DEFAULT_FEATURE_FLAGS
     melody_result = isolate_melody(span)
     base_span = melody_result.span
+    log_melody_actions(
+        logger,
+        instrument=instrument,
+        span=base_span,
+        actions=melody_result.actions,
+    )
     candidates = _candidate_transpositions(base_span, instrument)
-    best: tuple[tuple[float, float, float, float, int, int], ArrangementResult] | None = None
+    log_transpositions(logger, candidates=candidates)
+    best: tuple[tuple[int | float, ...], ArrangementResult] | None = None
 
     for transposition in candidates:
         candidate_span = base_span.transpose(transposition)
-        arranged = _run_candidate_pipeline(
+        log_candidate_start(
+            logger,
+            transposition=transposition,
+            span=candidate_span,
+        )
+        arranged = run_candidate_pipeline(
             candidate_span,
             instrument,
+            logger=logger,
             flags=active_flags,
             folding_settings=folding_settings,
             salvage_cascade=salvage_cascade,
@@ -230,25 +160,32 @@ def arrange_span(
         salvage = arranged.salvage
         salvage_failure = 0
         salvage_steps = 0
+        range_clamp_penalty = 0
+        if any(event.action == "range-clamp" for event in arranged.preprocessing):
+            range_clamp_penalty = 1
         if salvage is not None:
             salvage_failure = 0 if salvage.success else 1
             usage_total = int(salvage.edits_used.get("total", len(salvage.applied_steps)))
             salvage_steps = usage_total
+            if "range-clamp" in salvage.applied_steps:
+                range_clamp_penalty = 1
         if salvage is not None and salvage.applied_steps and salvage.success:
             penalized_score = difficulty_score(summary) + abs(transposition)
             ranking = (
                 salvage_failure,
-                abs(transposition),
-                penalized_score,
+                range_clamp_penalty,
+                salvage_steps,
                 summary.hard_and_very_hard,
                 summary.medium,
                 summary.tessitura_distance,
-                salvage_steps,
+                penalized_score,
+                abs(transposition),
                 transposition,
             )
         else:
             ranking = (
                 salvage_failure,
+                range_clamp_penalty,
                 salvage_steps,
                 difficulty_score(summary),
                 summary.hard_and_very_hard,
@@ -259,77 +196,29 @@ def arrange_span(
             )
         if best is None or ranking < best[0]:
             best = (ranking, arranged)
+        log_candidate_result(
+            logger,
+            transposition=transposition,
+            difficulty=summary,
+            salvage=salvage,
+            ranking=ranking,
+            preprocessing_count=len(arranged.preprocessing),
+        )
 
     if best is None:
+        log_no_candidates(logger)
         return ArrangementResult(span=span, transposition=0)
 
+    chosen = best[1]
+    log_selection(
+        logger,
+        transposition=chosen.transposition,
+        span=chosen.span,
+        preprocessing=chosen.preprocessing,
+    )
     return best[1]
 
 
-def _enrich_salvage_explanations(
-    result: SalvageResult,
-    instrument: InstrumentRange,
-    *,
-    beats_per_measure: int,
-) -> SalvageResult:
-    if not result.explanations:
-        return result
-
-    updated: list[ExplanationEvent] = []
-    mutated = False
-    for event in result.explanations:
-        if event.action == _OCTAVE_DOWN_ACTION:
-            enriched = _enrich_octave_down_event(
-                event,
-                instrument,
-                beats_per_measure=beats_per_measure,
-            )
-            updated.append(enriched)
-            mutated = mutated or enriched is not event
-        else:
-            updated.append(event)
-    if not mutated:
-        return result
-    return replace(result, explanations=tuple(updated))
-
-
-def _enrich_octave_down_event(
-    event: ExplanationEvent,
-    instrument: InstrumentRange,
-    *,
-    beats_per_measure: int,
-) -> ExplanationEvent:
-    shifted_notes = octave_shifted_notes(event.before, event.after)
-    if not shifted_notes:
-        return replace(
-            event,
-            reason="RANGE_EDGE",
-            reason_code="range-edge",
-            span=None,
-        )
-
-    lowest = min(note.midi for note in shifted_notes)
-    highest = max(note.midi for note in shifted_notes)
-    lowest_name = midi_to_name(lowest)
-    highest_name = midi_to_name(highest)
-    max_name = midi_to_name(instrument.max_midi)
-    span_label = span_label_for_notes(
-        shifted_notes,
-        pulses_per_quarter=event.before.pulses_per_quarter,
-        beats_per_measure=beats_per_measure,
-    )
-    pulses_per_beat = max(1, event.before.pulses_per_quarter)
-    pulses_per_measure = pulses_per_beat * max(1, beats_per_measure)
-    start_onset = min(note.onset for note in shifted_notes)
-    bar_number = (start_onset // pulses_per_measure) + 1
-    reason = f"RANGE_EDGE ({lowest_name}..{highest_name} > max {max_name})"
-    return replace(
-        event,
-        bar=bar_number,
-        reason=reason,
-        reason_code="range-edge",
-        span=span_label,
-    )
 def _arrange_for_instrument(
     span: PhraseSpan,
     instrument_id: str,
@@ -353,6 +242,13 @@ def _arrange_for_instrument(
         breath_settings=breath_settings,
     )
     summary = summarize_difficulty(result.span, instrument)
+    log_instrument_result(
+        logger,
+        instrument_id=instrument_id,
+        result_span=result.span,
+        transposition=result.transposition,
+        difficulty=summary,
+    )
     return InstrumentArrangement(
         instrument_id=instrument_id,
         instrument=instrument,
@@ -381,6 +277,13 @@ def arrange(
         raise ValueError(f"Unsupported strategy: {strategy}")
 
     active_flags = flags or DEFAULT_FEATURE_FLAGS
+    log_arrange_start(
+        logger,
+        strategy=strategy_normalized,
+        instrument_id=instrument_id,
+        starred_ids=starred_ids,
+        span=span,
+    )
 
     if strategy_normalized == "current":
         arrangement = _arrange_for_instrument(
@@ -442,6 +345,12 @@ def arrange(
                 item.difficulty.tessitura_distance,
             ),
         )
+    )
+    ranked_pairs = tuple((item.instrument_id, item.difficulty) for item in ranked)
+    log_arrange_complete(
+        logger,
+        strategy=strategy_normalized,
+        ranked=ranked_pairs,
     )
     return ArrangementStrategyResult(
         strategy=strategy_normalized,

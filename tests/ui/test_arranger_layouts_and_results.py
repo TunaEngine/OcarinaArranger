@@ -15,9 +15,12 @@ def test_arranger_layouts_and_explanations_flow(gui_app) -> None:
     frames = getattr(gui_app, "_arranger_mode_frames", {})
     classic_frame = frames.get("classic", {}).get("left")
     best_effort_frame = frames.get("best_effort", {}).get("left")
+    gp_frame = frames.get("gp", {}).get("left")
     assert classic_frame is not None
     assert best_effort_frame is not None
-    assert classic_frame.winfo_manager() == "grid"
+    assert gp_frame is not None
+    assert gp_frame.winfo_manager() == "grid"
+    assert classic_frame.winfo_manager() in {"", None}
     assert best_effort_frame.winfo_manager() in {"", None}
 
     summary = ArrangerResultSummary(
@@ -77,6 +80,7 @@ def test_arranger_layouts_and_explanations_flow(gui_app) -> None:
 
     assert best_effort_frame.winfo_manager() == "grid"
     assert classic_frame.winfo_manager() in {"", None}
+    assert gp_frame.winfo_manager() in {"", None}
 
     status = gui_app.arranger_summary_status.get()
     assert "0.55" in status and "0.65" in status and "transposition +2" in status
@@ -93,3 +97,12 @@ def test_arranger_layouts_and_explanations_flow(gui_app) -> None:
     gui_app._on_arranger_explanation_selected(None)
     detail = gui_app.arranger_explanation_detail.get()
     assert "Bar 9" in detail
+
+    gui_app._viewmodel.update_settings(arranger_mode="gp")
+    gui_app._sync_controls_from_state()
+    if hasattr(gui_app, "_update_arranger_mode_layout"):
+        gui_app._update_arranger_mode_layout()
+    gui_app.update_idletasks()
+
+    assert gp_frame.winfo_manager() == "grid"
+    assert best_effort_frame.winfo_manager() in {"", None}

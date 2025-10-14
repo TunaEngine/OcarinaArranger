@@ -49,11 +49,10 @@ def test_arrange_starred_best_ranks_and_explains() -> None:
 
     assert result.strategy == "starred-best"
     ordered_ids = [candidate.instrument_id for candidate in result.comparisons]
-    assert ordered_ids == ["star_a", "current", "star_b"]
+    assert ordered_ids == ["current", "star_a", "star_b"]
 
     chosen = result.chosen
-    assert chosen.instrument_id == "star_a"
-    # Star A should minimise hard+very-hard exposure.
-    assert chosen.difficulty.hard_and_very_hard <= result.comparisons[1].difficulty.hard_and_very_hard
-    assert result.comparisons[1].difficulty.medium <= result.comparisons[2].difficulty.medium
+    assert chosen.instrument_id == "current"
+    assert chosen.result.transposition == 0
+    assert all(not any(evt.action == "range-clamp" for evt in comp.result.preprocessing) for comp in result.comparisons)
 

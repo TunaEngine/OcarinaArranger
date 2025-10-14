@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from typing import Dict, Iterable, Sequence
+from typing import Dict
 
 from shared.ttk import ttk
 
@@ -20,15 +20,28 @@ from viewmodels.main_viewmodel import (
     ARRANGER_STRATEGY_STARRED_BEST,
     DEFAULT_ARRANGER_STRATEGY,
 )
-from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerInstrumentSummary
+from viewmodels.arranger_models import (
+    ArrangerBudgetSettings,
+    ArrangerGPSettings,
+)
 
 from .arranger_results import ArrangerResultsMixin
+from .convert_advanced_controls import ArrangerAdvancedControlsMixin
+from .convert_gp_controls import ArrangerGPControlsMixin
+from .convert_starred_controls import ArrangerStarredControlsMixin
+from .convert_summary_controls import ArrangerSummaryControlsMixin
 
 
 logger = logging.getLogger(__name__)
 
 
-class ConvertControlsMixin(ArrangerResultsMixin):
+class ConvertControlsMixin(
+    ArrangerResultsMixin,
+    ArrangerStarredControlsMixin,
+    ArrangerSummaryControlsMixin,
+    ArrangerAdvancedControlsMixin,
+    ArrangerGPControlsMixin,
+):
     """Initialise conversion-related Tk variables and helpers."""
 
     def _create_convert_controls(self, state) -> None:
@@ -53,7 +66,7 @@ class ConvertControlsMixin(ArrangerResultsMixin):
             strategy_value = DEFAULT_ARRANGER_STRATEGY
         self.arranger_strategy = tk.StringVar(master=self, value=strategy_value)
         self._suppress_arranger_strategy_trace = False
-        dp_enabled = bool(getattr(state, "arranger_dp_slack_enabled", False))
+        dp_enabled = bool(getattr(state, "arranger_dp_slack_enabled", True))
         self.arranger_dp_slack = tk.BooleanVar(master=self, value=dp_enabled)
         budgets_state = getattr(state, "arranger_budgets", ArrangerBudgetSettings())
         if not isinstance(budgets_state, ArrangerBudgetSettings):
@@ -80,7 +93,7 @@ class ConvertControlsMixin(ArrangerResultsMixin):
         self._suspend_arranger_budget_trace = False
         self._suspend_arranger_dp_trace = False
         self.arranger_show_advanced = tk.BooleanVar(master=self, value=False)
-        self._arranger_advanced_frame: ttk.Frame | None = None
+        self._arranger_advanced_frames: dict[str, ttk.Frame] = {}
         self._suspend_starred_updates = False
         self._starred_instrument_vars: dict[str, tk.BooleanVar] = {}
         self._starred_var_traces: dict[str, str] = {}
@@ -89,6 +102,86 @@ class ConvertControlsMixin(ArrangerResultsMixin):
         self._arranger_summary_container: ttk.Frame | None = None
         self._arranger_summary_body: ttk.Frame | None = None
         self._arranger_summary_placeholder: ttk.Label | None = None
+        gp_state = getattr(state, "arranger_gp_settings", ArrangerGPSettings())
+        if not isinstance(gp_state, ArrangerGPSettings):
+            gp_state = ArrangerGPSettings()
+        gp_state = gp_state.normalized()
+        self.arranger_gp_generations = tk.IntVar(
+            master=self, value=gp_state.generations
+        )
+        self.arranger_gp_population = tk.IntVar(
+            master=self, value=gp_state.population_size
+        )
+        if gp_state.time_budget_seconds is None:
+            gp_budget_text = ""
+        else:
+            gp_budget_text = (f"{gp_state.time_budget_seconds:.1f}").rstrip("0").rstrip(".")
+
+        def _format_float(value: float, precision: int = 3) -> str:
+            display = f"{value:.{precision}f}".rstrip("0").rstrip(".")
+            return display or "0"
+
+        self.arranger_gp_time_budget = tk.StringVar(
+            master=self, value=gp_budget_text
+        )
+        self.arranger_gp_archive_size = tk.IntVar(
+            master=self, value=gp_state.archive_size
+        )
+        self.arranger_gp_random_programs = tk.IntVar(
+            master=self, value=gp_state.random_program_count
+        )
+        self.arranger_gp_crossover = tk.StringVar(
+            master=self, value=_format_float(gp_state.crossover_rate, precision=2)
+        )
+        self.arranger_gp_mutation = tk.StringVar(
+            master=self, value=_format_float(gp_state.mutation_rate, precision=2)
+        )
+        self.arranger_gp_log_best = tk.IntVar(
+            master=self, value=gp_state.log_best_programs
+        )
+        self.arranger_gp_random_seed = tk.StringVar(
+            master=self, value=str(gp_state.random_seed)
+        )
+        self.arranger_gp_playability_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.playability_weight)
+        )
+        self.arranger_gp_fidelity_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.fidelity_weight)
+        )
+        self.arranger_gp_tessitura_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.tessitura_weight)
+        )
+        self.arranger_gp_program_size_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.program_size_weight)
+        )
+        self.arranger_gp_contour_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.contour_weight)
+        )
+        self.arranger_gp_lcs_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.lcs_weight)
+        )
+        self.arranger_gp_pitch_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.pitch_weight)
+        )
+        self._arranger_gp_vars: dict[str, tk.Variable] = {
+            "generations": self.arranger_gp_generations,
+            "population_size": self.arranger_gp_population,
+            "time_budget_seconds": self.arranger_gp_time_budget,
+            "archive_size": self.arranger_gp_archive_size,
+            "random_program_count": self.arranger_gp_random_programs,
+            "crossover_rate": self.arranger_gp_crossover,
+            "mutation_rate": self.arranger_gp_mutation,
+            "log_best_programs": self.arranger_gp_log_best,
+            "random_seed": self.arranger_gp_random_seed,
+            "playability_weight": self.arranger_gp_playability_weight,
+            "fidelity_weight": self.arranger_gp_fidelity_weight,
+            "tessitura_weight": self.arranger_gp_tessitura_weight,
+            "program_size_weight": self.arranger_gp_program_size_weight,
+            "contour_weight": self.arranger_gp_contour_weight,
+            "lcs_weight": self.arranger_gp_lcs_weight,
+            "pitch_weight": self.arranger_gp_pitch_weight,
+        }
+        self._suspend_arranger_gp_trace = False
         self._initialise_arranger_results(state)
         self.status = tk.StringVar(master=self, value=state.status_message)
         self._reimport_button: ttk.Button | None = None
@@ -109,6 +202,8 @@ class ConvertControlsMixin(ArrangerResultsMixin):
         self._register_convert_setting_var(self.arranger_dp_slack)
         for var in self._arranger_budget_vars.values():
             self._register_convert_setting_var(var)
+        for var in self._arranger_gp_vars.values():
+            self._register_convert_setting_var(var)
         self.arranger_mode.trace_add("write", self._on_arranger_mode_changed)
         self.arranger_strategy.trace_add("write", self._on_arranger_strategy_changed)
         self.arranger_dp_slack.trace_add(
@@ -120,6 +215,11 @@ class ConvertControlsMixin(ArrangerResultsMixin):
                 lambda *_args, budget_key=key: self._on_arranger_budget_changed(
                     budget_key
                 ),
+            )
+        for key, var in self._arranger_gp_vars.items():
+            var.trace_add(
+                "write",
+                lambda *_args, gp_key=key: self._on_arranger_gp_changed(gp_key),
             )
         self.arranger_show_advanced.trace_add(
             "write", self._on_arranger_show_advanced_changed
@@ -139,7 +239,7 @@ class ConvertControlsMixin(ArrangerResultsMixin):
         if raw_value in {"v2", "best_effort"}:
             normalized = "best_effort"
         elif raw_value in {"v1", "classic"}:
-            normalized = DEFAULT_ARRANGER_MODE
+            normalized = "classic"
         elif raw_value in ARRANGER_MODES:
             normalized = raw_value
         else:
@@ -200,290 +300,6 @@ class ConvertControlsMixin(ArrangerResultsMixin):
             return
 
         self._viewmodel.update_settings(arranger_strategy=normalized)
-
-    def _register_starred_container(self, container: ttk.Frame) -> None:
-        self._starred_instrument_container = container
-        self._refresh_starred_instrument_controls()
-
-    def _refresh_starred_instrument_controls(self) -> None:
-        container = self._starred_instrument_container
-        if container is None:
-            return
-
-        for child in container.winfo_children():
-            child.destroy()
-
-        starred_ids = set(getattr(self._viewmodel.state, "starred_instrument_ids", ()))
-        available = sorted(self._instrument_name_by_id.items(), key=lambda item: item[1].lower())
-        available_ids = {instrument_id for instrument_id, _ in available}
-
-        if not available:
-            placeholder = ttk.Label(
-                container,
-                text="No instruments available.",
-                style="Hint.TLabel",
-            )
-            placeholder.grid(row=0, column=0, sticky="w")
-            self._starred_checkbox_widgets = {}
-            return
-
-        self._suspend_starred_updates = True
-        try:
-            for index, (instrument_id, instrument_name) in enumerate(available):
-                var = self._starred_instrument_vars.get(instrument_id)
-                if var is None:
-                    var = tk.BooleanVar(master=self, value=instrument_id in starred_ids)
-                    trace_id = var.trace_add(
-                        "write",
-                        lambda *_args, instrument_id=instrument_id: self._on_starred_var_changed(
-                            instrument_id
-                        ),
-                    )
-                    self._starred_instrument_vars[instrument_id] = var
-                    self._starred_var_traces[instrument_id] = trace_id
-                    self._register_convert_setting_var(var)
-                else:
-                    desired = instrument_id in starred_ids
-                    if bool(var.get()) != desired:
-                        var.set(desired)
-
-                check = ttk.Checkbutton(
-                    container,
-                    text=instrument_name,
-                    variable=var,
-                )
-                check.grid(row=index, column=0, sticky="w", pady=(0, 2))
-                self._starred_checkbox_widgets[instrument_id] = check
-
-            # Remove variables that are no longer available
-            for instrument_id in list(self._starred_instrument_vars.keys()):
-                if instrument_id in available_ids:
-                    continue
-                var = self._starred_instrument_vars.pop(instrument_id)
-                trace_id = self._starred_var_traces.pop(instrument_id, None)
-                if trace_id:
-                    try:
-                        var.trace_remove("write", trace_id)
-                    except Exception:
-                        pass
-        finally:
-            self._suspend_starred_updates = False
-
-    def _on_starred_var_changed(self, instrument_id: str) -> None:
-        if self._suspend_starred_updates:
-            return
-        var = self._starred_instrument_vars.get(instrument_id)
-        if var is None:
-            return
-        selected = bool(var.get())
-        starred = set(getattr(self._viewmodel.state, "starred_instrument_ids", ()))
-        if selected:
-            starred.add(instrument_id)
-        else:
-            starred.discard(instrument_id)
-        ordered = tuple(
-            iid
-            for iid in self._instrument_name_by_id
-            if iid in starred
-        )
-        self._viewmodel.update_settings(starred_instrument_ids=ordered)
-
-    def _sync_starred_instruments_from_state(self, starred_ids: Iterable[str] | None) -> None:
-        self._refresh_starred_instrument_controls()
-        if starred_ids is None:
-            starred_set: set[str] = set()
-        else:
-            starred_set = set(starred_ids)
-        self._suspend_starred_updates = True
-        try:
-            for instrument_id, var in self._starred_instrument_vars.items():
-                desired = instrument_id in starred_set
-                if bool(var.get()) != desired:
-                    var.set(desired)
-        finally:
-            self._suspend_starred_updates = False
-
-    def _register_arranger_summary_container(self, container: ttk.Frame) -> None:
-        self._arranger_summary_container = container
-        headings = [
-            "Instrument",
-            "",
-            "Transpose",
-            "Easy",
-            "Medium",
-            "Hard",
-            "Very Hard",
-            "Tessitura",
-        ]
-        self._arranger_summary_column_count = len(headings)
-        for column, title in enumerate(headings):
-            ttk.Label(container, text=title).grid(
-                row=0,
-                column=column,
-                sticky="w",
-                padx=(0, 8),
-            )
-            weight = 1 if column == 0 else 0
-            container.columnconfigure(column, weight=weight)
-        body = ttk.Frame(container)
-        body.grid(row=1, column=0, columnspan=len(headings), sticky="nsew")
-        for column in range(len(headings)):
-            body.columnconfigure(column, weight=1 if column == 0 else 0)
-        container.rowconfigure(1, weight=1)
-        self._arranger_summary_body = body
-        self._render_arranger_summary()
-
-    def _render_arranger_summary(
-        self, entries: Sequence[ArrangerInstrumentSummary] | None = None
-    ) -> None:
-        body = self._arranger_summary_body
-        if body is None:
-            return
-        for child in body.winfo_children():
-            child.destroy()
-
-        data: Sequence[ArrangerInstrumentSummary]
-        if entries is not None:
-            data = entries
-        else:
-            data = getattr(self._viewmodel.state, "arranger_strategy_summary", ())
-
-        column_count = getattr(self, "_arranger_summary_column_count", 0) or 1
-
-        if not data:
-            placeholder = ttk.Label(
-                body,
-                text="Arrange a score to compare instruments.",
-                style="Hint.TLabel",
-                anchor="w",
-                justify="left",
-                wraplength=360,
-            )
-            placeholder.grid(row=0, column=0, columnspan=column_count, sticky="w")
-            self._arranger_summary_placeholder = placeholder
-            return
-
-        self._arranger_summary_placeholder = None
-        for row, summary in enumerate(data, start=0):
-            instrument_name = summary.instrument_name or self._instrument_name_by_id.get(
-                summary.instrument_id, summary.instrument_id
-            )
-            ttk.Label(body, text=instrument_name).grid(
-                row=row,
-                column=0,
-                sticky="w",
-                padx=(0, 8),
-                pady=(0, 2),
-            )
-            badge_text = "⭐ Winner" if summary.is_winner else ""
-            ttk.Label(body, text=badge_text, style="Hint.TLabel").grid(
-                row=row,
-                column=1,
-                sticky="w",
-                padx=(0, 8),
-                pady=(0, 2),
-            )
-            ttk.Label(
-                body,
-                text=f"{summary.transposition:+d}" if summary.transposition else "0",
-            ).grid(
-                row=row,
-                column=2,
-                sticky="e",
-                padx=(0, 8),
-                pady=(0, 2),
-            )
-            for column_offset, value in enumerate(
-                (
-                    summary.easy,
-                    summary.medium,
-                    summary.hard,
-                    summary.very_hard,
-                    summary.tessitura,
-                ),
-                start=3,
-            ):
-                ttk.Label(body, text=f"{value:.2f}").grid(
-                    row=row,
-                    column=column_offset,
-                    sticky="e",
-                    padx=(0, 8),
-                    pady=(0, 2),
-                )
-
-    def _register_arranger_advanced_frame(self, frame: ttk.Frame) -> None:
-        self._arranger_advanced_frame = frame
-        self._update_arranger_advanced_visibility()
-
-    def _update_arranger_advanced_visibility(self) -> None:
-        frame = self._arranger_advanced_frame
-        if frame is None:
-            return
-        visible = bool(self.arranger_show_advanced.get()) and (
-            (self.arranger_mode.get() or "") == "best_effort"
-        )
-        if visible:
-            frame.grid()
-        else:
-            frame.grid_remove()
-
-    def _on_arranger_show_advanced_changed(self, *_args: object) -> None:
-        self._update_arranger_advanced_visibility()
-
-    def _on_arranger_dp_slack_changed(self, *_args: object) -> None:
-        if self._suspend_arranger_dp_trace:
-            return
-        try:
-            enabled = bool(self.arranger_dp_slack.get())
-        except (tk.TclError, AttributeError):
-            enabled = False
-        self._viewmodel.update_settings(arranger_dp_slack_enabled=enabled)
-
-    def _collect_arranger_budget_values(self) -> ArrangerBudgetSettings:
-        def _safe_get(var: tk.IntVar, fallback: int) -> int:
-            try:
-                return int(var.get())
-            except (tk.TclError, ValueError, TypeError, AttributeError):
-                return fallback
-
-        return ArrangerBudgetSettings(
-            max_octave_edits=_safe_get(self.arranger_budget_octave, 1),
-            max_rhythm_edits=_safe_get(self.arranger_budget_rhythm, 1),
-            max_substitutions=_safe_get(self.arranger_budget_substitution, 1),
-            max_steps_per_span=_safe_get(self.arranger_budget_total, 3),
-        )
-
-    def _apply_arranger_budget_vars(self, budgets: ArrangerBudgetSettings) -> None:
-        normalized = budgets if isinstance(budgets, ArrangerBudgetSettings) else ArrangerBudgetSettings()
-        if not isinstance(budgets, ArrangerBudgetSettings):
-            normalized = ArrangerBudgetSettings()
-        normalized = normalized.normalized()
-        self._suspend_arranger_budget_trace = True
-        try:
-            self.arranger_budget_octave.set(normalized.max_octave_edits)
-            self.arranger_budget_rhythm.set(normalized.max_rhythm_edits)
-            self.arranger_budget_substitution.set(normalized.max_substitutions)
-            self.arranger_budget_total.set(normalized.max_steps_per_span)
-        finally:
-            self._suspend_arranger_budget_trace = False
-
-    def _on_arranger_budget_changed(self, _key: str) -> None:
-        if self._suspend_arranger_budget_trace:
-            return
-        budgets = self._collect_arranger_budget_values()
-        self._viewmodel.update_settings(arranger_budgets=budgets)
-
-    def reset_arranger_budgets(self) -> None:
-        defaults = ArrangerBudgetSettings()
-        self._viewmodel.update_settings(arranger_budgets=defaults)
-        self._apply_arranger_budget_vars(defaults)
-
-    def _sync_arranger_budgets_from_state(
-        self, budgets: ArrangerBudgetSettings | None
-    ) -> None:
-        if budgets is None:
-            budgets = ArrangerBudgetSettings()
-        self._apply_arranger_budget_vars(budgets)
 
 
 

@@ -7,7 +7,9 @@ from ocarina_gui.fingering import InstrumentChoice, InstrumentSpec
 from ocarina_gui.preview import PreviewData
 from ocarina_tools.events import NoteEvent
 from services.project_service import PreviewPlaybackSnapshot
+from services.arranger_preview import ArrangerComputation
 from tests.viewmodels._fakes import FakeDialogs, StubScoreService
+from viewmodels.arranger_models import ArrangerGPSettings
 from viewmodels.main_viewmodel import (
     ARRANGER_STRATEGY_STARRED_BEST,
     MainViewModel,
@@ -22,12 +24,26 @@ def test_browse_for_input_updates_state(tmp_path: Path) -> None:
     viewmodel.state.pitch_list = ["C4"]
     viewmodel.update_preview_settings({"arranged": PreviewPlaybackSnapshot()})
 
-    viewmodel.browse_for_input()
+    assert viewmodel.browse_for_input() is True
 
     assert viewmodel.state.input_path == str(file_path)
     assert viewmodel.state.pitch_list == []
     assert viewmodel.state.preview_settings == {}
     assert viewmodel.state.status_message == "Ready."
+
+
+def test_browse_for_input_cancel_retains_state(tmp_path: Path) -> None:
+    existing = tmp_path / "existing.musicxml"
+    existing.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs(open_path=None)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=StubScoreService())
+    viewmodel.update_settings(input_path=str(existing))
+    viewmodel.state.pitch_list = ["D4"]
+
+    assert viewmodel.browse_for_input() is False
+
+    assert viewmodel.state.input_path == str(existing)
+    assert viewmodel.state.pitch_list == ["D4"]
 
 
 def test_render_previews_sets_status(preview_data: PreviewData, tmp_path: Path) -> None:
@@ -171,6 +187,45 @@ def test_render_previews_populates_arranger_results(
     assert isinstance(preview_out, PreviewData)
 
 
+def test_render_previews_passes_gp_settings(monkeypatch, preview_data: PreviewData, tmp_path: Path) -> None:
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview_data)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(
+        input_path=str(file_path),
+        arranger_mode="gp",
+        instrument_id="alto_c",
+        arranger_gp_settings={
+            "generations": 6,
+            "population_size": 18,
+            "time_budget_seconds": 12.0,
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_compute(preview: PreviewData, **kwargs) -> ArrangerComputation:
+        captured.update(kwargs)
+        return ArrangerComputation(summaries=(), result_summary=None, strategy=kwargs.get("strategy", "gp"))
+
+    monkeypatch.setattr(
+        "viewmodels.main_viewmodel_arranger_helpers.compute_arranger_preview",
+        _fake_compute,
+    )
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    gp_settings = captured.get("gp_settings")
+    assert isinstance(gp_settings, ArrangerGPSettings)
+    assert gp_settings.generations == 6
+    assert gp_settings.population_size == 18
+    assert gp_settings.time_budget_seconds == 12.0
+    assert captured.get("transpose_offset") == viewmodel.state.transpose_offset
+
+
 def test_new_input_path_clears_preview_settings(tmp_path: Path) -> None:
     first = tmp_path / "first.musicxml"
     first.write_text("<score />", encoding="utf-8")
@@ -273,7 +328,7 @@ def test_render_previews_applies_best_effort_transposition(
     assert result.is_ok()
     preview_out = result.unwrap()
     arranged_midis = [event.midi for event in preview_out.arranged_events]
-    assert arranged_midis == [77, 79, 81, 72, 69]
+    assert arranged_midis == [72, 74, 76, 79, 76]
     summary = viewmodel.state.arranger_result_summary
     assert summary is not None
-    assert summary.transposition == -7
+    assert summary.transposition == 0

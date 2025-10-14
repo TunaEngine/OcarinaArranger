@@ -42,6 +42,19 @@ On Windows invoke the virtualenv binary directly:
 .venv\Scripts\pytest.exe
 ```
 
+### File length guard
+
+We enforce a 500-line ceiling on Python source files via
+`tests/test_source_file_lengths.py`. Run the guard with `--maxfail=1` so the
+first oversized file is reported immediately:
+
+```bash
+pytest tests/test_source_file_lengths.py --maxfail=1
+```
+
+Audio renderer tests now live under `tests/unit/audio_renderer/` after splitting
+the legacy monolithic module, so each test file complies with this limit.
+
 ### Headless GUI tests
 
 Tkinter-based GUI tests require a display server. On Linux CI we rely on

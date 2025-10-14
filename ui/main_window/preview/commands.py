@@ -23,7 +23,9 @@ class PreviewCommandsMixin:
     """High-level commands that drive preview rendering and conversion."""
 
     def browse(self) -> None:
-        self._viewmodel.browse_for_input()
+        changed = self._viewmodel.browse_for_input()
+        if not changed:
+            return
         state = self._viewmodel.state
         self.input_path.set(state.input_path)
         self.pitch_list = list(state.pitch_list)

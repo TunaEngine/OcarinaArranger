@@ -8,7 +8,7 @@ def build_arranger_results_panel(app, parent: ttk.Frame, pad: int) -> ttk.LabelF
 
     section = ttk.LabelFrame(
         parent,
-        text="Best-Effort Results",
+        text="Arrangement Details",
         padding=pad,
         style="Panel.TLabelframe",
     )

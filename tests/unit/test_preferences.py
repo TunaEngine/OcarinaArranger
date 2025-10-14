@@ -1,5 +1,7 @@
 import json
 
+import json
+
 from ocarina_gui.preferences import Preferences, load_preferences, save_preferences
 
 
@@ -52,3 +54,18 @@ def test_load_preferences_with_invalid_types(tmp_path):
     assert loaded.preview_layout_mode is None
     assert loaded.auto_update_enabled is None
     assert loaded.arranger_mode is None
+
+
+def test_load_preferences_normalizes_gp_modes(tmp_path):
+    path = tmp_path / "prefs.json"
+    path.write_text(json.dumps({"arranger_mode": "v3"}), encoding="utf-8")
+
+    loaded = load_preferences(path)
+
+    assert loaded.arranger_mode == "gp"
+
+    path.write_text(json.dumps({"arranger_mode": "genetic"}), encoding="utf-8")
+
+    loaded = load_preferences(path)
+
+    assert loaded.arranger_mode == "gp"

@@ -74,6 +74,7 @@ class _SynthRenderer(AudioRenderer):
     _SAMPLE_RATE = 22050
     _AMPLITUDE = 0.45
     _PROGRESS_CHUNK_SIZE = 4096
+    _RENDER_WAIT_TIMEOUT = 1.5
 
     _note_segment = staticmethod(note_segment)
     _tempo_cache_key = staticmethod(tempo_cache_key)
@@ -148,19 +149,25 @@ class _SynthRenderer(AudioRenderer):
                 _safe_debug("SynthRenderer.start aborted: no events available")
                 return False
             self._ensure_buffer(wait=False)
-            buffer_ready = bool(self._worker.buffer) and (
-                self._worker.buffer_generation == self._worker.render_generation
-            )
-            if buffer_ready:
+            if self._buffer_is_ready():
                 started = self._play_from_tick(position_tick)
                 _safe_debug("SynthRenderer.start result=%s", started)
                 return started
             generation = self._worker.render_generation
-            self._restart_after_render(generation, position_tick)
-            _safe_debug(
-                "SynthRenderer.start deferred until render generation %d", generation
-            )
-            return True
+
+        wait_succeeded = self._render_ready.wait(self._RENDER_WAIT_TIMEOUT)
+        if wait_succeeded:
+            with self._playback_lock:
+                if self._buffer_is_ready():
+                    started = self._play_from_tick(position_tick)
+                    _safe_debug("SynthRenderer.start result=%s", started)
+                    return started
+
+        self._restart_after_render(generation, position_tick)
+        _safe_debug(
+            "SynthRenderer.start deferred until render generation %d", generation
+        )
+        return True
 
     def pause(self) -> None:
         _safe_debug("SynthRenderer.pause invoked")
@@ -407,6 +414,11 @@ class _SynthRenderer(AudioRenderer):
         except Exception:
             scaled = pcm
         return scaled
+
+    def _buffer_is_ready(self) -> bool:
+        return bool(self._worker.buffer) and (
+            self._worker.buffer_generation == self._worker.render_generation
+        )
 
     @staticmethod
     def _silence(length: int) -> bytes:

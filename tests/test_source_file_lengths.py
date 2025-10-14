@@ -9,8 +9,6 @@ MAX_FILE_LENGTH = 500
 REPO_ROOT = Path(__file__).resolve().parents[1]
 IGNORED_DIR_NAMES = {".git", ".venv", "__pycache__"}
 ALLOWLIST = {
-    Path("tests/test_pdf_export.py"),
-    Path("tests/unit/test_audio_renderer.py"),
     Path("tests/ui/test_gui_preview_rendering.py"),
     Path("ui/main_window/menus/theme/palette.py"),
     Path("ocarina_gui/pdf_export/pages/staff.py"),

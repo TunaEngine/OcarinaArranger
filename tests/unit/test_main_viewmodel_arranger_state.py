@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from adapters.file_dialog import FileDialogAdapter
 from services.score_service import ScoreService
-from viewmodels.arranger_models import ArrangerBudgetSettings
+from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 from viewmodels.main_viewmodel import MainViewModel, MainViewModelState
 
 
@@ -62,7 +62,7 @@ def _make_viewmodel() -> MainViewModel:
 def test_update_settings_switches_arranger_mode() -> None:
     viewmodel = _make_viewmodel()
 
-    assert viewmodel.state.arranger_mode == "classic"
+    assert viewmodel.state.arranger_mode == "gp"
 
     viewmodel.update_settings(arranger_mode="best_effort")
 
@@ -71,6 +71,10 @@ def test_update_settings_switches_arranger_mode() -> None:
     viewmodel.update_settings(arranger_mode="classic")
 
     assert viewmodel.state.arranger_mode == "classic"
+
+    viewmodel.update_settings(arranger_mode="gp")
+
+    assert viewmodel.state.arranger_mode == "gp"
 
 
 def test_update_settings_tracks_starred_instruments() -> None:
@@ -85,15 +89,15 @@ def test_update_settings_tracks_starred_instruments() -> None:
 def test_update_settings_persists_dp_slack_flag() -> None:
     viewmodel = _make_viewmodel()
 
-    assert viewmodel.state.arranger_dp_slack_enabled is False
-
-    viewmodel.update_settings(arranger_dp_slack_enabled=True)
-
     assert viewmodel.state.arranger_dp_slack_enabled is True
 
     viewmodel.update_settings(arranger_dp_slack_enabled=False)
 
     assert viewmodel.state.arranger_dp_slack_enabled is False
+
+    viewmodel.update_settings(arranger_dp_slack_enabled=True)
+
+    assert viewmodel.state.arranger_dp_slack_enabled is True
 
 
 def test_reset_arranger_budgets_restores_defaults() -> None:
@@ -110,3 +114,15 @@ def test_reset_arranger_budgets_restores_defaults() -> None:
     viewmodel.reset_arranger_budgets()
 
     assert viewmodel.state.arranger_budgets == ArrangerBudgetSettings()
+
+
+def test_update_settings_tracks_gp_configuration() -> None:
+    viewmodel = _make_viewmodel()
+
+    defaults = ArrangerGPSettings()
+    assert viewmodel.state.arranger_gp_settings == defaults
+
+    custom = ArrangerGPSettings(generations=7, population_size=24, time_budget_seconds=15.5)
+    viewmodel.update_settings(arranger_gp_settings=custom)
+
+    assert viewmodel.state.arranger_gp_settings == custom.normalized()

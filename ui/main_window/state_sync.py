@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
-from viewmodels.arranger_models import ArrangerBudgetSettings
+from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 from viewmodels.main_viewmodel import DEFAULT_ARRANGER_STRATEGY
 
 
@@ -67,6 +67,12 @@ class MainWindowStateSyncMixin:
                 try:
                     budgets = getattr(state, "arranger_budgets", ArrangerBudgetSettings())
                     self._sync_arranger_budgets_from_state(budgets)
+                except Exception:
+                    pass
+            if hasattr(self, "_sync_arranger_gp_from_state"):
+                try:
+                    gp_settings = getattr(state, "arranger_gp_settings", ArrangerGPSettings())
+                    self._sync_arranger_gp_from_state(gp_settings)
                 except Exception:
                     pass
         finally:

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 import os
 from pathlib import Path
 from typing import Iterable, Optional
 
-from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
-from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
@@ -27,63 +25,36 @@ from shared.result import Result
 
 from domain.arrangement.api import ArrangementStrategyResult
 
-from services.arranger_preview import ArrangerComputation, compute_arranger_preview
+from services.arranger_preview import (
+    ArrangerComputation,
+    compute_arranger_preview as _compute_arranger_preview,
+)
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
     ArrangerEditBreakdown,
     ArrangerExplanationRow,
+    ArrangerGPSettings,
     ArrangerInstrumentSummary,
     ArrangerResultSummary,
     ArrangerTelemetryHint,
+)
+from .main_viewmodel_state import (
+    ARRANGER_STRATEGIES,
+    ARRANGER_STRATEGY_CURRENT,
+    ARRANGER_STRATEGY_STARRED_BEST,
+    DEFAULT_ARRANGER_STRATEGY,
+    MainViewModelState,
+)
+from .main_viewmodel_arranger_helpers import (
+    apply_arranger_results_from_preview,
+    preview_with_arranger_events,
 )
 
 
 logger = logging.getLogger(__name__)
 
 
-ARRANGER_STRATEGY_CURRENT = "current"
-ARRANGER_STRATEGY_STARRED_BEST = "starred-best"
-ARRANGER_STRATEGIES = (
-    ARRANGER_STRATEGY_CURRENT,
-    ARRANGER_STRATEGY_STARRED_BEST,
-)
-DEFAULT_ARRANGER_STRATEGY = ARRANGER_STRATEGY_CURRENT
-
-
 _UNSET = object()
-
-
-@dataclass(slots=True)
-class MainViewModelState:
-    input_path: str = ""
-    prefer_mode: str = "auto"
-    prefer_flats: bool = True
-    collapse_chords: bool = True
-    favor_lower: bool = False
-    range_min: str = DEFAULT_MIN
-    range_max: str = DEFAULT_MAX
-    status_message: str = "Ready."
-    pitch_list: list[str] = field(default_factory=list)
-    transpose_offset: int = 0
-    instrument_id: str = ""
-    preview_settings: dict[str, PreviewPlaybackSnapshot] = field(default_factory=dict)
-    arranger_mode: str = DEFAULT_ARRANGER_MODE
-    arranger_strategy: str = DEFAULT_ARRANGER_STRATEGY
-    starred_instrument_ids: tuple[str, ...] = field(default_factory=tuple)
-    arranger_strategy_summary: tuple[ArrangerInstrumentSummary, ...] = field(
-        default_factory=tuple
-    )
-    arranger_dp_slack_enabled: bool = False
-    arranger_budgets: ArrangerBudgetSettings = field(
-        default_factory=ArrangerBudgetSettings
-    )
-    arranger_result_summary: ArrangerResultSummary | None = None
-    arranger_explanations: tuple[ArrangerExplanationRow, ...] = field(
-        default_factory=tuple
-    )
-    arranger_telemetry: tuple[ArrangerTelemetryHint, ...] = field(
-        default_factory=tuple
-    )
 
 
 class MainViewModel:
@@ -125,6 +96,11 @@ class MainViewModel:
         arranger_dp_slack_enabled: Optional[bool] = None,
         arranger_budgets: Optional[
             ArrangerBudgetSettings | dict[str, int] | tuple[int, int, int, int]
+        ] = None,
+        arranger_gp_settings: Optional[
+            ArrangerGPSettings
+            | dict[str, object]
+            | tuple[int, int, object]
         ] = None,
     ) -> None:
         if input_path is not None:
@@ -188,6 +164,80 @@ class MainViewModel:
             else:
                 budgets = ArrangerBudgetSettings()
             self.state.arranger_budgets = budgets.normalized()
+        if arranger_gp_settings is not None:
+            if isinstance(arranger_gp_settings, ArrangerGPSettings):
+                gp_settings = arranger_gp_settings
+            elif isinstance(arranger_gp_settings, dict):
+                base = self.state.arranger_gp_settings
+
+                def _get_int(key: str, fallback: int) -> int:
+                    value = arranger_gp_settings.get(key, fallback)
+                    try:
+                        return int(value)
+                    except (TypeError, ValueError):
+                        return fallback
+
+                def _get_float(key: str, fallback: float) -> float:
+                    value = arranger_gp_settings.get(key, fallback)
+                    if value is None:
+                        return fallback
+                    try:
+                        return float(value)
+                    except (TypeError, ValueError):
+                        return fallback
+
+                time_budget_value = arranger_gp_settings.get("time_budget_seconds")
+                try:
+                    time_budget_seconds = (
+                        float(time_budget_value)
+                        if time_budget_value not in (None, "")
+                        else None
+                    )
+                except (TypeError, ValueError):
+                    time_budget_seconds = None
+
+                gp_settings = ArrangerGPSettings(
+                    generations=_get_int("generations", base.generations),
+                    population_size=_get_int("population_size", base.population_size),
+                    time_budget_seconds=time_budget_seconds,
+                    archive_size=_get_int("archive_size", base.archive_size),
+                    random_program_count=_get_int(
+                        "random_program_count", base.random_program_count
+                    ),
+                    crossover_rate=_get_float("crossover_rate", base.crossover_rate),
+                    mutation_rate=_get_float("mutation_rate", base.mutation_rate),
+                    log_best_programs=_get_int(
+                        "log_best_programs", base.log_best_programs
+                    ),
+                    random_seed=_get_int("random_seed", base.random_seed),
+                    playability_weight=_get_float(
+                        "playability_weight", base.playability_weight
+                    ),
+                    fidelity_weight=_get_float(
+                        "fidelity_weight", base.fidelity_weight
+                    ),
+                    tessitura_weight=_get_float(
+                        "tessitura_weight", base.tessitura_weight
+                    ),
+                    program_size_weight=_get_float(
+                        "program_size_weight", base.program_size_weight
+                    ),
+                    contour_weight=_get_float("contour_weight", base.contour_weight),
+                    lcs_weight=_get_float("lcs_weight", base.lcs_weight),
+                    pitch_weight=_get_float("pitch_weight", base.pitch_weight),
+                )
+            elif (
+                isinstance(arranger_gp_settings, tuple)
+                and len(arranger_gp_settings) == 3
+            ):
+                gp_settings = ArrangerGPSettings(
+                    generations=int(arranger_gp_settings[0]),
+                    population_size=int(arranger_gp_settings[1]),
+                    time_budget_seconds=arranger_gp_settings[2],
+                )
+            else:
+                gp_settings = ArrangerGPSettings()
+            self.state.arranger_gp_settings = gp_settings.normalized()
 
     def update_arranger_summary(
         self,
@@ -238,17 +288,22 @@ class MainViewModel:
     # ------------------------------------------------------------------
     # Commands used by the UI
     # ------------------------------------------------------------------
-    def browse_for_input(self) -> None:
+    def browse_for_input(self) -> bool:
         logger.info("Prompting for input file")
+        previous_path = self.state.input_path
         path = self._dialogs.ask_open_path()
         if not path:
             logger.info("Input file selection cancelled")
-            return
+            return False
+        if previous_path and path == previous_path:
+            logger.info("Input file unchanged; skipping preview reload")
+            return False
         self.update_settings(input_path=path)
         self.state.pitch_list = []
         self._pitch_entries = []
         logger.info("Input file selected", extra={"path": path})
         self.state.status_message = "Ready."
+        return True
 
     def render_previews(self) -> Result[PreviewData, str]:
         require_result = self._require_existing_input("Choose a file first.")
@@ -269,12 +324,12 @@ class MainViewModel:
         self.state.status_message = "Preview rendered."
         computation: ArrangerComputation | None = None
         try:
-            computation = self._apply_arranger_results_from_preview(preview)
+            computation = apply_arranger_results_from_preview(self, preview)
         except Exception:
             logger.exception("Failed to apply arranger results from preview")
             self.update_arranger_summary(summaries=(), strategy=self.state.arranger_strategy)
             self.update_arranger_results(summary=None, explanations=(), telemetry=())
-        updated_preview = self._preview_with_arranger_events(preview, computation)
+        updated_preview = preview_with_arranger_events(preview, computation)
         logger.info("Preview build completed", extra={"path": path})
         return Result.ok(updated_preview)
 
@@ -418,67 +473,11 @@ class MainViewModel:
     # ------------------------------------------------------------------
     # Arranger helpers
     # ------------------------------------------------------------------
-    def _apply_arranger_results_from_preview(self, preview: PreviewData) -> ArrangerComputation:
-        """Compute arranger summaries from ``preview`` when v2 is active."""
-
-        computation = compute_arranger_preview(
-            preview,
-            arranger_mode=self.state.arranger_mode,
-            instrument_id=self.state.instrument_id,
-            starred_instrument_ids=self.state.starred_instrument_ids,
-            strategy=self.state.arranger_strategy,
-            dp_slack_enabled=self.state.arranger_dp_slack_enabled,
-            budgets=self.state.arranger_budgets,
-        )
-
-        if (
-            computation.resolved_instrument_id
-            and computation.resolved_instrument_id != self.state.instrument_id
-        ):
-            self.state.instrument_id = computation.resolved_instrument_id
-
-        if computation.resolved_starred_ids and computation.resolved_starred_ids != self.state.starred_instrument_ids:
-            self.state.starred_instrument_ids = computation.resolved_starred_ids
-
-        self.update_arranger_summary(
-            summaries=computation.summaries,
-            strategy=computation.strategy,
-        )
-        self.update_arranger_results(
-            summary=computation.result_summary,
-            explanations=computation.explanations,
-            telemetry=computation.telemetry,
-        )
-
-        return computation
-
-    def _preview_with_arranger_events(
-        self,
-        preview: PreviewData,
-        computation: ArrangerComputation | None,
-    ) -> PreviewData:
-        if (
-            computation is None
-            or self.state.arranger_mode != "best_effort"
-            or computation.arranged_events is None
-        ):
-            return preview
-
-        arranged_events = computation.arranged_events
-        arranged_range = preview.arranged_range
-        if arranged_events:
-            lowest = min(event.midi for event in arranged_events)
-            highest = max(event.midi for event in arranged_events)
-            arranged_range = (lowest, highest)
-
-        return replace(
-            preview,
-            arranged_events=arranged_events,
-            arranged_range=arranged_range,
-        )
-
-
 __all__ = [
     "MainViewModel",
     "MainViewModelState",
+    "compute_arranger_preview",
 ]
+
+# Backwards compatibility for legacy tests expecting module-level access.
+compute_arranger_preview = _compute_arranger_preview

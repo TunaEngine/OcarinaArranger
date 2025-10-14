@@ -246,8 +246,11 @@ def test_results_explanation_filter(gui_app) -> None:
 
 def test_advanced_controls_toggle_visibility(gui_app) -> None:
     _activate_best_effort(gui_app)
-    frame = getattr(gui_app, "_arranger_advanced_frame", None)
+    frames = getattr(gui_app, "_arranger_advanced_frames", {})
+    frame = frames.get("best_effort")
+    gp_frame = frames.get("gp")
     assert frame is not None
+    assert gp_frame is not None
     gui_app.update_idletasks()
     assert frame.winfo_manager() in {"", None}
 
@@ -259,16 +262,28 @@ def test_advanced_controls_toggle_visibility(gui_app) -> None:
     gui_app.update_idletasks()
     assert frame.winfo_manager() in {"", None}
 
+    gui_app.arranger_mode.set("gp")
+    gui_app.update_idletasks()
+    assert gp_frame.winfo_manager() == "grid"
+
+    gui_app.arranger_show_advanced.set(False)
+    gui_app.update_idletasks()
+    assert gp_frame.winfo_manager() in {"", None}
+
+    gui_app.arranger_show_advanced.set(True)
+    gui_app.update_idletasks()
+    assert gp_frame.winfo_manager() == "grid"
+
 
 def test_dp_slack_toggle_updates_viewmodel(gui_app) -> None:
     _activate_best_effort(gui_app)
     gui_app.arranger_show_advanced.set(True)
     gui_app.update_idletasks()
 
-    assert gui_app._viewmodel.state.arranger_dp_slack_enabled is False
-    gui_app.arranger_dp_slack.set(True)
-    gui_app.update_idletasks()
     assert gui_app._viewmodel.state.arranger_dp_slack_enabled is True
+    gui_app.arranger_dp_slack.set(False)
+    gui_app.update_idletasks()
+    assert gui_app._viewmodel.state.arranger_dp_slack_enabled is False
 
 
 def test_budget_spinboxes_update_viewmodel(gui_app) -> None:

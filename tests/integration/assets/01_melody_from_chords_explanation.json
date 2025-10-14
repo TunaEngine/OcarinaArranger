@@ -4,14 +4,14 @@
     {
       "measure": 1,
       "action": "MELODY_ISOLATION",
-      "reason": "highest_voice + onbeat + longer_durations",
+      "reason": "register_anchor + voice_continuity + onbeat + longer_durations",
       "kept_voice": 1,
       "removed_voice": 2
     },
     {
       "measure": 2,
       "action": "MELODY_ISOLATION",
-      "reason": "highest_voice + onbeat",
+      "reason": "voice_continuity + onbeat",
       "kept_voice": 1,
       "removed_voice": 2
     }

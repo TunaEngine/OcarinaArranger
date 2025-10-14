@@ -20,8 +20,8 @@ PREVIEW_LAYOUT_MODES = {
     "staff",
 }
 
-ARRANGER_MODES = {"classic", "best_effort"}
-DEFAULT_ARRANGER_MODE = "classic"
+ARRANGER_MODES = {"classic", "best_effort", "gp"}
+DEFAULT_ARRANGER_MODE = "gp"
 
 
 @dataclass
@@ -121,6 +121,8 @@ def load_preferences(path: Path | None = None) -> Preferences:
             arranger_mode = "classic"
         elif normalized_mode in {"v2", "best_effort"}:
             arranger_mode = "best_effort"
+        elif normalized_mode in {"v3", "gp", "genetic"}:
+            arranger_mode = "gp"
         elif normalized_mode in ARRANGER_MODES:
             arranger_mode = normalized_mode
         else:

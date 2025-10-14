@@ -22,8 +22,13 @@ def span_exceeds_range(span: PhraseSpan, instrument: InstrumentRange) -> bool:
 
 
 def _clamp_note_to_range(
-    note: PhraseNote, instrument: InstrumentRange
+    note: PhraseNote,
+    instrument: InstrumentRange,
+    *,
+    is_top_voice: bool = False,
 ) -> Tuple[PhraseNote, bool]:
+    boundary_target = min(max(note.midi, instrument.min_midi), instrument.max_midi)
+
     target = note.midi
     shift_octaves = 0
     for _ in range(8):
@@ -36,10 +41,21 @@ def _clamp_note_to_range(
             target += 12
             shift_octaves += 1
     else:
-        if target > instrument.max_midi:
-            target = instrument.max_midi
-        elif target < instrument.min_midi:
-            target = instrument.min_midi
+        target = boundary_target
+        shift_octaves = 0
+
+    if target != note.midi:
+        preserves_pitch_class = (target - note.midi) % 12 == 0
+        prefer_boundary = note.midi < instrument.min_midi or not preserves_pitch_class
+        if prefer_boundary and not is_top_voice:
+            octave_distance = abs(target - note.midi)
+            boundary_distance = abs(boundary_target - note.midi)
+            if boundary_distance < octave_distance:
+                target = boundary_target
+                shift_octaves = 0
+            elif boundary_distance == octave_distance and boundary_target < target:
+                target = boundary_target
+                shift_octaves = 0
 
     if target == note.midi:
         return note, False
@@ -64,10 +80,23 @@ def clamp_span_to_range(
     if not span.notes:
         return span, False
 
+    grouped: dict[int, list[PhraseNote]] = {}
+    for note in span.notes:
+        grouped.setdefault(note.onset, []).append(note)
+
+    top_voice_map = {
+        onset: max(group, key=lambda item: item.midi).midi for onset, group in grouped.items()
+    }
+
     updated: list[PhraseNote] = []
     changed = False
     for note in span.notes:
-        adjusted, modified = _clamp_note_to_range(note, instrument)
+        is_top_voice = note.midi >= top_voice_map.get(note.onset, note.midi)
+        adjusted, modified = _clamp_note_to_range(
+            note,
+            instrument,
+            is_top_voice=is_top_voice,
+        )
         updated.append(adjusted)
         changed = changed or modified
 
