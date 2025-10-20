@@ -10,6 +10,7 @@ from domain.arrangement.soft_key import InstrumentRange
 
 from .evaluation import evaluate_program
 from .fitness import FitnessConfig
+from .penalties import ScoringPenalties
 from .selection import Individual
 from .program_ops import primitive_sampler
 from .variation import mutate_program, one_point_crossover
@@ -24,6 +25,7 @@ def produce_offspring(
     instrument: InstrumentRange,
     span_limits: Mapping[str, int] | None,
     fitness_config: FitnessConfig | None,
+    penalties: ScoringPenalties,
     mutation_rate: float,
     crossover_rate: float,
     population_size: int,
@@ -34,7 +36,13 @@ def produce_offspring(
     if not population:
         return []
 
-    sampler = primitive_sampler(rng, phrase, instrument, span_limits)
+    sampler = primitive_sampler(
+        rng,
+        phrase,
+        instrument,
+        span_limits,
+        penalties=penalties,
+    )
     offspring: list[Individual] = []
     while len(offspring) < population_size:
         perform_crossover = len(population) >= 2 and rng.random() < crossover_rate
@@ -59,6 +67,7 @@ def produce_offspring(
                         phrase=phrase,
                         instrument=instrument,
                         fitness_config=fitness_config,
+                        penalties=penalties,
                         metadata=metadata,
                     )
                 )
@@ -92,6 +101,7 @@ def produce_offspring(
                 phrase=phrase,
                 instrument=instrument,
                 fitness_config=fitness_config,
+                penalties=penalties,
                 metadata=metadata,
             )
         )

@@ -6,6 +6,31 @@ from dataclasses import dataclass, field, replace
 from typing import Optional
 
 
+GP_APPLY_RANKED = "ranked"
+GP_APPLY_SESSION_WINNER = "session_winner"
+GP_APPLY_OPTIONS = (GP_APPLY_RANKED, GP_APPLY_SESSION_WINNER)
+
+GP_APPLY_LABELS = {
+    GP_APPLY_RANKED: "Use ranked candidate",
+    GP_APPLY_SESSION_WINNER: "Use session winner",
+}
+
+
+GP_RECOMMENDED_LIMITS = {
+    "generations": 50,
+    "population_size": 64,
+    "archive_size": 64,
+    "random_program_count": 64,
+}
+
+_GP_LIMIT_LABELS = {
+    "generations": "generations",
+    "population_size": "population size",
+    "archive_size": "archive size",
+    "random_program_count": "random programs",
+}
+
+
 @dataclass(frozen=True)
 class ArrangerInstrumentSummary:
     """UI-facing snapshot of arranger difficulty metrics for an instrument."""
@@ -81,7 +106,7 @@ class ArrangerGPSettings:
     """Expose tunable parameters for the GP arranger pipeline."""
 
     generations: int = 10
-    population_size: int = 16
+    population_size: int = 15
     time_budget_seconds: float | None = None
     archive_size: int = 8
     random_program_count: int = 8
@@ -96,6 +121,12 @@ class ArrangerGPSettings:
     contour_weight: float = 0.35
     lcs_weight: float = 0.65
     pitch_weight: float = 0.3
+    fidelity_priority_weight: float = 3.0
+    range_clamp_penalty: float = 4.9
+    range_clamp_melody_bias: float = 4.0
+    melody_shift_weight: float = 2.0
+    rhythm_simplify_weight: float = 5.0
+    apply_program_preference: str = GP_APPLY_SESSION_WINNER
 
     def normalized(self) -> "ArrangerGPSettings":
         """Return a configuration with sane, non-negative limits."""
@@ -121,14 +152,16 @@ class ArrangerGPSettings:
                 return fallback
             return numeric if numeric >= 0.0 else 0.0
 
-        generations = _clamp_int(int(self.generations), minimum=1, maximum=25)
-        population_size = _clamp_int(int(self.population_size), minimum=1, maximum=64)
+        generations = _clamp_int(int(self.generations), minimum=1, maximum=250)
+        population_size = _clamp_int(int(self.population_size), minimum=1, maximum=640)
 
-        archive_size = _clamp_int(int(self.archive_size), minimum=1, maximum=64)
+        archive_size = _clamp_int(int(self.archive_size), minimum=1, maximum=640)
         if archive_size > population_size:
             archive_size = population_size
 
-        random_program_count = _clamp_int(int(self.random_program_count), minimum=0, maximum=64)
+        random_program_count = _clamp_int(
+            int(self.random_program_count), minimum=0, maximum=640
+        )
         if random_program_count > population_size:
             random_program_count = population_size
 
@@ -137,7 +170,7 @@ class ArrangerGPSettings:
         if crossover_rate == 0.0 and mutation_rate == 0.0:
             mutation_rate = 0.1
 
-        log_best_programs = _clamp_int(int(self.log_best_programs), minimum=1, maximum=32)
+        log_best_programs = _clamp_int(int(self.log_best_programs), minimum=1, maximum=320)
         random_seed = int(self.random_seed)
         if random_seed < 0:
             random_seed = 0
@@ -149,6 +182,15 @@ class ArrangerGPSettings:
         contour_weight = _non_negative(self.contour_weight, 0.35)
         lcs_weight = _non_negative(self.lcs_weight, 0.65)
         pitch_weight = _non_negative(self.pitch_weight, 0.3)
+        fidelity_priority_weight = _non_negative(
+            self.fidelity_priority_weight, 3.0
+        )
+        range_clamp_penalty = _non_negative(self.range_clamp_penalty, 4.9)
+        range_clamp_melody_bias = _non_negative(
+            self.range_clamp_melody_bias, 4.0
+        )
+        melody_shift_weight = _non_negative(self.melody_shift_weight, 2.0)
+        rhythm_simplify_weight = _non_negative(self.rhythm_simplify_weight, 5.0)
         if contour_weight + lcs_weight + pitch_weight == 0:
             contour_weight, lcs_weight, pitch_weight = 0.35, 0.65, 0.3
 
@@ -162,6 +204,10 @@ class ArrangerGPSettings:
                 budget_seconds = None
             if budget_seconds is not None and budget_seconds < 0.0:
                 budget_seconds = 0.0
+
+        preference = str(self.apply_program_preference or "").strip().lower()
+        if preference not in GP_APPLY_OPTIONS:
+            preference = GP_APPLY_SESSION_WINNER
 
         return replace(
             self,
@@ -181,7 +227,34 @@ class ArrangerGPSettings:
             contour_weight=contour_weight,
             lcs_weight=lcs_weight,
             pitch_weight=pitch_weight,
+            fidelity_priority_weight=fidelity_priority_weight,
+            range_clamp_penalty=range_clamp_penalty,
+            range_clamp_melody_bias=range_clamp_melody_bias,
+            melody_shift_weight=melody_shift_weight,
+            rhythm_simplify_weight=rhythm_simplify_weight,
+            apply_program_preference=preference,
         )
+
+
+def gp_settings_warning(settings: ArrangerGPSettings) -> str:
+    """Describe which GP knobs exceed the recommended range, if any."""
+
+    normalized = settings.normalized()
+    exceeded: list[str] = []
+    for key, limit in GP_RECOMMENDED_LIMITS.items():
+        value = getattr(normalized, key)
+        if value > limit:
+            label = _GP_LIMIT_LABELS[key]
+            exceeded.append(f"{label} {value} (recommended ≤ {limit})")
+
+    if not exceeded:
+        return ""
+
+    details = ", ".join(exceeded)
+    return (
+        "Warning: high GP settings may dramatically increase runtime: "
+        f"{details}."
+    )
 
 
 @dataclass(frozen=True)
@@ -220,4 +293,10 @@ __all__ = [
     "ArrangerInstrumentSummary",
     "ArrangerResultSummary",
     "ArrangerTelemetryHint",
+    "GP_RECOMMENDED_LIMITS",
+    "GP_APPLY_LABELS",
+    "GP_APPLY_OPTIONS",
+    "GP_APPLY_RANKED",
+    "GP_APPLY_SESSION_WINNER",
+    "gp_settings_warning",
 ]

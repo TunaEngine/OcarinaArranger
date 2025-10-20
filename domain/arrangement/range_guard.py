@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 from shared.ottava import OttavaShift
 
@@ -26,6 +26,9 @@ def _clamp_note_to_range(
     instrument: InstrumentRange,
     *,
     is_top_voice: bool = False,
+    previous_top_voice: Optional[int] = None,
+    next_top_voice: Optional[int] = None,
+    prefer_octave_top_voice: bool = False,
 ) -> Tuple[PhraseNote, bool]:
     boundary_target = min(max(note.midi, instrument.min_midi), instrument.max_midi)
 
@@ -47,15 +50,39 @@ def _clamp_note_to_range(
     if target != note.midi:
         preserves_pitch_class = (target - note.midi) % 12 == 0
         prefer_boundary = note.midi < instrument.min_midi or not preserves_pitch_class
-        if prefer_boundary and not is_top_voice:
+        if (
+            prefer_boundary
+            and prefer_octave_top_voice
+            and is_top_voice
+            and preserves_pitch_class
+            and instrument.min_midi <= target <= instrument.max_midi
+        ):
+            prefer_boundary = False
+        if prefer_boundary:
             octave_distance = abs(target - note.midi)
             boundary_distance = abs(boundary_target - note.midi)
+            boundary_preferred = False
+
             if boundary_distance < octave_distance:
-                target = boundary_target
-                shift_octaves = 0
+                boundary_preferred = True
             elif boundary_distance == octave_distance and boundary_target < target:
-                target = boundary_target
-                shift_octaves = 0
+                boundary_preferred = True
+
+            if boundary_preferred:
+                if not is_top_voice:
+                    target = boundary_target
+                    shift_octaves = 0
+                else:
+                    neighbor_matches = 0
+                    if previous_top_voice is not None and previous_top_voice == boundary_target:
+                        neighbor_matches += 1
+                    if next_top_voice is not None and next_top_voice == boundary_target:
+                        neighbor_matches += 1
+
+                    improvement = octave_distance - boundary_distance
+                    if neighbor_matches < 2 and (improvement >= 4 or boundary_distance <= 5):
+                        target = boundary_target
+                        shift_octaves = 0
 
     if target == note.midi:
         return note, False
@@ -73,9 +100,16 @@ def _clamp_note_to_range(
 
 
 def clamp_span_to_range(
-    span: PhraseSpan, instrument: InstrumentRange
+    span: PhraseSpan,
+    instrument: InstrumentRange,
+    *,
+    prefer_octave_top_voice: bool = False,
 ) -> Tuple[PhraseSpan, bool]:
     """Return a span with every note transposed by octaves into range."""
+
+    # ``prefer_octave_top_voice`` allows callers that already applied a uniform
+    # register shift (for example a pure ``GlobalTranspose``) to keep the top
+    # voice aligned by favouring octave-adjusted notes over boundary snaps.
 
     if not span.notes:
         return span, False
@@ -88,17 +122,34 @@ def clamp_span_to_range(
         onset: max(group, key=lambda item: item.midi).midi for onset, group in grouped.items()
     }
 
+    notes = list(span.notes)
+    top_voice_flags = [
+        note.midi >= top_voice_map.get(note.onset, note.midi) for note in notes
+    ]
+    next_top_voice: list[Optional[int]] = [None] * len(notes)
+    upcoming: Optional[int] = None
+    for index in range(len(notes) - 1, -1, -1):
+        next_top_voice[index] = upcoming
+        if top_voice_flags[index]:
+            upcoming = notes[index].midi
+
     updated: list[PhraseNote] = []
     changed = False
-    for note in span.notes:
-        is_top_voice = note.midi >= top_voice_map.get(note.onset, note.midi)
+    previous_top_voice: Optional[int] = None
+    for index, note in enumerate(notes):
+        is_top_voice = top_voice_flags[index]
         adjusted, modified = _clamp_note_to_range(
             note,
             instrument,
             is_top_voice=is_top_voice,
+            previous_top_voice=previous_top_voice,
+            next_top_voice=next_top_voice[index],
+            prefer_octave_top_voice=prefer_octave_top_voice,
         )
         updated.append(adjusted)
         changed = changed or modified
+        if is_top_voice:
+            previous_top_voice = adjusted.midi
 
     if not changed:
         return span, False
@@ -111,13 +162,18 @@ def enforce_instrument_range(
     instrument: InstrumentRange,
     *,
     beats_per_measure: int,
+    prefer_octave_top_voice: bool = False,
 ) -> tuple[PhraseSpan, ExplanationEvent | None, float | None]:
     """Clamp ``span`` to ``instrument`` range and emit an explanation event."""
 
     if not span_exceeds_range(span, instrument):
         return span, None, None
 
-    clamped_span, changed = clamp_span_to_range(span, instrument)
+    clamped_span, changed = clamp_span_to_range(
+        span,
+        instrument,
+        prefer_octave_top_voice=prefer_octave_top_voice,
+    )
     if not changed:
         return span, None, None
 

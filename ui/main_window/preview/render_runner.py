@@ -22,10 +22,14 @@ class PreviewRenderHandle:
         self._done = threading.Event()
         self.result: Result[PreviewData, str] | None = None
         self.error: BaseException | None = None
+        self._thread: threading.Thread | None = None
 
     @property
     def done(self) -> bool:
         return self._done.is_set()
+
+    def _attach_thread(self, thread: threading.Thread) -> None:
+        self._thread = thread
 
     def _finalise(
         self,
@@ -36,6 +40,13 @@ class PreviewRenderHandle:
         self.result = result
         self.error = error
         self._done.set()
+
+    def join(self, timeout: float | None = None) -> None:
+        """Wait for the underlying worker thread to terminate."""
+
+        thread = self._thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout)
 
     def wait(self, timeout: float | None = None) -> Result[PreviewData, str]:
         """Block until the preview worker completes, pumping Tk events."""
@@ -115,6 +126,8 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
         inspect.ismethod(render_callable)
         and getattr(render_callable, "__func__", None) is original_method
     )
+    allow_async = getattr(ui, "_preview_render_async", True)
+    use_worker_thread = run_on_worker_thread and allow_async
 
     def safe_update_arranger_progress(percent: float, message: str | None = None) -> None:
         try:
@@ -148,8 +161,23 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
             return
         events.put(("result", result))
 
-    thread = threading.Thread(target=_worker, name="preview-render", daemon=True)
-    thread.start()
+    if use_worker_thread:
+        thread = threading.Thread(target=_worker, name="preview-render", daemon=True)
+        handle._attach_thread(thread)
+        thread.start()
+    else:
+        try:
+            result = _invoke_render()
+        except Exception as exc:  # pragma: no cover - propagated via handle
+            events.put(("exception", exc))
+        else:
+            events.put(("result", result))
+
+    active_handles = getattr(ui, "_preview_render_handles", None)
+    if active_handles is None:
+        active_handles = set()
+        ui._preview_render_handles = active_handles
+    active_handles.add(handle)
 
     def _hide_arranger_progress() -> None:
         if not showing_arranger_progress:
@@ -165,6 +193,9 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
         error: BaseException | None = None,
         delay_hide: bool = False,
     ) -> None:
+        handles = getattr(ui, "_preview_render_handles", None)
+        if isinstance(handles, set):
+            handles.discard(handle)
         if delay_hide:
             try:
                 ui.after(120, _hide_arranger_progress)
@@ -242,12 +273,11 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
             _finalise(result=result, delay_hide=force_final_progress)
 
     def _process_events() -> None:
-        if handle.done:
+        if handle.done and events.empty():
             return
-        processed_count = 0
-        max_batch = 3
         had_progress_update = False
-        while processed_count < max_batch:
+        processed_count = 0
+        while True:
             try:
                 event = events.get_nowait()
             except queue.Empty:
@@ -315,9 +345,16 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
             except Exception as e:
                 logger.warning(f"UI update() failed: {e}")
 
-        if not handle.done:
+        if not handle.done or not events.empty():
             ui.after(10, _process_events)
 
-    ui.after(20, _process_events)
+    if use_worker_thread:
+        ui.after(20, _process_events)
+    else:
+        try:
+            _process_events()
+        except Exception:
+            if handle.error is None:
+                raise
     return handle
 

@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import tkinter as tk
+
 from shared.ttk import ttk
 
+from viewmodels.arranger_models import (
+    GP_APPLY_LABELS,
+    GP_APPLY_RANKED,
+    GP_APPLY_SESSION_WINNER,
+)
+
 from ui.widgets import attach_tooltip
+
+from .convert_gp_troubleshooting import add_troubleshooting_button
 
 
 __all__ = ["build_gp_panel"]
@@ -33,8 +43,10 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         wraplength=360,
     ).grid(row=0, column=0, sticky="w")
 
+    add_troubleshooting_button(gp_section, pad)
+
     gp_config = ttk.Frame(gp_section)
-    gp_config.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
+    gp_config.grid(row=2, column=0, sticky="nsew", pady=(pad, 0))
     for column in range(3):
         gp_config.columnconfigure(column * 2, weight=0)
         gp_config.columnconfigure(column * 2 + 1, weight=1)
@@ -43,7 +55,7 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
     generations_spin = ttk.Spinbox(
         gp_config,
         from_=1,
-        to=25,
+        to=250,
         width=4,
         textvariable=app.arranger_gp_generations,
     )
@@ -57,7 +69,7 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
     population_spin = ttk.Spinbox(
         gp_config,
         from_=1,
-        to=64,
+        to=640,
         width=4,
         textvariable=app.arranger_gp_population,
     )
@@ -79,8 +91,53 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         "Optional wall-clock limit in seconds; the GP search stops early when reached.",
     )
 
+    apply_container = ttk.Frame(gp_section)
+    apply_container.grid(row=3, column=0, sticky="w", pady=(pad // 2, 0))
+    apply_container.columnconfigure(1, weight=1)
+    ttk.Label(apply_container, text="Apply program").grid(row=0, column=0, sticky="w")
+    apply_frame = ttk.Frame(apply_container)
+    apply_frame.grid(row=0, column=1, sticky="w", padx=(pad // 2, 0))
+    apply_frame.columnconfigure(0, weight=0)
+    apply_frame.columnconfigure(1, weight=0)
+    ranked_radio = ttk.Radiobutton(
+        apply_frame,
+        text=GP_APPLY_LABELS[GP_APPLY_RANKED],
+        value=GP_APPLY_RANKED,
+        variable=app.arranger_gp_apply_preference,
+    )
+    ranked_radio.grid(row=0, column=0, sticky="w", padx=(0, pad))
+    attach_tooltip(
+        ranked_radio,
+        "Preview the candidate chosen after scoring. Try this option first before diving into advanced settings.",
+    )
+    winner_radio = ttk.Radiobutton(
+        apply_frame,
+        text=GP_APPLY_LABELS[GP_APPLY_SESSION_WINNER],
+        value=GP_APPLY_SESSION_WINNER,
+        variable=app.arranger_gp_apply_preference,
+    )
+    winner_radio.grid(row=0, column=1, sticky="w")
+    attach_tooltip(
+        winner_radio,
+        "Preview the raw GP session winner even if scoring prefers another program (default).",
+    )
+
+    warning_var = getattr(app, "arranger_gp_warning", None)
+    if warning_var is None:
+        warning_var = tk.StringVar(master=gp_section, value="")
+        setattr(app, "arranger_gp_warning", warning_var)
+
+    warning_label = ttk.Label(
+        gp_section,
+        textvariable=warning_var,
+        style="Hint.TLabel",
+        wraplength=360,
+        justify="left",
+    )
+    warning_label.grid(row=4, column=0, sticky="w", pady=(pad // 2, 0))
+
     advanced_toggle = ttk.Frame(gp_section)
-    advanced_toggle.grid(row=2, column=0, sticky="ew", pady=(pad, 0))
+    advanced_toggle.grid(row=5, column=0, sticky="ew", pady=(pad, 0))
     advanced_toggle.columnconfigure(0, weight=1)
     ttk.Checkbutton(
         advanced_toggle,
@@ -94,10 +151,11 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         padding=pad,
         style="Panel.TLabelframe",
     )
-    advanced_section.grid(row=3, column=0, sticky="nsew", pady=(pad, 0))
-    gp_section.rowconfigure(3, weight=1)
+    advanced_section.grid(row=6, column=0, sticky="nsew", pady=(pad, 0))
+    gp_section.rowconfigure(6, weight=1)
     advanced_section.columnconfigure(0, weight=1)
     advanced_section.rowconfigure(1, weight=1)
+    advanced_section.rowconfigure(2, weight=1)
 
     session_group = ttk.LabelFrame(
         advanced_section,
@@ -113,7 +171,7 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
     archive_spin = ttk.Spinbox(
         session_group,
         from_=1,
-        to=64,
+        to=640,
         width=4,
         textvariable=app.arranger_gp_archive_size,
     )
@@ -129,7 +187,7 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
     random_programs_spin = ttk.Spinbox(
         session_group,
         from_=0,
-        to=64,
+        to=640,
         width=4,
         textvariable=app.arranger_gp_random_programs,
     )
@@ -170,16 +228,16 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
     )
 
     ttk.Label(session_group, text="Log best programs").grid(
-        row=2, column=0, sticky="w"
+        row=3, column=0, sticky="w"
     )
     log_best_spin = ttk.Spinbox(
         session_group,
         from_=1,
-        to=16,
+        to=320,
         width=4,
         textvariable=app.arranger_gp_log_best,
     )
-    log_best_spin.grid(row=2, column=1, sticky="w", padx=(pad // 2, pad))
+    log_best_spin.grid(row=3, column=1, sticky="w", padx=(pad // 2, pad))
     attach_tooltip(
         log_best_spin,
         "How many of the best programs to include in the debug log output.",
@@ -191,7 +249,7 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         width=8,
         textvariable=app.arranger_gp_random_seed,
     )
-    random_seed_entry.grid(row=2, column=3, sticky="w")
+    random_seed_entry.grid(row=3, column=3, sticky="w")
     attach_tooltip(
         random_seed_entry,
         "Seed for the random generator; change it to explore different GP runs.",
@@ -291,11 +349,129 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         "Relative share of pitch drift considered when comparing melodies.",
     )
 
+    penalty_group = ttk.LabelFrame(
+        advanced_section,
+        text="Penalty tuning",
+        padding=pad,
+        style="Panel.TLabelframe",
+    )
+    penalty_group.grid(row=2, column=0, sticky="nsew", pady=(pad, 0))
+    for column in range(4):
+        penalty_group.columnconfigure(column, weight=1)
+
+    ttk.Label(penalty_group, text="Range clamp penalty").grid(
+        row=0, column=0, sticky="w"
+    )
+    range_penalty_entry = ttk.Entry(
+        penalty_group,
+        width=6,
+        textvariable=app.arranger_gp_range_clamp_penalty,
+    )
+    range_penalty_entry.grid(row=0, column=1, sticky="w", padx=(pad // 2, pad // 2))
+    attach_tooltip(
+        range_penalty_entry,
+        (
+            "Penalty applied when clamping remains after edits; higher resists clamp-heavy "
+            "results. Values ≥ 5 block range-clamped candidates altogether."
+        ),
+    )
+
+    ttk.Label(penalty_group, text="Clamp melody bias").grid(
+        row=0, column=2, sticky="w"
+    )
+    clamp_bias_entry = ttk.Entry(
+        penalty_group,
+        width=6,
+        textvariable=app.arranger_gp_range_clamp_melody_bias,
+    )
+    clamp_bias_entry.grid(row=0, column=3, sticky="w")
+    attach_tooltip(
+        clamp_bias_entry,
+        (
+            "Extra melodic bias added when clamps occur; raise to nudge phrases away from "
+            "edges. Values ≥ 5 block range-clamped candidates altogether."
+        ),
+    )
+
+    ttk.Label(penalty_group, text="Melody shift weight").grid(
+        row=1, column=0, sticky="w"
+    )
+    shift_weight_entry = ttk.Entry(
+        penalty_group,
+        width=6,
+        textvariable=app.arranger_gp_melody_shift_weight,
+    )
+    shift_weight_entry.grid(row=1, column=1, sticky="w", padx=(pad // 2, pad // 2))
+    attach_tooltip(
+        shift_weight_entry,
+        (
+            "Weight against uneven octave jumps in the melody; higher discourages jumpy "
+            "lines. Values ≥ 5 disable LocalOctave primitives entirely."
+        ),
+    )
+
+    ttk.Label(penalty_group, text="Fidelity priority").grid(
+        row=1, column=2, sticky="w"
+    )
+    fidelity_priority_entry = ttk.Entry(
+        penalty_group,
+        width=6,
+        textvariable=app.arranger_gp_fidelity_priority_weight,
+    )
+    fidelity_priority_entry.grid(row=1, column=3, sticky="w")
+    attach_tooltip(
+        fidelity_priority_entry,
+        (
+            "Multiplier on melodic penalties when edits diverge; higher keeps fidelity "
+            "dominant. Values ≥ 5 disable LocalOctave and SimplifyRhythm edits."
+        ),
+    )
+
+    ttk.Label(penalty_group, text="Rhythm simplify weight").grid(
+        row=2, column=0, sticky="w"
+    )
+    rhythm_weight_entry = ttk.Entry(
+        penalty_group,
+        width=6,
+        textvariable=app.arranger_gp_rhythm_simplify_weight,
+    )
+    rhythm_weight_entry.grid(row=2, column=1, sticky="w", padx=(pad // 2, pad // 2))
+    attach_tooltip(
+        rhythm_weight_entry,
+        (
+            "Extra cost applied to SimplifyRhythm edits; raise to favour original "
+            "rhythms. Values ≥ 5 disable SimplifyRhythm entirely."
+        ),
+    )
+
     ttk.Button(
         advanced_section,
         text="Reset GP settings to defaults",
         command=app.reset_arranger_gp_settings,
-    ).grid(row=2, column=0, sticky="w", pady=(pad, 0))
+    ).grid(row=3, column=0, sticky="w", pady=(pad, 0))
+
+    preset_actions = ttk.Frame(advanced_section)
+    preset_actions.grid(row=4, column=0, sticky="w", pady=(pad // 2, 0))
+    export_button = ttk.Button(
+        preset_actions,
+        text="Export GP preset...",
+        command=app.export_arranger_gp_settings,
+    )
+    export_button.grid(row=0, column=0, sticky="w")
+    attach_tooltip(
+        export_button,
+        "Save the current GP arranger knobs to a reusable preset file.",
+    )
+    import_button = ttk.Button(
+        preset_actions,
+        text="Import GP preset...",
+        command=app.import_arranger_gp_settings,
+    )
+    import_button.grid(row=0, column=1, sticky="w", padx=(pad // 2, 0))
+    attach_tooltip(
+        import_button,
+        "Load GP arranger knobs from a saved preset file.",
+    )
 
     app._register_arranger_advanced_frame(advanced_section, mode="gp")
 
@@ -307,6 +483,6 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         ),
         style="Hint.TLabel",
         wraplength=360,
-    ).grid(row=4, column=0, sticky="w", pady=(pad, 0))
+    ).grid(row=6, column=0, sticky="w", pady=(pad, 0))
 
     return gp_panel

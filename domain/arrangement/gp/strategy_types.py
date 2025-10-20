@@ -42,6 +42,7 @@ class GPArrangementStrategyResult:
     programs: Tuple[Tuple[GPPrimitive, ...], ...]
     chosen: GPInstrumentCandidate
     comparisons: Tuple[GPInstrumentCandidate, ...]
+    winner_candidate: GPInstrumentCandidate
     archive_summary: Tuple[IndividualSummary, ...]
     termination_reason: str
     fallback: "ArrangementStrategyResult | None" = None

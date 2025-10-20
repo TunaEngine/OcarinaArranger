@@ -22,19 +22,40 @@ class ArrangerStarredControlsMixin:
         if container is None:
             return
 
+        headless = getattr(self, "_headless", False)
+
         for child in container.winfo_children():
-            child.destroy()
+            try:
+                child.destroy()
+            except Exception:
+                pass
 
         starred_ids = set(getattr(self._viewmodel.state, "starred_instrument_ids", ()))
-        available = sorted(self._instrument_name_by_id.items(), key=lambda item: item[1].lower())
+        available = list(self._instrument_name_by_id.items())
         available_ids = {instrument_id for instrument_id, _ in available}
 
         if not available:
-            placeholder = ttk.Label(
-                container,
-                text="No instruments available.",
-                style="Hint.TLabel",
-            )
+            if headless:
+                try:
+                    from ocarina_gui.headless.widgets import HeadlessLabel
+                except Exception:  # pragma: no cover - fallback to ttk
+                    placeholder = ttk.Label(
+                        container,
+                        text="No instruments available.",
+                        style="Hint.TLabel",
+                    )
+                else:
+                    placeholder = HeadlessLabel(
+                        text="No instruments available.",
+                        parent=container,
+                        style="Hint.TLabel",
+                    )
+            else:
+                placeholder = ttk.Label(
+                    container,
+                    text="No instruments available.",
+                    style="Hint.TLabel",
+                )
             placeholder.grid(row=0, column=0, sticky="w")
             self._starred_checkbox_widgets = {}
             return
@@ -59,11 +80,27 @@ class ArrangerStarredControlsMixin:
                     if bool(var.get()) != desired:
                         var.set(desired)
 
-                check = ttk.Checkbutton(
-                    container,
-                    text=instrument_name,
-                    variable=var,
-                )
+                if headless:
+                    try:
+                        from ocarina_gui.headless.widgets import HeadlessCheckbutton
+                    except Exception:  # pragma: no cover - fallback to ttk
+                        check = ttk.Checkbutton(
+                            container,
+                            text=instrument_name,
+                            variable=var,
+                        )
+                    else:
+                        check = HeadlessCheckbutton(
+                            text=instrument_name,
+                            variable=var,
+                            parent=container,
+                        )
+                else:
+                    check = ttk.Checkbutton(
+                        container,
+                        text=instrument_name,
+                        variable=var,
+                    )
                 check.grid(row=index, column=0, sticky="w", pady=(0, 2))
                 self._starred_checkbox_widgets[instrument_id] = check
 

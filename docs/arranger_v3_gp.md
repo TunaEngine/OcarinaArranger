@@ -55,7 +55,7 @@ Two layers expose tunable parameters:
   `_gp_session_config` now threads the advanced UI values into crossover/mutation
   rates, archive sizing, random seeding, and a rebuilt `FitnessConfig` so melodic
   fidelity weighting can be tuned per project while retaining safe defaults (10
-  generations, 16-program population, 8-member archive, 8 random programs, fidelity
+  generations, 15-program population, 8-member archive, 8 random programs, fidelity
   weighting 1.8× with contour/LCS/pitch split 0.3/0.4/0.3).【F:domain/arrangement/gp/session.py†L184-L258】【F:services/arranger_preview_gp.py†L11-L85】
 
 Telemetry emitted for analytics/UI consumers remains stable:

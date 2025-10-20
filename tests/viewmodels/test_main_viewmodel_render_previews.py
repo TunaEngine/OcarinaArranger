@@ -9,7 +9,12 @@ from ocarina_tools.events import NoteEvent
 from ocarina_tools.parts import MusicXmlPartInfo
 from services.arranger_preview import ArrangerComputation
 from tests.viewmodels._fakes import FakeDialogs, StubScoreService
-from viewmodels.arranger_models import ArrangerGPSettings
+from viewmodels.arranger_models import (
+    ArrangerEditBreakdown,
+    ArrangerGPSettings,
+    ArrangerInstrumentSummary,
+    ArrangerResultSummary,
+)
 from viewmodels.main_viewmodel import (
     ARRANGER_STRATEGY_STARRED_BEST,
     MainViewModel,
@@ -185,17 +190,173 @@ def test_render_previews_populates_arranger_results(
     result = viewmodel.render_previews()
 
     assert result.is_ok()
+    assert viewmodel.state.instrument_id == "soprano_c"
+    assert viewmodel.state.range_min == "D4"
+    assert viewmodel.state.range_max == "A5"
     comparisons = viewmodel.state.arranger_strategy_summary
-    assert len(comparisons) == 2
+    assert len(comparisons) == 1
     assert sum(1 for row in comparisons if row.is_winner) == 1
+    assert comparisons[0].instrument_id == "soprano_c"
     summary = viewmodel.state.arranger_result_summary
     assert summary is not None
-    assert summary.instrument_name in {"Alto C", "Soprano C"}
+    assert summary.instrument_name == "Soprano C"
     assert isinstance(summary.transposition, int)
     total_ratio = summary.easy + summary.medium + summary.hard + summary.very_hard
     assert total_ratio == pytest.approx(1.0, abs=1e-6)
+
+
+def test_render_previews_applies_summary_winner_when_service_omits_resolution(
+    monkeypatch: pytest.MonkeyPatch, preview_data: PreviewData, tmp_path: Path
+) -> None:
+    clear_instrument_registry()
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview_data)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(
+        input_path=str(file_path),
+        arranger_mode="gp",
+        instrument_id="f_maj_6",
+    )
+    viewmodel.state.arranger_strategy = ARRANGER_STRATEGY_STARRED_BEST
+    viewmodel.state.starred_instrument_ids = ("alto_c_12", "a_major_12")
+
+    summaries = (
+        ArrangerInstrumentSummary(
+            instrument_id="f_maj_6",
+            instrument_name="6-hole F Major",
+            easy=0.10,
+            medium=0.30,
+            hard=0.30,
+            very_hard=0.30,
+            tessitura=0.50,
+        ),
+        ArrangerInstrumentSummary(
+            instrument_id="alto_c_12",
+            instrument_name="12-hole Alto C",
+            easy=0.40,
+            medium=0.30,
+            hard=0.20,
+            very_hard=0.10,
+            tessitura=0.35,
+            transposition=0,
+            is_winner=True,
+        ),
+    )
+    result_summary = ArrangerResultSummary(
+        instrument_id="alto_c_12",
+        instrument_name="12-hole Alto C",
+        transposition=0,
+        easy=0.40,
+        medium=0.30,
+        hard=0.20,
+        very_hard=0.10,
+        tessitura=0.35,
+        starting_difficulty=0.80,
+        final_difficulty=0.40,
+        difficulty_threshold=0.60,
+        met_threshold=True,
+        difficulty_delta=0.40,
+        applied_steps=(),
+        edits=ArrangerEditBreakdown(),
+    )
+    computation = ArrangerComputation(
+        summaries=summaries,
+        result_summary=result_summary,
+        strategy="starred-best",
+        resolved_instrument_id=None,
+        resolved_starred_ids=("alto_c_12", "a_major_12"),
+        arranged_events=tuple(),
+        resolved_instrument_range=("D4", "A5"),
+    )
+
+    monkeypatch.setattr(
+        "viewmodels.main_viewmodel_arranger_helpers.compute_arranger_preview",
+        lambda *_args, **_kwargs: computation,
+    )
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    assert viewmodel.state.instrument_id == "alto_c_12"
+    assert viewmodel.state.range_min == "D4"
+    assert viewmodel.state.range_max == "A5"
     preview_out = result.unwrap()
     assert isinstance(preview_out, PreviewData)
+
+
+def test_render_previews_keeps_current_instrument_for_current_strategy(
+    monkeypatch: pytest.MonkeyPatch, preview_data: PreviewData, tmp_path: Path
+) -> None:
+    clear_instrument_registry()
+    file_path = tmp_path / "score.musicxml"
+    file_path.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs()
+    service = StubScoreService(preview=preview_data)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(
+        input_path=str(file_path),
+        arranger_mode="gp",
+        instrument_id="alto_c_12",
+    )
+    viewmodel.state.arranger_strategy = "current"
+    viewmodel.state.starred_instrument_ids = ("bass_c_12",)
+    viewmodel.state.range_min = "C4"
+    viewmodel.state.range_max = "G5"
+
+    summaries = (
+        ArrangerInstrumentSummary(
+            instrument_id="bass_c_12",
+            instrument_name="12-hole Bass C",
+            easy=0.20,
+            medium=0.30,
+            hard=0.30,
+            very_hard=0.20,
+            tessitura=0.45,
+            transposition=0,
+            is_winner=True,
+        ),
+    )
+    result_summary = ArrangerResultSummary(
+        instrument_id="alto_c_12",
+        instrument_name="12-hole Alto C",
+        transposition=0,
+        easy=0.25,
+        medium=0.35,
+        hard=0.25,
+        very_hard=0.15,
+        tessitura=0.40,
+        starting_difficulty=0.70,
+        final_difficulty=0.45,
+        difficulty_threshold=0.60,
+        met_threshold=True,
+        difficulty_delta=0.25,
+        applied_steps=(),
+        edits=ArrangerEditBreakdown(),
+    )
+    computation = ArrangerComputation(
+        summaries=summaries,
+        result_summary=result_summary,
+        strategy="current",
+        resolved_instrument_id="alto_c_12",
+        resolved_starred_ids=("bass_c_12",),
+        arranged_events=tuple(),
+        resolved_instrument_range=None,
+    )
+
+    monkeypatch.setattr(
+        "viewmodels.main_viewmodel_arranger_helpers.compute_arranger_preview",
+        lambda *_args, **_kwargs: computation,
+    )
+
+    result = viewmodel.render_previews()
+
+    assert result.is_ok()
+    assert viewmodel.state.instrument_id == "alto_c_12"
+    assert viewmodel.state.range_min == "C4"
+    assert viewmodel.state.range_max == "G5"
+    assert viewmodel.state.starred_instrument_ids == ("bass_c_12",)
 
 
 def test_render_previews_passes_gp_settings(

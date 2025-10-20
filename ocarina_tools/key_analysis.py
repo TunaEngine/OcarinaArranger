@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict
 import xml.etree.ElementTree as ET
 
-from .musicxml import qname
+from .musicxml import make_qname_getter
 from .pitch import NAME_TO_PC_TONIC
 
 CIRCLE_MAJOR = {
@@ -45,7 +45,7 @@ RELATIVE_MINOR = {
 
 
 def analyze_key(root: ET.Element) -> Dict:
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     for part in root.findall(q('part')):
         for measure in part.findall(q('measure')):
             attrs = measure.find(q('attributes'))

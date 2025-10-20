@@ -4,6 +4,8 @@ import tkinter as tk
 
 import pytest
 
+from ocarina_gui.preview import PreviewData
+
 
 @pytest.mark.gui
 def test_volume_button_switches_icons_when_muted(gui_app) -> None:
@@ -88,6 +90,63 @@ def test_volume_button_toggle_updates_slider(gui_app) -> None:
     assert volume_var.get() == pytest.approx(65.0)
     assert gui_app._preview_playback["arranged"].state.volume == pytest.approx(0.65)
     assert button.cget("text") == "🔈"
+
+
+@pytest.mark.gui
+def test_volume_survives_input_change(gui_app) -> None:
+    gui_app._ensure_preview_tab_initialized("arranged")
+    gui_app.update_idletasks()
+
+    volume_var = gui_app._preview_volume_vars["arranged"]
+    playback = gui_app._preview_playback["arranged"]
+
+    volume_var.set(42.0)
+    playback.state.volume = 0.42
+    gui_app._preview_volume_memory["arranged"] = 42.0
+    gui_app.update_idletasks()
+
+    gui_app.input_path.set("")
+    gui_app._on_input_path_changed()
+
+    assert volume_var.get() == pytest.approx(42.0)
+    assert playback.state.volume == pytest.approx(0.42)
+    assert gui_app._preview_volume_memory["arranged"] == pytest.approx(42.0)
+
+
+@pytest.mark.gui
+def test_prepare_preview_uses_volume_memory(gui_app) -> None:
+    gui_app._ensure_preview_tab_initialized("arranged")
+    gui_app.update_idletasks()
+
+    gui_app._viewmodel.update_preview_settings({})
+    playback = gui_app._preview_playback["arranged"]
+    playback.state.volume = 1.0
+
+    gui_app._preview_volume_memory["arranged"] = 37.0
+
+    preview = PreviewData(
+        original_events=(),
+        arranged_events=(),
+        pulses_per_quarter=480,
+        beats=4,
+        beat_type=4,
+        original_range=(60, 72),
+        arranged_range=(60, 72),
+        tempo_bpm=120,
+        tempo_changes=(),
+    )
+
+    gui_app._prepare_preview_playback("arranged", (), preview)
+    gui_app.update_idletasks()
+
+    snapshot = gui_app._viewmodel.state.preview_settings["arranged"]
+    assert snapshot.volume == pytest.approx(0.37)
+    assert gui_app._preview_applied_settings["arranged"]["volume"] == pytest.approx(
+        37.0
+    )
+    assert gui_app._preview_volume_vars["arranged"].get() == pytest.approx(37.0)
+    assert gui_app._preview_volume_memory["arranged"] == pytest.approx(37.0)
+    assert playback.state.volume == pytest.approx(0.37)
 
 
 @pytest.mark.gui

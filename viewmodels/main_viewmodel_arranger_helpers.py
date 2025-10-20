@@ -32,6 +32,8 @@ def apply_arranger_results_from_preview(
         budgets = viewmodel.state.arranger_budgets
         gp_settings = viewmodel.state.arranger_gp_settings
         transpose_offset = viewmodel.state.transpose_offset
+        range_min = viewmodel.state.range_min
+        range_max = viewmodel.state.range_max
 
     computation = compute_arranger_preview(
         preview,
@@ -43,21 +45,44 @@ def apply_arranger_results_from_preview(
         budgets=budgets,
         gp_settings=gp_settings,
         transpose_offset=transpose_offset,
+        selected_instrument_range=(range_min, range_max),
         progress_callback=progress_callback,
     )
 
+    winner_id = next(
+        (summary.instrument_id for summary in computation.summaries if summary.is_winner),
+        None,
+    )
+
     with viewmodel._state_lock:
+        prior_instrument = viewmodel.state.instrument_id
+        instrument_changed = False
         if (
             computation.resolved_instrument_id
-            and computation.resolved_instrument_id != viewmodel.state.instrument_id
+            and computation.resolved_instrument_id != prior_instrument
         ):
             viewmodel.state.instrument_id = computation.resolved_instrument_id
+            instrument_changed = True
+        elif (
+            computation.resolved_instrument_id is None
+            and winner_id
+            and winner_id != prior_instrument
+        ):
+            viewmodel.state.instrument_id = winner_id
+            instrument_changed = True
 
         if (
             computation.resolved_starred_ids
             and computation.resolved_starred_ids != viewmodel.state.starred_instrument_ids
         ):
             viewmodel.state.starred_instrument_ids = computation.resolved_starred_ids
+
+        if instrument_changed and computation.resolved_instrument_range:
+            range_min, range_max = computation.resolved_instrument_range
+            if range_min:
+                viewmodel.state.range_min = range_min
+            if range_max:
+                viewmodel.state.range_max = range_max
 
     viewmodel.update_arranger_summary(
         summaries=computation.summaries,

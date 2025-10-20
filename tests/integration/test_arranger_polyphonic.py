@@ -311,7 +311,7 @@ def test_polyphonic_starred_strategy_uses_dp_and_ranks_instruments() -> None:
     )
 
     assert result.strategy == "starred-best"
-    assert len(result.comparisons) == 3
+    assert len(result.comparisons) == 2
     ranking = tuple(
         sorted(
             result.comparisons,

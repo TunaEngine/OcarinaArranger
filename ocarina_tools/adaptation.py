@@ -8,6 +8,8 @@ from statistics import mean
 from typing import Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
+_SubElement = ET.SubElement
+
 from .key_analysis import analyze_key, compute_transpose_semitones
 from .musicxml import (
     PitchData,
@@ -15,7 +17,7 @@ from .musicxml import (
     constrain_midi,
     get_pitch_data,
     is_voice_one,
-    qname,
+    make_qname_getter,
 )
 from .parts import _summarize_part_range, filter_parts
 from .pitch import midi_to_name, parse_note_name
@@ -131,52 +133,58 @@ def _select_primary_part(root: ET.Element, q) -> ET.Element:
     return melodic_part
 
 
-def _ensure_primary_attributes(part: ET.Element, q, prefer_mode: str, key_info: Dict) -> None:
+def _ensure_primary_attributes(
+    part: ET.Element,
+    q,
+    prefer_mode: str,
+    key_info: Dict,
+    _subelement=_SubElement,
+) -> None:
     first_measure = part.find(q('measure'))
     if first_measure is None:
         return
     attrs = first_measure.find(q('attributes'))
     if attrs is None:
-        attrs = ET.SubElement(first_measure, q('attributes'))
+        attrs = _subelement(first_measure, q('attributes'))
 
     key_el = attrs.find(q('key'))
     if key_el is None:
-        key_el = ET.SubElement(attrs, q('key'))
+        key_el = _subelement(attrs, q('key'))
     fifths_el = key_el.find(q('fifths'))
     if fifths_el is None:
-        fifths_el = ET.SubElement(key_el, q('fifths'))
+        fifths_el = _subelement(key_el, q('fifths'))
     fifths_el.text = "0"
 
     mode_el = key_el.find(q('mode'))
     if mode_el is None:
-        mode_el = ET.SubElement(key_el, q('mode'))
+        mode_el = _subelement(key_el, q('mode'))
     mode_el.text = 'minor' if _should_use_minor_mode(prefer_mode, key_info) else 'major'
 
     clef_el = attrs.find(q('clef'))
     if clef_el is None:
-        clef_el = ET.SubElement(attrs, q('clef'))
+        clef_el = _subelement(attrs, q('clef'))
     for child in list(clef_el):
         clef_el.remove(child)
-    ET.SubElement(clef_el, q('sign')).text = 'G'
-    ET.SubElement(clef_el, q('line')).text = '2'
+    _subelement(clef_el, q('sign')).text = 'G'
+    _subelement(clef_el, q('line')).text = '2'
 
 
-def _update_part_list_metadata(root: ET.Element, q) -> None:
+def _update_part_list_metadata(root: ET.Element, q, _subelement=_SubElement) -> None:
     part_list = root.find(q('part-list'))
     if part_list is None:
         return
     for idx, score_part in enumerate(part_list.findall(q('score-part')), start=1):
         part_name = score_part.find(q('part-name'))
         if part_name is None:
-            part_name = ET.SubElement(score_part, q('part-name'))
+            part_name = _subelement(score_part, q('part-name'))
         part_name.text = "Ocarina"
 
         midi_inst = score_part.find(q('midi-instrument'))
         if midi_inst is None:
-            midi_inst = ET.SubElement(score_part, q('midi-instrument'), attrib={'id': f'P{idx}-I1'})
+            midi_inst = _subelement(score_part, q('midi-instrument'), attrib={'id': f'P{idx}-I1'})
         program = midi_inst.find(q('midi-program'))
         if program is None:
-            program = ET.SubElement(midi_inst, q('midi-program'))
+            program = _subelement(midi_inst, q('midi-program'))
         program.text = "80"
 
 
@@ -258,7 +266,7 @@ def transform_to_ocarina(
     transpose_offset: int = 0,
     selected_part_ids: tuple[str, ...] = (),
 ) -> Dict:
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     key_info = analyze_key(root)
     auto_transpose = compute_transpose_semitones(key_info.get('tonic') or 'C', prefer_mode)
     transpose_semitones = auto_transpose + transpose_offset
@@ -307,7 +315,7 @@ def transform_to_ocarina(
 
 
 def favor_lower_register(root: ET.Element, range_min: str = "A4") -> int:
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     midi_min = parse_note_name(range_min)
     shifted = 0
 
@@ -327,7 +335,7 @@ def favor_lower_register(root: ET.Element, range_min: str = "A4") -> int:
 
 
 def collect_used_pitches(root: ET.Element, flats: bool = True) -> List[str]:
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     names: set[str] = set()
     for part in root.findall(q('part')):
         for measure in part.findall(q('measure')):

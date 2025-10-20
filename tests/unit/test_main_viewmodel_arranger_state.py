@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from adapters.file_dialog import FileDialogAdapter
 from services.project_service import LoadedProject, ProjectSnapshot
+from services.project_service_gp import export_gp_preset
 from services.score_service import ScoreService
 from ocarina_gui.settings import TransformSettings
 from ocarina_tools.parts import MusicXmlPartInfo
-from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
+from viewmodels.arranger_models import (
+    ArrangerBudgetSettings,
+    ArrangerGPSettings,
+    gp_settings_warning,
+)
 from viewmodels.main_viewmodel import MainViewModel, MainViewModelState
+from tests.viewmodels._fakes import FakeDialogs
 
 
 class _StubDialogs(FileDialogAdapter):
@@ -27,6 +34,12 @@ class _StubDialogs(FileDialogAdapter):
         return None
 
     def ask_save_project_path(self, suggested_name: str) -> str | None:  # noqa: D401
+        return None
+
+    def ask_open_gp_preset_path(self) -> str | None:  # noqa: D401
+        return None
+
+    def ask_save_gp_preset_path(self, suggested_name: str) -> str | None:  # noqa: D401
         return None
 
     def ask_select_parts(
@@ -73,6 +86,81 @@ def _make_viewmodel(
     # Sanity check to ensure defaults align with expectations for tests.
     assert isinstance(viewmodel.state, MainViewModelState)
     return viewmodel
+
+
+def test_gp_settings_normalization_extends_limits() -> None:
+    settings = ArrangerGPSettings(
+        generations=999,
+        population_size=2048,
+        archive_size=2048,
+        random_program_count=2048,
+        log_best_programs=1024,
+    ).normalized()
+
+    assert settings.generations == 250
+    assert settings.population_size == 640
+    assert settings.archive_size == 640
+    assert settings.random_program_count == 640
+    assert settings.log_best_programs == 320
+
+
+def test_gp_settings_warning_reports_excessive_values() -> None:
+    settings = ArrangerGPSettings(
+        generations=72,
+        population_size=128,
+        archive_size=80,
+        random_program_count=96,
+    )
+
+    warning = gp_settings_warning(settings)
+
+    assert warning.startswith("Warning: high GP settings")
+    for detail in (
+        "generations 72 (recommended ≤ 50)",
+        "population size 128 (recommended ≤ 64)",
+        "archive size 80 (recommended ≤ 64)",
+        "random programs 96 (recommended ≤ 64)",
+    ):
+        assert detail in warning
+
+
+def test_gp_settings_warning_clear_within_recommended_limits() -> None:
+    warning = gp_settings_warning(
+        ArrangerGPSettings(
+            generations=50,
+            population_size=64,
+            archive_size=48,
+            random_program_count=32,
+        )
+    )
+
+    assert warning == ""
+
+
+def test_export_gp_settings_writes_preset(tmp_path: Path) -> None:
+    viewmodel = _make_viewmodel()
+    preset_path = tmp_path / "preset.gp.json"
+    viewmodel._dialogs = FakeDialogs(gp_save_path=str(preset_path))  # type: ignore[attr-defined]
+
+    result = viewmodel.export_gp_settings(ArrangerGPSettings(generations=14))
+
+    assert result is not None and result.is_ok()
+    payload = json.loads(preset_path.read_text(encoding="utf-8"))
+    assert payload["settings"]["generations"] == 14
+
+
+def test_import_gp_settings_updates_state(tmp_path: Path) -> None:
+    preset_path = tmp_path / "preset.gp.json"
+    export_gp_preset(ArrangerGPSettings(generations=9, population_size=30), preset_path)
+
+    viewmodel = _make_viewmodel()
+    viewmodel._dialogs = FakeDialogs(gp_open_path=str(preset_path))  # type: ignore[attr-defined]
+
+    result = viewmodel.import_gp_settings()
+
+    assert result is not None and result.is_ok()
+    assert viewmodel.state.arranger_gp_settings.generations == 9
+    assert viewmodel.state.arranger_gp_settings.population_size == 30
 
 
 def test_update_settings_switches_arranger_mode() -> None:

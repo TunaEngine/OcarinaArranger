@@ -13,6 +13,7 @@ from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
 from .ops import GPPrimitive, GlobalTranspose, LocalOctave, SimplifyRhythm, SpanDescriptor
+from .penalties import ScoringPenalties
 
 Recipe = Callable[[PhraseSpan, InstrumentRange], Sequence[GPPrimitive]]
 
@@ -85,15 +86,29 @@ _RECIPES: Tuple[Recipe, ...] = (
 )
 
 
-def curated_recipes(span: PhraseSpan, instrument: InstrumentRange) -> Tuple[Tuple[GPPrimitive, ...], ...]:
+def curated_recipes(
+    span: PhraseSpan,
+    instrument: InstrumentRange,
+    *,
+    penalties: ScoringPenalties | None = None,
+) -> Tuple[Tuple[GPPrimitive, ...], ...]:
     """Return a tuple of curated program candidates for ``span``.
 
     Each recipe returns a sequence of primitives; empty recipes are filtered
     out to avoid cluttering the initial population with no-op programs.
     """
 
+    penalties = penalties or ScoringPenalties()
+    allow_fidelity = penalties.allow_fidelity_edits()
+    allow_simplify = allow_fidelity and penalties.allow_rhythm_simplify()
+    allow_local = allow_fidelity and penalties.allow_melody_shift()
+
     programs: list[Tuple[GPPrimitive, ...]] = []
     for recipe in _RECIPES:
+        if not allow_simplify and recipe is _simplify_density_recipe:
+            continue
+        if not allow_local and recipe is _octave_correction_recipe:
+            continue
         program = tuple(recipe(span, instrument))
         if not program:
             continue

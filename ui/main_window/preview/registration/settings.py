@@ -70,6 +70,7 @@ class PreviewSettingsMixin:
         loop_enabled_var = self._preview_loop_enabled_vars.get(side)
         loop_start_var = self._preview_loop_start_vars.get(side)
         loop_end_var = self._preview_loop_end_vars.get(side)
+        volume_var = self._preview_volume_vars.get(side)
         if (
             tempo_var is None
             or met_var is None
@@ -122,6 +123,27 @@ class PreviewSettingsMixin:
             self._update_preview_apply_cancel_state(side, valid=False)
             return
 
+        default_volume_percent: float | None
+        applied_volume = applied.get("volume")
+        if isinstance(applied_volume, (int, float)):
+            default_volume_percent = float(applied_volume)
+        else:
+            state_volume = getattr(getattr(playback, "state", None), "volume", None)
+            if isinstance(state_volume, (int, float)):
+                default_volume_percent = float(state_volume) * 100.0
+            else:
+                default_volume_percent = 100.0
+
+        if volume_var is not None:
+            try:
+                volume_percent = float(volume_var.get())
+            except (tk.TclError, ValueError):
+                volume_percent = default_volume_percent
+        else:
+            volume_percent = default_volume_percent
+
+        volume_percent = max(0.0, min(100.0, volume_percent))
+
         playback.set_tempo(tempo)
         playback.set_metronome(met_enabled)
         pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
@@ -134,6 +156,8 @@ class PreviewSettingsMixin:
             else LoopRegion(enabled=True, start_tick=loop_start_tick, end_tick=loop_end_tick)
         )
         playback.set_loop(region)
+        if hasattr(playback, "set_volume"):
+            playback.set_volume(volume_percent / 100.0)
 
         applied_snapshot = {
             "tempo": float(tempo),
@@ -141,6 +165,7 @@ class PreviewSettingsMixin:
             "loop_enabled": bool(visible_loop),
             "loop_start": float(loop_start),
             "loop_end": float(loop_end),
+            "volume": float(volume_percent),
         }
         self._preview_applied_settings[side] = applied_snapshot
         if hasattr(self, "_preview_settings_seeded"):
@@ -153,6 +178,7 @@ class PreviewSettingsMixin:
             loop_enabled=bool(visible_loop),
             loop_start_beat=float(loop_start),
             loop_end_beat=float(loop_end),
+            volume=volume_percent / 100.0,
         )
         self._viewmodel.update_preview_settings(settings)
         self._sync_preview_playback_controls(side)
@@ -167,6 +193,8 @@ class PreviewSettingsMixin:
         loop_enabled_var = self._preview_loop_enabled_vars.get(side)
         loop_start_var = self._preview_loop_start_vars.get(side)
         loop_end_var = self._preview_loop_end_vars.get(side)
+        volume_value = float(applied.get("volume", 100.0))
+        self._set_volume_controls_value(side, volume_value)
         if tempo_var is not None:
             self._suspend_tempo_update.add(side)
             try:
@@ -199,6 +227,10 @@ class PreviewSettingsMixin:
                 pass
             finally:
                 self._suspend_loop_update.discard(side)
+        playback = self._preview_playback.get(side)
+        if playback is not None:
+            playback.set_volume(volume_value / 100.0)
+            self._update_mute_button_state(side)
         self._update_preview_apply_cancel_state(side)
         self._update_loop_marker_visuals(side)
 
@@ -215,6 +247,7 @@ class PreviewSettingsMixin:
             "loop_enabled": loop_enabled,
             "loop_start": loop_start,
             "loop_end": loop_end,
+            "volume": float(snapshot.volume) * 100.0,
         }
         self._preview_applied_settings[side] = applied
         if hasattr(self, "_preview_settings_seeded"):
@@ -267,6 +300,7 @@ class PreviewSettingsMixin:
         if playback is not None:
             playback.set_tempo(tempo)
             playback.set_metronome(bool(snapshot.metronome_enabled))
+            playback.set_volume(float(snapshot.volume))
             if playback.state.is_loaded:
                 pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
                 start_tick = int(round(loop_start * pulses_per_quarter))
@@ -289,6 +323,8 @@ class PreviewSettingsMixin:
                     force_flags[side] = True
                 self._update_playback_visuals(side)
 
+        self._set_volume_controls_value(side, applied["volume"])
+        self._update_mute_button_state(side)
         self._update_preview_apply_cancel_state(side)
         self._update_loop_marker_visuals(side)
 
@@ -302,6 +338,7 @@ class PreviewSettingsMixin:
         loop_start: float | None = None,
         loop_end: float | None = None,
         valid: bool = True,
+        volume: float | None = None,
     ) -> None:
         apply_button = self._preview_apply_buttons.get(side)
         cancel_button = self._preview_cancel_buttons.get(side)
@@ -385,6 +422,23 @@ class PreviewSettingsMixin:
                     set_state(all_apply, ["disabled"])
                     set_state(all_cancel, ["disabled"])
                     return
+        volume_value = volume
+        if volume_value is None:
+            volume_var = self._preview_volume_vars.get(side)
+            if volume_var is not None:
+                try:
+                    volume_value = float(volume_var.get())
+                except (tk.TclError, ValueError):
+                    volume_value = float(applied.get("volume", 100.0))
+            else:
+                volume_value = float(applied.get("volume", 100.0))
+        else:
+            try:
+                volume_value = float(volume_value)
+            except (TypeError, ValueError):
+                volume_value = float(applied.get("volume", 100.0))
+        if volume_value is not None:
+            volume_value = max(0.0, min(100.0, volume_value))
         if (
             loop_start_value is not None
             and loop_end_value is not None
@@ -403,6 +457,8 @@ class PreviewSettingsMixin:
         if loop_start_value is not None and abs(loop_start_value - applied["loop_start"]) > 1e-6:
             changed = True
         if loop_end_value is not None and abs(loop_end_value - applied["loop_end"]) > 1e-6:
+            changed = True
+        if volume_value is not None and abs(volume_value - applied.get("volume", 100.0)) > 1e-6:
             changed = True
         if playback.state.is_rendering or playback.state.is_playing:
             set_state(all_apply, ["disabled"])

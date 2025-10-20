@@ -82,6 +82,12 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         contour_weight=0.4,
         lcs_weight=0.6,
         pitch_weight=0.5,
+        fidelity_priority_weight=4.8,
+        range_clamp_penalty=820.0,
+        range_clamp_melody_bias=1.4,
+        melody_shift_weight=2.6,
+        rhythm_simplify_weight=1.2,
+        apply_program_preference="session_winner",
     )
     snapshot = ProjectSnapshot(
         input_path=input_path,
@@ -98,6 +104,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
                 loop_enabled=True,
                 loop_start_beat=1.5,
                 loop_end_beat=3.0,
+                volume=0.65,
             )
         },
         arranger_mode="best_effort",
@@ -131,6 +138,29 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert arranger_manifest["gp_settings"]["generations"] == 7
     assert arranger_manifest["gp_settings"]["population_size"] == 18
     assert arranger_manifest["gp_settings"]["time_budget_seconds"] == pytest.approx(12.5)
+    assert arranger_manifest["gp_settings"]["fidelity_priority_weight"] == pytest.approx(4.8)
+    assert arranger_manifest["gp_settings"]["range_clamp_penalty"] == pytest.approx(820.0)
+    assert (
+        arranger_manifest["gp_settings"]["range_clamp_melody_bias"]
+        == pytest.approx(1.4)
+    )
+    assert arranger_manifest["gp_settings"]["melody_shift_weight"] == pytest.approx(2.6)
+    assert (
+        arranger_manifest["gp_settings"]["rhythm_simplify_weight"]
+        == pytest.approx(1.2)
+    )
+    assert (
+        arranger_manifest["gp_settings"]["apply_program_preference"]
+        == "session_winner"
+    )
+
+    preview_manifest = manifest["preview_settings"]["arranged"]
+    assert preview_manifest["tempo_bpm"] == pytest.approx(96.0)
+    assert preview_manifest["metronome_enabled"] is True
+    assert preview_manifest["loop_enabled"] is True
+    assert preview_manifest["loop_start"] == pytest.approx(1.5)
+    assert preview_manifest["loop_end"] == pytest.approx(3.0)
+    assert preview_manifest["volume"] == pytest.approx(0.65)
 
     extract_dir = tmp_path / "extracted"
     loaded = service.load(saved_path, extract_dir)
@@ -149,6 +179,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert restored_preview.loop_enabled is True
     assert restored_preview.loop_start_beat == pytest.approx(1.5)
     assert restored_preview.loop_end_beat == pytest.approx(3.0)
+    assert restored_preview.volume == pytest.approx(0.65)
 
     restored_conversion = loaded.conversion
     assert restored_conversion is not None

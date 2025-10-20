@@ -82,6 +82,12 @@ Join our Discord community on [Discord](https://discord.gg/xVs5W6WR).
 
 - Conversion pipeline: transpose to C/Am -> collapse chords -> enforce A4-F6 -> (optional) favor lower register.
 
+## Arranger troubleshooting
+
+1. Try to use default settings first (reset to default if already changed).
+2. If you don't like the output, change to "Use ranked candidate" first and re-arrange.
+3. If it still doesn't look good, expand "Show advanced arranger controls" and change "Range clamp penalty" to 5, re-arrange. This may cause the notes to be out of instrument range. Use manual transposition to move the song up/down as needed.
+
 ## Debug logs
 
 When troubleshooting preview playback the app now records verbose diagnostics to

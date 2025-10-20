@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from ocarina_gui.preview import PreviewData
+from ui.main_window.initialisation.convert_summary_controls import (
+    ArrangerSummaryControlsMixin,
+)
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
     ArrangerEditBreakdown,
@@ -48,6 +52,22 @@ def test_starred_selection_updates_viewmodel(gui_app) -> None:
     assert instrument_id not in gui_app._viewmodel.state.starred_instrument_ids
 
 
+def test_starred_checkboxes_follow_instrument_order(gui_app) -> None:
+    _activate_best_effort(gui_app)
+
+    checkboxes = getattr(gui_app, "_starred_checkbox_widgets", {})
+    assert checkboxes, "Expected starred instrument checkboxes to be created"
+
+    checkbox_order = [widget.cget("text") for widget in checkboxes.values()]
+    expected_order = [
+        gui_app._instrument_name_by_id[instrument_id]
+        for instrument_id in gui_app._instrument_name_by_id
+        if instrument_id in checkboxes
+    ]
+
+    assert checkbox_order == expected_order
+
+
 def test_arranger_summary_renders_rows(gui_app) -> None:
     _activate_best_effort(gui_app)
 
@@ -79,24 +99,64 @@ def test_arranger_summary_renders_rows(gui_app) -> None:
     gui_app._render_arranger_summary(summaries)
     gui_app.update_idletasks()
 
-    body = getattr(gui_app, "_arranger_summary_body", None)
-    assert body is not None
-    texts = [child.cget("text") for child in body.winfo_children()]
-    assert "Test instrument" in texts
-    assert "Secondary test instrument" in texts
-    assert "⭐ Winner" in texts
-    assert any(text.startswith("0.5") or text.startswith("0.50") for text in texts)
-    assert any(text in {"+2", "2"} for text in texts)
+    tree = getattr(gui_app, "_arranger_summary_tree", None)
+    assert tree is not None
+    rows = [tree.item(item).get("values", []) for item in tree.get_children()]
+    instruments = [row[0] for row in rows]
+    assert "Test instrument" in instruments
+    assert "Secondary test instrument" in instruments
+    statuses = [row[1] for row in rows]
+    assert any("Winner" in status for status in statuses)
+    transpositions = {row[2] for row in rows}
+    assert any(value in {"+2", "2"} for value in transpositions)
+    difficulty_values = [value for row in rows for value in row[3:]]
+    assert any(str(value).startswith("0.5") for value in difficulty_values)
+
+
+def test_arranger_summary_transposition_parses_textual_value() -> None:
+    formatter = ArrangerSummaryControlsMixin._format_transposition
+    assert formatter(" +2 semitones") == "+2"
+    assert formatter(" -3 semitones") == "-3"
+    assert formatter("0 shift") == "0"
 
 
 def test_arranger_summary_placeholder_when_empty(gui_app) -> None:
     _activate_best_effort(gui_app)
     gui_app._render_arranger_summary(())
     gui_app.update_idletasks()
-    body = getattr(gui_app, "_arranger_summary_body", None)
-    assert body is not None
-    messages = [child.cget("text") for child in body.winfo_children()]
-    assert any("Arrange a score" in text for text in messages)
+    placeholder = getattr(gui_app, "_arranger_summary_placeholder", None)
+    assert placeholder is not None
+    assert "Arrange a score" in placeholder.cget("text")
+    tree = getattr(gui_app, "_arranger_summary_tree", None)
+    if tree is not None:
+        assert tree.get_children() == ()
+
+
+def test_preview_data_updates_range_controls(gui_app) -> None:
+    state = gui_app._viewmodel.state
+    gui_app._selected_instrument_id = "test"
+    gui_app.range_min.set("A4")
+    gui_app.range_max.set("B4")
+    state.instrument_id = "test_alt"
+    state.range_min = "G4"
+    state.range_max = "A4"
+    preview = PreviewData(
+        original_events=(),
+        arranged_events=(),
+        pulses_per_quarter=480,
+        beats=4,
+        beat_type=4,
+        original_range=(60, 72),
+        arranged_range=(60, 72),
+        tempo_bpm=120,
+        tempo_changes=(),
+    )
+
+    gui_app._apply_preview_data(preview)
+    gui_app.update_idletasks()
+
+    assert gui_app.range_min.get() == "G4"
+    assert gui_app.range_max.get() == "A4"
 
 
 def test_results_panel_defaults(gui_app) -> None:

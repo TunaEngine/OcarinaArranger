@@ -6,6 +6,7 @@ from typing import Mapping, Sequence
 
 from domain.arrangement.api import summarize_difficulty
 from domain.arrangement.gp import GPSessionConfig, GPInstrumentCandidate, GlobalTranspose
+from domain.arrangement.gp.penalties import ScoringPenalties
 from domain.arrangement.gp.fitness import FidelityConfig, FitnessConfig, FitnessObjective
 
 from viewmodels.arranger_models import (
@@ -73,13 +74,20 @@ def _gp_session_config(settings) -> GPSessionConfig:
         constraints=base.constraints,
         fitness_config=fitness_config,
         time_budget_seconds=normalized.time_budget_seconds,
+        scoring_penalties=ScoringPenalties(
+            fidelity_weight=normalized.fidelity_priority_weight,
+            range_clamp_penalty=normalized.range_clamp_penalty,
+            range_clamp_melody_bias=normalized.range_clamp_melody_bias,
+            melody_shift_weight=normalized.melody_shift_weight,
+            rhythm_simplify_weight=normalized.rhythm_simplify_weight,
+        ),
     )
 
 
 def _gp_instrument_summary(
     candidate: GPInstrumentCandidate,
     name_map: Mapping[str, str],
-    chosen_id: str,
+    winner_id: str,
     *,
     transposition_offset: int = 0,
 ) -> ArrangerInstrumentSummary:
@@ -93,7 +101,7 @@ def _gp_instrument_summary(
         very_hard=very_hard,
         tessitura=tessitura,
         transposition=_gp_transposition(candidate.program) + transposition_offset,
-        is_winner=candidate.instrument_id == chosen_id,
+        is_winner=candidate.instrument_id == winner_id,
     )
 
 

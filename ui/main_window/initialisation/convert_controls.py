@@ -23,6 +23,7 @@ from viewmodels.main_viewmodel import (
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
     ArrangerGPSettings,
+    gp_settings_warning,
 )
 
 from .arranger_results import ArrangerResultsMixin
@@ -163,6 +164,27 @@ class ConvertControlsMixin(
         self.arranger_gp_pitch_weight = tk.StringVar(
             master=self, value=_format_float(gp_state.pitch_weight)
         )
+        self.arranger_gp_fidelity_priority_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.fidelity_priority_weight)
+        )
+        self.arranger_gp_range_clamp_penalty = tk.StringVar(
+            master=self, value=_format_float(gp_state.range_clamp_penalty)
+        )
+        self.arranger_gp_range_clamp_melody_bias = tk.StringVar(
+            master=self, value=_format_float(gp_state.range_clamp_melody_bias)
+        )
+        self.arranger_gp_melody_shift_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.melody_shift_weight)
+        )
+        self.arranger_gp_rhythm_simplify_weight = tk.StringVar(
+            master=self, value=_format_float(gp_state.rhythm_simplify_weight)
+        )
+        self.arranger_gp_apply_preference = tk.StringVar(
+            master=self, value=gp_state.apply_program_preference
+        )
+        self.arranger_gp_warning = tk.StringVar(
+            master=self, value=gp_settings_warning(gp_state)
+        )
         self._arranger_gp_vars: dict[str, tk.Variable] = {
             "generations": self.arranger_gp_generations,
             "population_size": self.arranger_gp_population,
@@ -180,6 +202,12 @@ class ConvertControlsMixin(
             "contour_weight": self.arranger_gp_contour_weight,
             "lcs_weight": self.arranger_gp_lcs_weight,
             "pitch_weight": self.arranger_gp_pitch_weight,
+            "fidelity_priority_weight": self.arranger_gp_fidelity_priority_weight,
+            "range_clamp_penalty": self.arranger_gp_range_clamp_penalty,
+            "range_clamp_melody_bias": self.arranger_gp_range_clamp_melody_bias,
+            "melody_shift_weight": self.arranger_gp_melody_shift_weight,
+            "rhythm_simplify_weight": self.arranger_gp_rhythm_simplify_weight,
+            "apply_program_preference": self.arranger_gp_apply_preference,
         }
         self._suspend_arranger_gp_trace = False
         self._initialise_arranger_results(state)

@@ -94,6 +94,7 @@ project/
   - `python3 -m venv .venv`
   - `source .venv/bin/activate`
 - Tests pass locally from the activated virtual environment: `xvfb-run -a .venv/bin/pytest` (always run this command for verification).
+- Always run `.venv/bin/pytest tests/test_source_file_lengths.py` and refactor the implicated files if the test fails before proceeding.
 - Run the Linux accessibility E2E suite following [docs/e2e-linux-accessibility.md](docs/e2e-linux-accessibility.md) to verify the Dogtail-powered scenarios.
 - When sharing E2E screenshots, run `.venv/bin/pytest` with `--e2e-upload-screenshots` to publish the PNGs to Litterbox and include the printed URLs in the PR description instead of committing binary artifacts.
 - Coverage ≥ **85%** overall; new/changed lines covered.

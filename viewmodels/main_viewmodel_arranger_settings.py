@@ -68,6 +68,14 @@ def normalize_arranger_gp_settings(
         except (TypeError, ValueError):
             time_budget_seconds = None
 
+        raw_preference = arranger_gp_settings.get(
+            "apply_program_preference", base.apply_program_preference
+        )
+        if isinstance(raw_preference, str):
+            preference_value = raw_preference.strip().lower()
+        else:
+            preference_value = base.apply_program_preference
+
         gp_settings = ArrangerGPSettings(
             generations=_get_int("generations", base.generations),
             population_size=_get_int("population_size", base.population_size),
@@ -85,6 +93,22 @@ def normalize_arranger_gp_settings(
             contour_weight=_get_float("contour_weight", base.contour_weight),
             lcs_weight=_get_float("lcs_weight", base.lcs_weight),
             pitch_weight=_get_float("pitch_weight", base.pitch_weight),
+            fidelity_priority_weight=_get_float(
+                "fidelity_priority_weight", base.fidelity_priority_weight
+            ),
+            range_clamp_penalty=_get_float(
+                "range_clamp_penalty", base.range_clamp_penalty
+            ),
+            range_clamp_melody_bias=_get_float(
+                "range_clamp_melody_bias", base.range_clamp_melody_bias
+            ),
+            melody_shift_weight=_get_float(
+                "melody_shift_weight", base.melody_shift_weight
+            ),
+            rhythm_simplify_weight=_get_float(
+                "rhythm_simplify_weight", base.rhythm_simplify_weight
+            ),
+            apply_program_preference=preference_value,
         )
     elif isinstance(arranger_gp_settings, tuple) and len(arranger_gp_settings) == 3:
         gp_settings = ArrangerGPSettings(

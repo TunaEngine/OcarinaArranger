@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, List, Tuple
 import xml.etree.ElementTree as ET
 
-from .musicxml import first_divisions, get_pitch_data, qname
+from .musicxml import first_divisions, get_pitch_data, make_qname_getter
 from .instruments import OCARINA_GM_PROGRAM, part_programs
 from shared.tempo import TempoChange
 from shared.ottava import OttavaShift
@@ -164,7 +164,7 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
     divisions = first_divisions(root)
     ppq = 480
     scale = ppq / max(1, divisions)
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     programs = part_programs(root)
     events: List[NoteEvent] = []
     for index, part in enumerate(root.findall(q('part'))):
@@ -296,7 +296,7 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
 
 
 def get_time_signature(root: ET.Element) -> tuple[int, int]:
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     for part in root.findall(q('part')):
         for measure in part.findall(q('measure')):
             attrs = measure.find(q('attributes'))
@@ -328,7 +328,7 @@ def detect_tempo_bpm(root: ET.Element, default_bpm: int = 120) -> int:
 def get_tempo_changes(root: ET.Element, default_bpm: int = 120) -> list[TempoChange]:
     """Extract tempo change events from ``root`` in ascending tick order."""
 
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     ppq = 480
     divisions = max(1, first_divisions(root))
     scale = ppq / divisions

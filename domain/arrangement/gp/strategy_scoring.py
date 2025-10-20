@@ -8,7 +8,8 @@ from typing import Sequence, Tuple
 from domain.arrangement.melody import isolate_melody
 from domain.arrangement.phrase import PhraseNote, PhraseSpan
 
-from .ops import GlobalTranspose
+from .ops import GlobalTranspose, LocalOctave, SimplifyRhythm
+from .penalties import ScoringPenalties
 from .strategy_types import GPInstrumentCandidate
 from .session_logging import IndividualSummary
 
@@ -57,7 +58,11 @@ def _shift_drift_penalty(
     magnitude_total = sum(
         abs(shift - mode_shift) for shift in differences if shift != mode_shift
     )
-    magnitude_penalty = min(1.0, magnitude_total / (12.0 * paired_length))
+    mismatch_count = sum(1 for shift in differences if shift != mode_shift)
+    if mismatch_count:
+        magnitude_penalty = min(1.0, magnitude_total / (12.0 * mismatch_count))
+    else:
+        magnitude_penalty = 0.0
 
     length_penalty = (max_length - paired_length) / max_length
 
@@ -159,9 +164,11 @@ def _difficulty_sort_key(
     fidelity_importance: float = 1.0,
     baseline_melody: float | None = None,
     melody_importance: float = 1.0,
+    penalties: ScoringPenalties | None = None,
 ) -> tuple[int, float, float, float, float, float, float, float, float, float, float]:
     """Return a tuple that ranks candidates by melodic fidelity before difficulty."""
 
+    penalties = penalties or ScoringPenalties()
     difficulty = candidate.difficulty
     has_range_clamp = any(
         event.reason_code == "range-clamp" for event in candidate.explanations
@@ -177,7 +184,7 @@ def _difficulty_sort_key(
             # Mixed local edits that still require clamping represent more
             # aggressive alterations, so they should remain heavily
             # penalised compared to register-faithful alternatives.
-            range_penalty = RANGE_CLAMP_PENALTY * 2
+            range_penalty = penalties.range_clamp_penalty * 2
         else:
             # Pure global transpositions that keep the melody intact often
             # still need to clamp sustained pedals.  Allow them to compete on
@@ -187,16 +194,45 @@ def _difficulty_sort_key(
 
     fidelity_penalty = candidate.fitness.fidelity
     program_length = len(candidate.program)
-    program_complexity = sum(
-        0 if isinstance(operation, GlobalTranspose) else 1
+    effective_program_length = 0
+    zero_transpose_count = 0
+    base_complexity = sum(
+        0
+        if isinstance(operation, GlobalTranspose)
+        and getattr(operation, "semitones", 0)
+        in (0, 0.0)
+        else 0
+        if isinstance(operation, GlobalTranspose)
+        else 1
         for operation in candidate.program
     )
+    simplify_count = sum(
+        1 for operation in candidate.program if isinstance(operation, SimplifyRhythm)
+    )
+    rhythm_weight = max(0.0, penalties.rhythm_simplify_weight)
+    program_complexity = base_complexity + simplify_count * (rhythm_weight - 1.0)
+    if simplify_count:
+        program_complexity = max(0.0, round(program_complexity, 6))
+    apply_transpose_bias = penalties.melody_shift_weight >= 1.0
     transpose_magnitude = None
     transpose_octave_bias = 0
     transpose_is_non_octave = False
+    local_octave_shifts: list[int] = []
+    local_octave_ranges: list[tuple[int, int | None, int | None]] = []
+    full_span_local_octave: list[int] = []
+    has_global_transpose = False
     for operation in candidate.program:
         if isinstance(operation, GlobalTranspose):
-            magnitude = abs(operation.semitones)
+            magnitude_raw = getattr(operation, "semitones", 0)
+            try:
+                magnitude = abs(int(magnitude_raw))
+            except (TypeError, ValueError):  # pragma: no cover - defensive guard
+                magnitude = 0
+            if magnitude == 0:
+                zero_transpose_count += 1
+                continue
+            has_global_transpose = True
+            effective_program_length += 1
             transpose_magnitude = (
                 magnitude
                 if transpose_magnitude is None or magnitude < transpose_magnitude
@@ -204,14 +240,39 @@ def _difficulty_sort_key(
             )
             if magnitude % 12 != 0:
                 transpose_is_non_octave = True
-                if transpose_octave_bias == 0:
+                if apply_transpose_bias and transpose_octave_bias == 0:
                     transpose_octave_bias = 1
+        elif isinstance(operation, LocalOctave):
+            if operation.octaves:
+                effective_program_length += 1
+                shift_value = int(operation.octaves)
+                local_octave_shifts.append(shift_value)
+                start = getattr(operation.span, "start_onset", None)
+                end = getattr(operation.span, "end_onset", None)
+                local_octave_ranges.append((shift_value, start, end))
+                if shift_value and (start in (None, 0)):
+                    full_span = False
+                    if end is None:
+                        full_span = True
+                    else:
+                        try:
+                            full_span = int(end) >= candidate.span.total_duration
+                        except (TypeError, ValueError):
+                            full_span = False
+                    if full_span:
+                        full_span_local_octave.append(abs(shift_value))
+        elif isinstance(operation, SimplifyRhythm):
+            effective_program_length += 1
+        else:
+            effective_program_length += 1
     if transpose_magnitude is None:
-        transpose_key = 0.0 if program_length == 0 else 120.0
-        if program_length > 0:
+        transpose_key = (
+            0.0 if effective_program_length == 0 or not apply_transpose_bias else 120.0
+        )
+        if effective_program_length > 0 and apply_transpose_bias:
             transpose_octave_bias = 1
     else:
-        transpose_key = float(transpose_magnitude)
+        transpose_key = float(transpose_magnitude) if apply_transpose_bias else 0.0
     importance = max(1.0, fidelity_importance)
 
     melody_penalty = candidate.melody_penalty
@@ -221,31 +282,170 @@ def _difficulty_sort_key(
     if len(candidate.program) > 0 and baseline_melody is not None:
         melody_diff = melody_penalty - baseline_melody
         if melody_diff > 0:
-            melody_factor = melody_weight * (FIDELITY_WEIGHT if has_range_clamp else 1.0)
+            melody_factor = melody_weight * (
+                penalties.fidelity_weight if has_range_clamp else 1.0
+            )
             melody_penalty = baseline_melody + melody_diff * melody_factor
     melody_total = melody_penalty
     if shift_penalty > 0:
-        melody_total += shift_penalty * melody_weight * MELODY_SHIFT_WEIGHT
+        melody_total += shift_penalty * melody_weight * penalties.melody_shift_weight
+    melody_shift_value = shift_penalty
     if has_range_clamp:
-        melody_total += RANGE_CLAMP_MELODY_BIAS * melody_weight
-    if transpose_is_non_octave and has_range_clamp:
+        melody_total += penalties.range_clamp_melody_bias * melody_weight
+        if effective_program_length == 0 and shift_penalty >= 0.5:
+            clamp_bias = melody_weight * penalties.range_clamp_penalty * max(1.0, shift_penalty)
+            melody_total += clamp_bias
+            melody_shift_value += clamp_bias
+            has_shift_drift = max(has_shift_drift, 2)
+        if candidate.instrument is not None:
+            top_voice = _top_voice_notes(candidate.span)
+            if top_voice:
+                floor_hits = sum(
+                    1 for note in top_voice if note.midi <= candidate.instrument.min_midi
+                )
+                ceiling_hits = sum(
+                    1 for note in top_voice if note.midi >= candidate.instrument.max_midi
+                )
+                if floor_hits or ceiling_hits:
+                    total_notes = len(top_voice)
+                    # Weight lower-bound clashes more heavily than upper-bound
+                    # clamps so pure transpositions favour staying above the
+                    # floor instead of dimming the melody near the instrument's
+                    # base notes.
+                    floor_weight = 2.0 if has_global_transpose else 1.5
+                    ceiling_weight = 1.0
+                    weighted_hits = floor_hits * floor_weight + ceiling_hits * ceiling_weight
+                    hit_ratio = weighted_hits / total_notes
+                    if (floor_hits + ceiling_hits) >= 3 or hit_ratio >= 0.05:
+                        base_factor = shift_penalty + hit_ratio * penalties.melody_shift_weight
+                        boundary_bias = melody_weight * penalties.range_clamp_penalty * (
+                            1.0 + base_factor
+                        )
+                        drift_rank = 3 if not has_global_transpose else 2
+                        if has_global_transpose and shift_penalty <= 1e-9:
+                            boundary_bias *= 0.75
+                        elif effective_program_length == 0:
+                            # Baseline (identity) candidates rely entirely on range
+                            # enforcement to stay playable. They should not be
+                            # punished as heavily as modified programs when the
+                            # clamp merely trims a handful of out-of-range notes,
+                            # otherwise we'll incorrectly prefer octave shifts that
+                            # distort the melody shape.
+                            boundary_bias *= 0.25
+                            if shift_penalty < 1.0:
+                                drift_rank = 1
+                            else:
+                                drift_rank = max(1, min(drift_rank, 2))
+                        melody_total += boundary_bias
+                        melody_shift_value += boundary_bias
+                        has_shift_drift = max(has_shift_drift, drift_rank)
+        if zero_transpose_count:
+            zero_bias = melody_weight * penalties.range_clamp_penalty * max(
+                1.0, shift_penalty + zero_transpose_count
+            )
+            melody_total += zero_bias
+            melody_shift_value += zero_bias
+            has_shift_drift = max(has_shift_drift, 2)
+    if apply_transpose_bias and transpose_is_non_octave and has_range_clamp:
         # Strongly discourage non-octave global transpositions so the arranger
         # favours the nearest uniform octave shift even when the raw melody
         # penalty slightly prefers an uneven adjustment.
-        melody_total += melody_weight * MELODY_SHIFT_WEIGHT
+        melody_total += melody_weight * penalties.melody_shift_weight
+    elif not apply_transpose_bias and transpose_is_non_octave:
+        melody_total = max(
+            0.0,
+            melody_total - melody_weight * (1.0 - penalties.melody_shift_weight),
+        )
+    if simplify_count:
+        delta = simplify_count * abs(rhythm_weight - 1.0)
+        if rhythm_weight >= 1.0:
+            melody_total += delta
+        else:
+            melody_total = max(0.0, melody_total - delta)
+
+    if apply_transpose_bias and transpose_is_non_octave and has_range_clamp:
+        melody_shift_value += melody_weight * penalties.melody_shift_weight
+
+    has_conflicting_local_octaves = local_octave_shifts and (
+        any(shift > 0 for shift in local_octave_shifts)
+        and any(shift < 0 for shift in local_octave_shifts)
+    )
+    if has_conflicting_local_octaves:
+        conflict_weight = melody_weight * max(1.0, penalties.melody_shift_weight)
+        clamp_scale = max(24.0, penalties.range_clamp_penalty * 24.0)
+        extent = max(1, max(abs(shift) for shift in local_octave_shifts))
+        conflict_bias = conflict_weight * clamp_scale * extent
+        melody_total += conflict_bias
+        melody_shift_value += conflict_bias
+        has_shift_drift = max(has_shift_drift, 2)
+    elif local_octave_ranges:
+        total_duration = candidate.span.total_duration
+        positive_spans = [
+            (start if start is not None else 0, end)
+            for shift, start, end in local_octave_ranges
+            if shift > 0
+        ]
+        negative_spans = [
+            (start, end if end is not None else total_duration)
+            for shift, start, end in local_octave_ranges
+            if shift < 0
+        ]
+        if positive_spans:
+            min_start = min(start for start, _ in positive_spans)
+            if min_start > 0:
+                coverage_bias = melody_weight * penalties.range_clamp_penalty
+                melody_total += coverage_bias
+                melody_shift_value += coverage_bias
+                has_shift_drift = max(has_shift_drift, 2)
+        if negative_spans:
+            max_end = max(end for _, end in negative_spans)
+            if max_end < total_duration:
+                coverage_bias = melody_weight * penalties.range_clamp_penalty
+                melody_total += coverage_bias
+                melody_shift_value += coverage_bias
+                has_shift_drift = max(has_shift_drift, 2)
+
+    excess_octave_shift = 0
+    if transpose_magnitude is not None and transpose_magnitude % 12 == 0:
+        excess_octave_shift = max(0, (transpose_magnitude // 12) - 1)
+    if full_span_local_octave:
+        excess_octave_shift = max(excess_octave_shift, max(full_span_local_octave) - 1)
+    if excess_octave_shift > 0:
+        octave_bias = melody_weight * penalties.range_clamp_penalty * excess_octave_shift
+        if has_range_clamp:
+            octave_bias *= 1.0 + (penalties.melody_shift_weight * 0.25)
+        melody_total += octave_bias
+        melody_shift_value += octave_bias
+        if full_span_local_octave:
+            has_shift_drift = max(has_shift_drift, 3)
+        else:
+            has_shift_drift = max(has_shift_drift, 2)
+
+    if transpose_magnitude is not None and candidate.instrument is not None:
+        instrument_span = max(
+            1,
+            int(candidate.instrument.max_midi) - int(candidate.instrument.min_midi),
+        )
+        if transpose_magnitude > instrument_span:
+            overshoot = transpose_magnitude - instrument_span
+            overshoot_scale = overshoot / instrument_span
+            overshoot_penalty = melody_weight * penalties.range_clamp_penalty * (
+                1.0 + overshoot_scale * penalties.melody_shift_weight
+            )
+            melody_total += overshoot_penalty
+            melody_shift_value += overshoot_penalty
+            has_shift_drift = max(has_shift_drift, 2)
+
     melody_key = round(melody_total, 12)
-    melody_shift_value = shift_penalty
-    if transpose_is_non_octave and has_range_clamp:
-        melody_shift_value += melody_weight * MELODY_SHIFT_WEIGHT
     melody_shift_key = round(melody_shift_value, 12)
 
-    if program_length > 0:
+    if effective_program_length > 0:
         if baseline_fidelity is not None:
             diff = fidelity_penalty - baseline_fidelity
             if diff > 0:
-                fidelity_penalty = baseline_fidelity + diff * importance * FIDELITY_WEIGHT
+                fidelity_penalty = baseline_fidelity + diff * importance * penalties.fidelity_weight
         else:
-            fidelity_penalty = fidelity_penalty * importance * FIDELITY_WEIGHT
+            fidelity_penalty = fidelity_penalty * importance * penalties.fidelity_weight
 
     # Prioritise melodic fidelity ahead of range clamps and the other
     # difficulty heuristics so larger instruments prefer solutions that keep
@@ -260,7 +460,7 @@ def _difficulty_sort_key(
         range_key,
         round(fidelity_penalty, 12),
         program_complexity,
-        program_length,
+        effective_program_length,
         difficulty.hard_and_very_hard + range_penalty,
         difficulty.medium,
         difficulty.tessitura_distance,
@@ -271,6 +471,7 @@ def _difficulty_sort_key(
 __all__ = [
     "FIDELITY_WEIGHT",
     "MELODY_SHIFT_WEIGHT",
+    "ScoringPenalties",
     "RANGE_CLAMP_MELODY_BIAS",
     "RANGE_CLAMP_PENALTY",
     "_difficulty_sort_key",

@@ -12,6 +12,7 @@ from ocarina_tools.musicxml import (
     get_pitch_data,
     is_voice_one,
     iter_pitched_notes_first_part,
+    make_qname_getter,
     qname,
     write_pitch,
 )
@@ -42,6 +43,16 @@ def test_qname_handles_namespaced_and_plain_roots():
 
     ns_root = ET.Element("{urn:dummy}score-partwise")
     assert qname(ns_root, "note") == "{urn:dummy}note"
+
+
+def test_make_qname_getter_returns_namespace_aware_callable():
+    plain_root = ET.Element("score-partwise")
+    plain_q = make_qname_getter(plain_root)
+    assert plain_q("measure") == "measure"
+
+    ns_root = ET.Element("{urn:test}score-partwise")
+    ns_q = make_qname_getter(ns_root)
+    assert ns_q("note") == "{urn:test}note"
 
 
 def test_write_pitch_adds_and_removes_elements():

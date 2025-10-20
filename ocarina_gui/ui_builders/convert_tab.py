@@ -36,8 +36,7 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     left_column.grid(row=0, column=0, sticky="nsew", padx=(0, pad))
     left_column.columnconfigure(0, weight=1)
     left_column.rowconfigure(0, weight=0)
-    left_column.rowconfigure(1, weight=0)
-    left_column.rowconfigure(2, weight=1)
+    left_column.rowconfigure(1, weight=1)
 
     right_column = ttk.Frame(container)
     right_column.grid(row=0, column=1, sticky="nsew")

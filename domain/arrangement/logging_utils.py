@@ -38,6 +38,12 @@ def describe_span(span: PhraseSpan) -> str:
     )
 
 
+def span_note_names(span: PhraseSpan) -> tuple[str, ...]:
+    """Return the ordered note names within ``span`` for debugging."""
+
+    return tuple(midi_to_name(note.midi) for note in span.notes)
+
+
 def describe_instrument(instrument: InstrumentRange) -> str:
     """Summarise ``instrument`` bounds for debug logging."""
 
@@ -88,4 +94,5 @@ __all__ = [
     "describe_instrument",
     "describe_difficulty",
     "describe_melody_actions",
+    "span_note_names",
 ]

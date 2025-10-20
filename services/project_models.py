@@ -62,6 +62,7 @@ class PreviewPlaybackSnapshot:
     loop_enabled: bool = False
     loop_start_beat: float = 0.0
     loop_end_beat: float = 0.0
+    volume: float = 1.0
 
 
 __all__ = [

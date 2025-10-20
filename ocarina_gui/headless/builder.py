@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import tkinter as tk
 from typing import TYPE_CHECKING
 
 from .views import HeadlessFingeringView, HeadlessPianoRoll, HeadlessStaffView
 from .widgets import (
     HeadlessButton,
     HeadlessCheckbutton,
+    HeadlessCombobox,
     HeadlessFrame,
+    HeadlessNotebook,
+    HeadlessProgressbar,
+    HeadlessRadiobutton,
     HeadlessScale,
     HeadlessSpinbox,
+    HeadlessTreeview,
 )
 
 
@@ -123,6 +129,103 @@ def build_headless_ui(app: "App") -> None:
     )
     reimport_button = HeadlessButton(app.reimport_and_arrange)
     app._register_reimport_button(reimport_button)
+
+    summary_columns = (
+        "instrument",
+        "status",
+        "transpose",
+        "easy",
+        "medium",
+        "hard",
+        "very_hard",
+        "tessitura",
+    )
+    app._arranger_summary_column_keys = summary_columns
+    summary_container = HeadlessFrame()
+    app._arranger_summary_container = summary_container
+    app._arranger_summary_body = summary_container
+    app._arranger_summary_tree = HeadlessTreeview(
+        parent=summary_container, columns=summary_columns, show="headings"
+    )
+    app._arranger_summary_placeholder = None
+
+    strategy_buttons: dict[str, HeadlessRadiobutton] = {}
+    for value, label in (
+        ("current", "Current instrument only"),
+        ("starred-best", "Starred instruments (pick best)"),
+    ):
+        button = HeadlessRadiobutton(
+            text=label,
+            variable=app.arranger_strategy,
+            value=value,
+            parent=summary_container,
+        )
+        button.pack()
+        strategy_buttons[value] = button
+    app._arranger_strategy_buttons = strategy_buttons
+
+    starred_container = HeadlessFrame(parent=summary_container)
+    app._starred_instrument_container = starred_container
+    app._starred_checkbox_widgets = {}
+    starred_ids = set(getattr(app._viewmodel.state, "starred_instrument_ids", ()))
+    for index, (instrument_id, instrument_name) in enumerate(app._instrument_name_by_id.items()):
+        var = app._starred_instrument_vars.get(instrument_id)
+        if var is None:
+            var = tk.BooleanVar(master=app, value=instrument_id in starred_ids)
+            trace_id = var.trace_add(
+                "write",
+                lambda *_args, iid=instrument_id: app._on_starred_var_changed(iid),
+            )
+            app._starred_instrument_vars[instrument_id] = var
+            app._starred_var_traces[instrument_id] = trace_id
+            app._register_convert_setting_var(var)
+        else:
+            desired = instrument_id in starred_ids
+            try:
+                current = bool(var.get())
+            except Exception:
+                current = not desired
+            if current != desired:
+                var.set(desired)
+        check = HeadlessCheckbutton(
+            text=instrument_name,
+            variable=var,
+            parent=starred_container,
+        )
+        check.grid(row=index, column=0, sticky="w")
+        app._starred_checkbox_widgets[instrument_id] = check
+
+    results_section = HeadlessFrame()
+    results_section.grid()
+    app._arranger_results_section = results_section
+    notebook = HeadlessNotebook(parent=results_section)
+    notebook.grid()
+    app._register_arranger_results_notebook(notebook)
+
+    progress_frame = HeadlessFrame(parent=results_section)
+    progress = HeadlessProgressbar(parent=progress_frame, variable=app.arranger_progress_value)
+    app._register_arranger_progress_widgets(progress_frame, progress)
+
+    explanation_columns = ("bar", "action", "reason", "delta", "notes")
+    explanation_tree = HeadlessTreeview(
+        parent=results_section,
+        columns=explanation_columns,
+        show="headings",
+        selectmode="browse",
+    )
+    app._register_arranger_explanations_tree(explanation_tree)
+    explanation_filter = HeadlessCombobox(
+        parent=results_section,
+        textvariable=app.arranger_explanation_filter,
+    )
+    app._register_arranger_explanation_filter(explanation_filter)
+    telemetry_container = HeadlessFrame(parent=results_section)
+    app._register_arranger_telemetry_container(telemetry_container)
+
+    best_effort_advanced = HeadlessFrame()
+    gp_advanced = HeadlessFrame()
+    app._register_arranger_advanced_frame(best_effort_advanced, mode="best_effort")
+    app._register_arranger_advanced_frame(gp_advanced, mode="gp")
 
 
 if TYPE_CHECKING:  # pragma: no cover

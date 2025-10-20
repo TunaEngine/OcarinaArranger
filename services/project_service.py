@@ -7,7 +7,7 @@ import shutil
 import tempfile
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Mapping, Tuple
 import zipfile
 
 from ocarina_gui.conversion import ConversionResult
@@ -16,6 +16,7 @@ from ocarina_gui.settings import TransformSettings
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 from .project_models import LoadedProject, PreviewPlaybackSnapshot, ProjectSnapshot
+from .project_service_gp import deserialize_gp_settings, serialize_gp_settings
 
 
 _MANIFEST_NAME = "manifest.json"
@@ -157,6 +158,7 @@ class ProjectService:
                     "loop_enabled": bool(state.loop_enabled),
                     "loop_start": float(state.loop_start_beat),
                     "loop_end": float(state.loop_end_beat),
+                    "volume": float(state.volume),
                 }
                 for side, state in snapshot.preview_settings.items()
             }
@@ -208,25 +210,7 @@ class ProjectService:
                 "max_steps_per_span": int(budgets.max_steps_per_span),
             }
         if snapshot.arranger_gp_settings is not None:
-            gp = snapshot.arranger_gp_settings
-            payload["gp_settings"] = {
-                "generations": int(gp.generations),
-                "population_size": int(gp.population_size),
-                "time_budget_seconds": gp.time_budget_seconds,
-                "archive_size": int(gp.archive_size),
-                "random_program_count": int(gp.random_program_count),
-                "crossover_rate": float(gp.crossover_rate),
-                "mutation_rate": float(gp.mutation_rate),
-                "log_best_programs": int(gp.log_best_programs),
-                "random_seed": int(gp.random_seed),
-                "playability_weight": float(gp.playability_weight),
-                "fidelity_weight": float(gp.fidelity_weight),
-                "tessitura_weight": float(gp.tessitura_weight),
-                "program_size_weight": float(gp.program_size_weight),
-                "contour_weight": float(gp.contour_weight),
-                "lcs_weight": float(gp.lcs_weight),
-                "pitch_weight": float(gp.pitch_weight),
-            }
+            payload["gp_settings"] = serialize_gp_settings(snapshot.arranger_gp_settings)
         return payload
 
     def _load_preview_settings(
@@ -249,12 +233,18 @@ class ProjectService:
             except (TypeError, ValueError):
                 loop_end = loop_start
             loop_enabled = bool(entry.get("loop_enabled", False)) and loop_end > loop_start
+            try:
+                volume = float(entry.get("volume", 1.0))
+            except (TypeError, ValueError):
+                volume = 1.0
+            volume = max(0.0, min(1.0, volume))
             preview_settings[str(side)] = PreviewPlaybackSnapshot(
                 tempo_bpm=tempo,
                 metronome_enabled=bool(entry.get("metronome_enabled", False)),
                 loop_enabled=loop_enabled,
                 loop_start_beat=loop_start,
                 loop_end_beat=loop_end if loop_end > loop_start else loop_start,
+                volume=volume,
             )
         return preview_settings
 
@@ -390,62 +380,10 @@ class ProjectService:
         if not isinstance(data, dict):
             return None
         raw_gp = data.get("gp_settings")
-        if not isinstance(raw_gp, dict):
+        if not isinstance(raw_gp, Mapping):
             return None
         defaults = ArrangerGPSettings()
-
-        def _safe_int(key: str, fallback: int) -> int:
-            value = raw_gp.get(key, fallback)
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return fallback
-
-        def _safe_float(key: str, fallback: float) -> float:
-            value = raw_gp.get(key, fallback)
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return fallback
-
-        time_budget_value = raw_gp.get("time_budget_seconds")
-        if time_budget_value in (None, ""):
-            time_budget_seconds: float | None = None
-        else:
-            try:
-                time_budget_seconds = float(time_budget_value)
-            except (TypeError, ValueError):
-                time_budget_seconds = None
-
-        gp_settings = ArrangerGPSettings(
-            generations=_safe_int("generations", defaults.generations),
-            population_size=_safe_int("population_size", defaults.population_size),
-            time_budget_seconds=time_budget_seconds,
-            archive_size=_safe_int("archive_size", defaults.archive_size),
-            random_program_count=_safe_int(
-                "random_program_count", defaults.random_program_count
-            ),
-            crossover_rate=_safe_float("crossover_rate", defaults.crossover_rate),
-            mutation_rate=_safe_float("mutation_rate", defaults.mutation_rate),
-            log_best_programs=_safe_int(
-                "log_best_programs", defaults.log_best_programs
-            ),
-            random_seed=_safe_int("random_seed", defaults.random_seed),
-            playability_weight=_safe_float(
-                "playability_weight", defaults.playability_weight
-            ),
-            fidelity_weight=_safe_float("fidelity_weight", defaults.fidelity_weight),
-            tessitura_weight=_safe_float(
-                "tessitura_weight", defaults.tessitura_weight
-            ),
-            program_size_weight=_safe_float(
-                "program_size_weight", defaults.program_size_weight
-            ),
-            contour_weight=_safe_float("contour_weight", defaults.contour_weight),
-            lcs_weight=_safe_float("lcs_weight", defaults.lcs_weight),
-            pitch_weight=_safe_float("pitch_weight", defaults.pitch_weight),
-        )
-        return gp_settings.normalized()
+        return deserialize_gp_settings(raw_gp, defaults)
 
     @staticmethod
     def _ensure_export_exists(path: str) -> None:

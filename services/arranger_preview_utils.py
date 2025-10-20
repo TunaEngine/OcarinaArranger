@@ -6,9 +6,11 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 from domain.arrangement.api import summarize_difficulty
 from domain.arrangement.config import register_instrument_range
+from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.salvage import SalvageBudgets
 from domain.arrangement.soft_key import InstrumentRange
 from ocarina_tools.events import NoteEvent
+
 from ocarina_tools.pitch import parse_note_name
 
 from viewmodels.arranger_models import (
@@ -92,6 +94,8 @@ def _first_program(events: Sequence[NoteEvent] | Iterable[NoteEvent]) -> int | N
 def _instrument_range_for(
     instrument_id: str,
     resolver: Callable[[str], object],
+    *,
+    preferred_override: tuple[str | None, str | None] | None = None,
 ) -> InstrumentRange | None:
     instrument_id = instrument_id.strip()
     if not instrument_id:
@@ -100,12 +104,67 @@ def _instrument_range_for(
         spec = resolver(instrument_id)
     except Exception:
         return None
-    instrument_range = _instrument_range_from_spec(spec)
+    instrument_range = _instrument_range_from_spec(spec, preferred_override=preferred_override)
     register_instrument_range(instrument_id, instrument_range)
     return instrument_range
 
 
-def _instrument_range_from_spec(spec) -> InstrumentRange:
+def _auto_register_shift(
+    span: PhraseSpan,
+    instrument: InstrumentRange,
+    *,
+    headroom: int = 2,
+) -> int:
+    """Return a uniform semitone shift that keeps ``span`` comfortably in range.
+
+    The helper nudges the phrase away from the range edges so the GP arranger
+    avoids resorting to octave clamps that introduce large melodic jumps.  When
+    the phrase already sits comfortably inside ``instrument`` the function
+    returns ``0``.
+    """
+
+    if not getattr(span, "notes", None):
+        return 0
+
+    lowest = min(note.midi for note in span.notes)
+    highest = max(note.midi for note in span.notes)
+
+    range_lower = int(instrument.min_midi) - lowest
+    range_upper = int(instrument.max_midi) - highest
+    if range_lower > range_upper:
+        return 0
+
+    def _nearest_to_zero(lower: int, upper: int) -> int | None:
+        if lower > upper:
+            return None
+        if lower <= 0 <= upper:
+            return 0
+        if upper < 0:
+            return upper
+        return lower
+
+    if headroom > 0:
+        minimum_allowed = int(instrument.min_midi) + headroom
+        maximum_allowed = int(instrument.max_midi) - headroom
+        if minimum_allowed <= maximum_allowed:
+            headroom_lower = minimum_allowed - lowest
+            headroom_upper = maximum_allowed - highest
+            candidate = _nearest_to_zero(
+                max(range_lower, headroom_lower),
+                min(range_upper, headroom_upper),
+            )
+            if candidate is not None:
+                return candidate
+
+    fallback = _nearest_to_zero(range_lower, range_upper)
+    return fallback or 0
+
+
+def _instrument_range_from_spec(
+    spec,
+    *,
+    preferred_override: tuple[str | None, str | None] | None = None,
+) -> InstrumentRange:
     def _parse(note: str, fallback: int | None = None) -> int | None:
         if note:
             try:
@@ -131,6 +190,35 @@ def _instrument_range_from_spec(spec) -> InstrumentRange:
         pref_max = max_midi
     if pref_min > pref_max:
         pref_min, pref_max = pref_max, pref_min
+
+    if preferred_override is not None:
+        override_min_raw, override_max_raw = preferred_override
+
+        override_min = _parse(override_min_raw, pref_min)
+        override_max = _parse(override_max_raw, pref_max)
+
+        if override_min is not None or override_max is not None:
+            if override_min is None:
+                override_min = pref_min
+            if override_max is None:
+                override_max = pref_max
+
+            # Fallback to instrument defaults when overrides remain undefined.
+            if override_min is None:
+                override_min = min_midi
+            if override_max is None:
+                override_max = max_midi
+
+            override_min = max(min_midi, min(max_midi, override_min))
+            override_max = max(min_midi, min(max_midi, override_max))
+
+            if override_min > override_max:
+                override_min, override_max = override_max, override_min
+
+            min_midi = override_min
+            max_midi = override_max
+            pref_min = override_min
+            pref_max = override_max
 
     center = (pref_min + pref_max) / 2.0 if pref_min is not None and pref_max is not None else None
     return InstrumentRange(min_midi=min_midi, max_midi=max_midi, comfort_center=center)

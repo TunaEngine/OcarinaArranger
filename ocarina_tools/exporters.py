@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 import xml.etree.ElementTree as ET
 
 from .events import detect_tempo_bpm
-from .musicxml import first_divisions, iter_pitched_notes_first_part, qname
+from .musicxml import first_divisions, iter_pitched_notes_first_part, make_qname_getter
 from .instruments import OCARINA_GM_PROGRAM, part_programs
 from .pitch import pitch_to_midi
 
@@ -99,7 +99,7 @@ def export_midi_poly(
             number >>= 7
         return bytes(bytearray(reversed(bytes_)))
 
-    q = lambda t: qname(root, t)
+    q = make_qname_getter(root)
     programs = part_programs(root) if use_original_instruments else {}
     events: List[Tuple[int, int, int, int, int]] = []
     channel_programs: Dict[int, int] = {}

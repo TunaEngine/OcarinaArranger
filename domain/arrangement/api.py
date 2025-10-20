@@ -385,7 +385,9 @@ def arrange(
             progress_callback=progress_callback,
         )
 
-    candidate_ids = [instrument_id]
+    candidate_ids: list[str] = []
+    if instrument_id in starred_list:
+        candidate_ids.append(instrument_id)
     for starred in starred_list:
         if starred not in candidate_ids:
             candidate_ids.append(starred)

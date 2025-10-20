@@ -12,7 +12,7 @@ from typing import Optional
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from ocarina_gui.settings import TransformSettings
-from viewmodels.arranger_models import ArrangerGPSettings
+from viewmodels.arranger_models import ArrangerGPSettings, gp_settings_warning
 from ocarina_gui.scrolling import move_canvas_to_pixel_fraction
 from services.project_service import PreviewPlaybackSnapshot
 
@@ -103,12 +103,23 @@ class PreviewUtilitiesMixin:
                     and abs(loop_end - loop_start) < 1e-6
                 ):
                     continue
+            playback = self._preview_playback.get(side)
+            if playback is not None:
+                baseline_volume = float(playback.state.volume) * 100.0
+            else:
+                baseline_volume = 100.0
+            try:
+                stored_volume = float(applied.get("volume", baseline_volume))
+            except (TypeError, ValueError):
+                stored_volume = baseline_volume
+            stored_volume = max(0.0, min(100.0, stored_volume))
             preview_settings[str(side)] = PreviewPlaybackSnapshot(
                 tempo_bpm=tempo,
                 metronome_enabled=met_enabled,
                 loop_enabled=loop_enabled,
                 loop_start_beat=loop_start,
                 loop_end_beat=loop_end if loop_end > loop_start else loop_start,
+                volume=stored_volume / 100.0,
             )
         self._viewmodel.update_preview_settings(preview_settings)
 
@@ -163,6 +174,7 @@ class PreviewUtilitiesMixin:
                     "program_size_weight": gp_defaults.program_size_weight,
                     "contour_weight": gp_defaults.contour_weight,
                     "lcs_weight": gp_defaults.lcs_weight,
+                    "apply_program_preference": gp_defaults.apply_program_preference,
                 }
 
             def _safe_rate(var: tk.Variable, fallback: float) -> float:
@@ -181,7 +193,17 @@ class PreviewUtilitiesMixin:
                     return fallback
                 return value
 
-            return {
+            def _safe_choice(var: tk.Variable | str | None, fallback: str) -> str:
+                try:
+                    if hasattr(var, "get"):
+                        text = str(var.get() or "").strip().lower()
+                    else:
+                        text = str(var or "").strip().lower()
+                except Exception:
+                    return fallback
+                return text or fallback
+
+            snapshot = {
                 "generations": _safe_int(self.arranger_gp_generations, gp_defaults.generations),
                 "population_size": _safe_int(
                     self.arranger_gp_population, gp_defaults.population_size
@@ -226,7 +248,47 @@ class PreviewUtilitiesMixin:
                 "pitch_weight": _safe_weight(
                     self.arranger_gp_pitch_weight, gp_defaults.pitch_weight
                 ),
+                "fidelity_priority_weight": _safe_weight(
+                    self.arranger_gp_fidelity_priority_weight,
+                    gp_defaults.fidelity_priority_weight,
+                ),
+                "range_clamp_penalty": _safe_weight(
+                    self.arranger_gp_range_clamp_penalty,
+                    gp_defaults.range_clamp_penalty,
+                ),
+                "range_clamp_melody_bias": _safe_weight(
+                    self.arranger_gp_range_clamp_melody_bias,
+                    gp_defaults.range_clamp_melody_bias,
+                ),
+                "melody_shift_weight": _safe_weight(
+                    self.arranger_gp_melody_shift_weight,
+                    gp_defaults.melody_shift_weight,
+                ),
+                "rhythm_simplify_weight": _safe_weight(
+                    getattr(
+                        self,
+                        "arranger_gp_rhythm_simplify_weight",
+                        gp_defaults.rhythm_simplify_weight,
+                    ),
+                    gp_defaults.rhythm_simplify_weight,
+                ),
+                "apply_program_preference": _safe_choice(
+                    getattr(
+                        self,
+                        "arranger_gp_apply_preference",
+                        gp_defaults.apply_program_preference,
+                    ),
+                    gp_defaults.apply_program_preference,
+                ),
             }
+            try:
+                settings = ArrangerGPSettings(**snapshot)
+            except TypeError:
+                settings = ArrangerGPSettings()
+            warning_var = getattr(self, "arranger_gp_warning", None)
+            if warning_var is not None:
+                warning_var.set(gp_settings_warning(settings))
+            return snapshot
 
         return {
             "prefer_mode": self.prefer_mode.get(),

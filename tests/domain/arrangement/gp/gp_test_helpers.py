@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from domain.arrangement.gp import GPSessionConfig, ProgramConstraints
+from domain.arrangement.gp.penalties import ScoringPenalties
 from domain.arrangement.phrase import PhraseNote, PhraseSpan
 
 
@@ -21,6 +22,10 @@ def gp_config() -> GPSessionConfig:
         mutation_rate=1.0,
         log_best_programs=1,
         constraints=ProgramConstraints(max_operations=3),
+        scoring_penalties=ScoringPenalties(
+            range_clamp_penalty=4.0,
+            range_clamp_melody_bias=4.0,
+        ),
     )
 
 

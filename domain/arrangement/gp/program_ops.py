@@ -10,6 +10,7 @@ from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
 from .ops import GPPrimitive, GlobalTranspose, LocalOctave, SimplifyRhythm
+from .penalties import ScoringPenalties
 
 
 def apply_program(program: Sequence[GPPrimitive], span: PhraseSpan) -> PhraseSpan:
@@ -87,6 +88,7 @@ def primitive_sampler(
     phrase: PhraseSpan,
     instrument: InstrumentRange,
     span_limits: Mapping[str, int] | None,
+    penalties: ScoringPenalties | None = None,
 ) -> Callable[[], GPPrimitive]:
     """Return a callable that samples valid primitives for mutation."""
 
@@ -103,6 +105,7 @@ def primitive_sampler(
                     rng=rng,
                     max_length=1,
                     span_limits=span_limits,
+                    penalties=penalties,
                 )
             except RuntimeError:
                 program = []
@@ -122,10 +125,16 @@ def ensure_population(
     instrument: InstrumentRange,
     rng,
     span_limits: Mapping[str, int] | None,
+    penalties: ScoringPenalties | None = None,
 ) -> list[list[GPPrimitive]]:
     """Ensure the GP population has at least *required* unique programs."""
 
     from .init import generate_random_program  # Imported lazily to avoid cycles.
+
+    penalties = penalties or ScoringPenalties()
+    allow_fidelity = penalties.allow_fidelity_edits()
+    allow_simplify = allow_fidelity and penalties.allow_rhythm_simplify()
+    allow_local = allow_fidelity and penalties.allow_melody_shift()
 
     pool = [list(program) for program in programs][:required]
     seen = {tuple(program) for program in pool}
@@ -141,6 +150,7 @@ def ensure_population(
                 rng=rng,
                 max_length=3,
                 span_limits=span_limits,
+                penalties=penalties,
             )
         except RuntimeError:
             continue
@@ -148,11 +158,28 @@ def ensure_population(
         key = tuple(candidate)
         if not candidate or key in seen:
             continue
+        if not allow_local and any(
+            isinstance(operation, LocalOctave) for operation in candidate
+        ):
+            continue
+        if not allow_simplify and any(
+            isinstance(operation, SimplifyRhythm) for operation in candidate
+        ):
+            continue
         pool.append(candidate)
         seen.add(key)
 
     if len(pool) < required:
-        raise RuntimeError("Unable to seed initial GP population with the requested size")
+        if not pool:
+            raise RuntimeError(
+                "Unable to seed initial GP population with the requested size"
+            )
+
+        base_programs = [list(program) for program in pool]
+        index = 0
+        while len(pool) < required:
+            pool.append(list(base_programs[index % len(base_programs)]))
+            index += 1
 
     return pool
 

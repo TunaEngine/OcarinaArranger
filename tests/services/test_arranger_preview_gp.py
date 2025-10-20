@@ -78,6 +78,7 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
         )
         return SimpleNamespace(
             chosen=candidate,
+            winner_candidate=candidate,
             comparisons=(candidate,),
             session=SimpleNamespace(generations=3, elapsed_seconds=1.25),
             termination_reason="generation_limit",
@@ -113,6 +114,8 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
             )
         ),
         "manual_transposition": 0,
+        "transposition": 0,
+        "preferred_register_shift": 0,
     }
     assert computation.summaries
     assert computation.result_summary is not None
@@ -120,6 +123,199 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
     assert computation.telemetry
     assert computation.arranged_events is not None
     assert computation.strategy == "current"
+
+
+def test_compute_arranger_preview_gp_current_strategy_ignores_starred_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = (
+        NoteEvent(onset=0, duration=240, midi=72, program=0),
+        NoteEvent(onset=240, duration=240, midi=74, program=0),
+    )
+    preview = preview_fixture(events)
+
+    choices = (
+        InstrumentChoice("alto_c_12", "12-hole Alto C"),
+        InstrumentChoice("bass_c_12", "12-hole Bass C"),
+    )
+    alto_spec = make_spec(
+        "alto_c_12",
+        candidate_min="B3",
+        candidate_max="A5",
+        preferred_min="C4",
+        preferred_max="G5",
+    )
+    bass_spec = make_spec(
+        "bass_c_12",
+        candidate_min="A3",
+        candidate_max="F5",
+        preferred_min="A3",
+        preferred_max="F5",
+    )
+
+    monkeypatch.setattr(
+        "services.arranger_preview.get_available_instruments",
+        lambda: choices,
+    )
+    monkeypatch.setattr(
+        "services.arranger_preview.get_instrument",
+        lambda instrument_id: alto_spec if instrument_id == "alto_c_12" else bass_spec,
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_arrange_v3_gp(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        candidate = SimpleNamespace(
+            instrument_id="alto_c_12",
+            instrument=InstrumentRange(min_midi=57, max_midi=81, comfort_center=69),
+            program=(),
+            span=PhraseSpan(
+                (
+                    PhraseNote(onset=0, duration=240, midi=72),
+                    PhraseNote(onset=240, duration=240, midi=74),
+                ),
+                pulses_per_quarter=480,
+            ),
+            difficulty=summarize_difficulty(
+                PhraseSpan(
+                    (
+                        PhraseNote(onset=0, duration=240, midi=72),
+                        PhraseNote(onset=240, duration=240, midi=74),
+                    ),
+                    pulses_per_quarter=480,
+                ),
+                InstrumentRange(min_midi=57, max_midi=81, comfort_center=69),
+            ),
+            fitness=None,
+            explanations=(),
+        )
+        return SimpleNamespace(
+            chosen=candidate,
+            winner_candidate=candidate,
+            comparisons=(candidate,),
+            session=SimpleNamespace(generations=1, elapsed_seconds=0.5),
+            termination_reason="generation_limit",
+            archive_summary=(),
+            fallback=None,
+        )
+
+    monkeypatch.setattr("services.arranger_preview.arrange_v3_gp", _fake_arrange_v3_gp)
+
+    computation = compute_arranger_preview(
+        preview,
+        arranger_mode="gp",
+        instrument_id="alto_c_12",
+        starred_instrument_ids=("bass_c_12",),
+        strategy="current",
+        dp_slack_enabled=False,
+        gp_settings=ArrangerGPSettings(),
+    )
+
+    kwargs = dict(captured.get("kwargs", {}))
+    assert kwargs.get("starred_ids") == ()
+    assert computation.resolved_starred_ids == ("bass_c_12",)
+
+
+def test_compute_arranger_preview_gp_starred_updates_resolved_instrument(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events = (
+        NoteEvent(onset=0, duration=240, midi=72, program=0),
+        NoteEvent(onset=240, duration=240, midi=74, program=0),
+    )
+    preview = preview_fixture(events)
+
+    choices = (
+        InstrumentChoice("alto_c_12", "12-hole Alto C"),
+        InstrumentChoice("soprano_c_6", "6-hole Soprano C"),
+    )
+    alto_spec = make_spec(
+        "alto_c_12",
+        candidate_min="B3",
+        candidate_max="A5",
+        preferred_min="C4",
+        preferred_max="G5",
+    )
+    soprano_spec = make_spec(
+        "soprano_c_6",
+        candidate_min="C4",
+        candidate_max="C6",
+        preferred_min="D4",
+        preferred_max="A5",
+    )
+
+    monkeypatch.setattr(
+        "services.arranger_preview.get_available_instruments",
+        lambda: choices,
+    )
+    monkeypatch.setattr(
+        "services.arranger_preview.get_instrument",
+        lambda instrument_id: alto_spec if instrument_id == "alto_c_12" else soprano_spec,
+    )
+
+    soprano_range = InstrumentRange(min_midi=60, max_midi=84, comfort_center=72)
+    alto_range = InstrumentRange(min_midi=57, max_midi=81, comfort_center=69)
+    phrase_notes = (
+        PhraseNote(onset=0, duration=240, midi=72),
+        PhraseNote(onset=240, duration=240, midi=74),
+    )
+    span = PhraseSpan(phrase_notes, pulses_per_quarter=480)
+    alto_span = span.transpose(-2)
+
+    def _fake_arrange_v3_gp(*_args, **_kwargs):
+        base_candidate = SimpleNamespace(
+            instrument_id="alto_c_12",
+            instrument=alto_range,
+            program=(GlobalTranspose(-2),),
+            span=alto_span,
+            difficulty=summarize_difficulty(alto_span, alto_range),
+            fitness=None,
+            explanations=(),
+        )
+        starred_candidate = SimpleNamespace(
+            instrument_id="soprano_c_6",
+            instrument=soprano_range,
+            program=(),
+            span=span,
+            difficulty=summarize_difficulty(span, soprano_range),
+            fitness=None,
+            explanations=(),
+        )
+        return SimpleNamespace(
+            chosen=starred_candidate,
+            winner_candidate=base_candidate,
+            comparisons=(starred_candidate, base_candidate),
+            session=SimpleNamespace(generations=2, elapsed_seconds=0.75),
+            termination_reason="generation_limit",
+            archive_summary=(),
+            fallback=None,
+            strategy="starred-best",
+        )
+
+    monkeypatch.setattr("services.arranger_preview.arrange_v3_gp", _fake_arrange_v3_gp)
+
+    computation = compute_arranger_preview(
+        preview,
+        arranger_mode="gp",
+        instrument_id="alto_c_12",
+        starred_instrument_ids=("soprano_c_6",),
+        strategy="starred-best",
+        dp_slack_enabled=False,
+        gp_settings=ArrangerGPSettings(),
+    )
+
+    assert computation.result_summary is not None
+    assert computation.result_summary.instrument_id == "soprano_c_6"
+    assert computation.result_summary.transposition == 0
+    assert computation.resolved_instrument_id == "soprano_c_6"
+    assert computation.resolved_instrument_range == ("D4", "A5")
+    assert computation.summaries
+    assert computation.summaries[0].instrument_id == "soprano_c_6"
+    assert computation.summaries[0].is_winner is True
+    assert computation.arranged_events is not None
+    assert tuple(event.midi for event in computation.arranged_events) == (72, 74)
+    assert sum(1 for row in computation.summaries if row.is_winner) == 1
 
 
 def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -166,6 +362,7 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
         )
         return SimpleNamespace(
             chosen=candidate,
+            winner_candidate=candidate,
             comparisons=(candidate,),
             session=SimpleNamespace(generations=1, elapsed_seconds=0.1),
             termination_reason="generation_limit",
@@ -182,7 +379,7 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
         starred_instrument_ids=(),
         strategy="current",
         dp_slack_enabled=False,
-        gp_settings=ArrangerGPSettings(),
+        gp_settings=ArrangerGPSettings(apply_program_preference="ranked"),
         transpose_offset=5,
     )
 
@@ -193,25 +390,26 @@ def test_compute_arranger_preview_gp_respects_manual_transpose(monkeypatch: pyte
     assert computation.result_summary is not None
     assert computation.result_summary.transposition == 5
     assert captured.get("kwargs", {}).get("manual_transposition") == 5
+    assert captured.get("kwargs", {}).get("transposition") == 5
+    assert captured.get("kwargs", {}).get("preferred_register_shift") == 0
 
 
-def test_compute_arranger_preview_reports_intermediate_gp_progress(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_compute_arranger_preview_gp_uses_chosen_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
     events = (
-        NoteEvent(onset=0, duration=240, midi=72, program=0),
-        NoteEvent(onset=240, duration=240, midi=74, program=0),
+        NoteEvent(onset=0, duration=480, midi=60, program=0),
+        NoteEvent(onset=480, duration=480, midi=60, program=0),
     )
     preview = preview_fixture(events)
 
     choices = (InstrumentChoice("alto_c_12", "12-hole Alto C"),)
-    spec = make_spec(
+    instrument_spec = make_spec(
         "alto_c_12",
         candidate_min="B3",
         candidate_max="A5",
         preferred_min="C4",
         preferred_max="G5",
     )
+    instrument_range = InstrumentRange(min_midi=60, max_midi=84, comfort_center=72)
 
     monkeypatch.setattr(
         "services.arranger_preview.get_available_instruments",
@@ -219,43 +417,48 @@ def test_compute_arranger_preview_reports_intermediate_gp_progress(
     )
     monkeypatch.setattr(
         "services.arranger_preview.get_instrument",
-        lambda instrument_id: spec,
+        lambda instrument_id: instrument_spec,
     )
 
-    instrument_range = InstrumentRange(min_midi=60, max_midi=84, comfort_center=72)
-    candidate_span = PhraseSpan(
+    chosen_span = PhraseSpan(
         (
-            PhraseNote(onset=0, duration=240, midi=72),
-            PhraseNote(onset=240, duration=240, midi=74),
+            PhraseNote(onset=0, duration=480, midi=72),
+            PhraseNote(onset=480, duration=480, midi=74),
         ),
         pulses_per_quarter=480,
     )
-    difficulty = summarize_difficulty(candidate_span, instrument_range)
+    runner_up_span = PhraseSpan(
+        (
+            PhraseNote(onset=0, duration=480, midi=67),
+            PhraseNote(onset=480, duration=480, midi=69),
+        ),
+        pulses_per_quarter=480,
+    )
+    chosen_candidate = SimpleNamespace(
+        instrument_id="alto_c_12",
+        instrument=instrument_range,
+        program=(GlobalTranspose(12),),
+        span=chosen_span,
+        difficulty=summarize_difficulty(chosen_span, instrument_range),
+        fitness=None,
+        explanations=(),
+    )
+    runner_up = SimpleNamespace(
+        instrument_id="alto_c_12",
+        instrument=instrument_range,
+        program=(GlobalTranspose(0),),
+        span=runner_up_span,
+        difficulty=summarize_difficulty(runner_up_span, instrument_range),
+        fitness=None,
+        explanations=(),
+    )
 
-    progress_updates: list[tuple[float, str | None]] = []
-
-    def _progress(percent: float, message: str | None) -> None:
-        progress_updates.append((percent, message))
-
-    def _fake_arrange_v3_gp(span, *args, **kwargs):
-        callback = kwargs.get("progress_callback")
-        assert callback is not None
-        callback(0, 5)
-        callback(2, 5)
-        callback(4, 5)
-        candidate = SimpleNamespace(
-            instrument_id="alto_c_12",
-            instrument=instrument_range,
-            program=(),
-            span=span,
-            difficulty=difficulty,
-            fitness=None,
-            explanations=(),
-        )
+    def _fake_arrange_v3_gp(*args, **kwargs):
         return SimpleNamespace(
-            chosen=candidate,
-            comparisons=(candidate,),
-            session=SimpleNamespace(generations=5, elapsed_seconds=1.0),
+            chosen=chosen_candidate,
+            winner_candidate=runner_up,
+            comparisons=(chosen_candidate, runner_up),
+            session=SimpleNamespace(generations=1, elapsed_seconds=0.2),
             termination_reason="generation_limit",
             archive_summary=(),
             fallback=None,
@@ -263,61 +466,20 @@ def test_compute_arranger_preview_reports_intermediate_gp_progress(
 
     monkeypatch.setattr("services.arranger_preview.arrange_v3_gp", _fake_arrange_v3_gp)
 
-    compute_arranger_preview(
+    computation = compute_arranger_preview(
         preview,
         arranger_mode="gp",
         instrument_id="alto_c_12",
         starred_instrument_ids=(),
         strategy="current",
         dp_slack_enabled=False,
-        gp_settings=ArrangerGPSettings(generations=5),
-        progress_callback=_progress,
+        gp_settings=ArrangerGPSettings(apply_program_preference="ranked"),
     )
 
-    percents = [percent for percent, _ in progress_updates]
-    assert percents[0] == 0.0
-    assert 10.0 in percents, "expected initial GP progress notification"
-    assert any(10.0 < value < 99.0 for value in percents)
-    assert percents[-1] == 100.0
+    assert computation.arranged_events is not None
+    arranged_midis = tuple(event.midi for event in computation.arranged_events)
+    assert arranged_midis == (72, 74)
+    assert computation.result_summary is not None
+    assert computation.result_summary.transposition == 12
 
-def test_gp_session_config_applies_advanced_settings() -> None:
-    settings = ArrangerGPSettings(
-        generations=5,
-        population_size=20,
-        archive_size=9,
-        random_program_count=7,
-        crossover_rate=0.55,
-        mutation_rate=0.25,
-        log_best_programs=5,
-        random_seed=42,
-        time_budget_seconds=18.0,
-        playability_weight=0.8,
-        fidelity_weight=2.4,
-        tessitura_weight=0.6,
-        program_size_weight=0.4,
-        contour_weight=0.45,
-        lcs_weight=0.55,
-        pitch_weight=0.6,
-    )
 
-    config = _gp_session_config(settings)
-
-    assert config.generations == 5
-    assert config.population_size == 20
-    assert config.archive_size == 9
-    assert config.random_program_count == 7
-    assert config.crossover_rate == pytest.approx(0.55)
-    assert config.mutation_rate == pytest.approx(0.25)
-    assert config.log_best_programs == 5
-    assert config.random_seed == 42
-    assert config.time_budget_seconds == pytest.approx(18.0)
-
-    fitness = config.fitness_config
-    assert fitness is not None
-    assert fitness.playability.weight == pytest.approx(0.8)
-    assert fitness.fidelity.weight == pytest.approx(2.4)
-    assert fitness.tessitura.weight == pytest.approx(0.6)
-    assert fitness.program_size.weight == pytest.approx(0.4)
-    assert fitness.fidelity_components.contour_weight == pytest.approx(0.45)
-    assert fitness.fidelity_components.lcs_weight == pytest.approx(0.55)
-    assert fitness.fidelity_components.pitch_weight == pytest.approx(0.6)

@@ -120,8 +120,12 @@ def auto_range_programs(
     instrument: InstrumentRange,
     *,
     beats_per_measure: int = 4,
+    preferred_shift: int | None = None,
 ) -> tuple[tuple[GPPrimitive, ...], ...]:
     """Return global transpose programs that keep ``phrase`` inside ``instrument``."""
+
+    # ``preferred_shift`` seeds the candidate pool with a hinted global
+    # transpose even when the phrase already fits the raw range.
 
     if not phrase.notes:
         return ()
@@ -130,6 +134,12 @@ def auto_range_programs(
     highest = max(note.midi for note in phrase.notes)
 
     shift_values: set[int] = set()
+
+    if preferred_shift not in (None, 0):
+        try:
+            shift_values.add(int(preferred_shift))
+        except (TypeError, ValueError):
+            pass
     comfort_center = (
         instrument.comfort_center
         if instrument.comfort_center is not None

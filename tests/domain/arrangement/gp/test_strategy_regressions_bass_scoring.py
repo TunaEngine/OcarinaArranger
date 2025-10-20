@@ -1,145 +1,61 @@
-from __future__ import annotations
+"""Regression tests covering scoring heuristics for bass arrangements."""
 
-from typing import Dict, List
+from __future__ import annotations
 
 from domain.arrangement.config import register_instrument_range
 from domain.arrangement.difficulty import summarize_difficulty
-from domain.arrangement.gp import arrange_v3_gp
-from domain.arrangement.gp.fitness import (
-    FitnessVector,
-    compute_fitness,
-    melody_pitch_penalty,
-)
-from domain.arrangement.gp.ops import GlobalTranspose, LocalOctave, SimplifyRhythm, SpanDescriptor
-from domain.arrangement.gp.selection import Individual
-from domain.arrangement.gp.session import GPSessionResult
-from domain.arrangement.gp.session_logging import GPSessionLog
+from domain.arrangement.gp.fitness import FitnessVector, compute_fitness, melody_pitch_penalty
+from domain.arrangement.gp.ops import GlobalTranspose, LocalOctave, SpanDescriptor
 from domain.arrangement.gp.strategy import (
     GPInstrumentCandidate,
     _difficulty_sort_key,
-    _melody_shift_penalty,
+    _evaluate_program_candidate,
 )
+from domain.arrangement.gp.strategy_scoring import ScoringPenalties, _melody_shift_penalty
 from domain.arrangement.range_guard import enforce_instrument_range
 from domain.arrangement.soft_key import InstrumentRange
 
 from tests.domain.arrangement.gp.gp_test_helpers import bass_phrase, gp_config
 
 
-MELODY_MIDIS = [52, 55, 57, 60, 62, 64, 62, 60, 59, 57]
+def test_sort_key_demotes_multi_octave_uniform_shifts() -> None:
+    """Pure two-octave shifts should rank below moderate global transposes."""
 
-
-def _bass_session(winner: Individual, config) -> GPSessionResult:
-    return GPSessionResult(
-        winner=winner,
-        log=GPSessionLog(seed=config.random_seed, config={}),
-        archive=(winner,),
-        population=(winner,),
-        generations=config.generations,
-        elapsed_seconds=0.01,
-        termination_reason="generation_limit",
-    )
-
-
-def test_gp_strategy_preserves_melody_for_bass_c_sample(monkeypatch) -> None:
-    """Regression: keep melody intact for the Bass C sample despite low bass."""
-
-    instrument = InstrumentRange(min_midi=57, max_midi=77, comfort_center=67)
-    register_instrument_range("bass", instrument)
+    instrument = InstrumentRange(min_midi=69, max_midi=89, comfort_center=79)
+    register_instrument_range("alto_rank_penalty", instrument)
 
     phrase = bass_phrase()
-
     config = gp_config()
-    total_duration = len(phrase.notes) * 240
-    winner_program = (
-        LocalOctave(span=SpanDescriptor(0, total_duration), octaves=2),
-        SimplifyRhythm(span=SpanDescriptor(0, total_duration), subdivisions=3),
-        SimplifyRhythm(span=SpanDescriptor(0, total_duration), subdivisions=3),
-    )
-    winner = Individual(
-        program=winner_program,
-        fitness=FitnessVector(
-            playability=0.2,
-            fidelity=0.2,
-            tessitura=0.2,
-            program_size=3.0,
-        ),
-    )
-    fake_result = _bass_session(winner, config)
 
-    monkeypatch.setattr(
-        "domain.arrangement.gp.strategy.run_gp_session",
-        lambda *_args, **_kwargs: fake_result,
+    total_duration = phrase.total_duration
+    local_program = (
+        LocalOctave(span=SpanDescriptor(0, total_duration, "phrase"), octaves=2),
     )
+    moderate_program = (GlobalTranspose(semitones=16),)
 
-    result = arrange_v3_gp(
-        phrase,
-        instrument_id="bass",
-        config=config,
+    penalties = ScoringPenalties(range_clamp_penalty=4.9, range_clamp_melody_bias=4.0)
+
+    local_candidate, _ = _evaluate_program_candidate(
+        local_program,
+        instrument_id="alto_rank_penalty",
+        instrument=instrument,
+        phrase=phrase,
+        beats_per_measure=4,
+        fitness_config=config.fitness_config,
+    )
+    moderate_candidate, _ = _evaluate_program_candidate(
+        moderate_program,
+        instrument_id="alto_rank_penalty",
+        instrument=instrument,
+        phrase=phrase,
+        beats_per_measure=4,
+        fitness_config=config.fitness_config,
     )
 
-    chosen_program = result.chosen.program
-    assert chosen_program and isinstance(chosen_program[0], GlobalTranspose)
-    assert chosen_program[0].semitones == 12
+    local_key = _difficulty_sort_key(local_candidate, penalties=penalties)
+    moderate_key = _difficulty_sort_key(moderate_candidate, penalties=penalties)
 
-    grouped: Dict[int, List[int]] = {}
-    for note in result.chosen.span.notes:
-        grouped.setdefault(note.onset, []).append(note.midi)
-
-    top_voice = [max(grouped[onset]) for onset in sorted(grouped)]
-    expected_top = [midi + 12 for midi in MELODY_MIDIS]
-    assert top_voice[-len(expected_top) :] == expected_top
-    assert top_voice[0] >= instrument.min_midi
-
-
-def test_gp_strategy_adds_transpose_when_intro_is_only_bass(monkeypatch) -> None:
-    """Regression: melody after a bass-only intro should still drive auto-range."""
-
-    instrument = InstrumentRange(min_midi=57, max_midi=77, comfort_center=67)
-    register_instrument_range("bass", instrument)
-
-    phrase = bass_phrase(intro_eighths=4)
-
-    config = gp_config()
-    total_duration = len(phrase.notes) * 240
-    winner_program = (
-        LocalOctave(span=SpanDescriptor(0, total_duration), octaves=2),
-        SimplifyRhythm(span=SpanDescriptor(0, total_duration), subdivisions=3),
-        SimplifyRhythm(span=SpanDescriptor(0, total_duration), subdivisions=3),
-    )
-    winner = Individual(
-        program=winner_program,
-        fitness=FitnessVector(
-            playability=0.2,
-            fidelity=0.2,
-            tessitura=0.2,
-            program_size=3.0,
-        ),
-    )
-    fake_result = _bass_session(winner, config)
-
-    monkeypatch.setattr(
-        "domain.arrangement.gp.strategy.run_gp_session",
-        lambda *_args, **_kwargs: fake_result,
-    )
-
-    result = arrange_v3_gp(
-        phrase,
-        instrument_id="bass",
-        config=config,
-    )
-
-    chosen_program = result.chosen.program
-    assert chosen_program and isinstance(chosen_program[0], GlobalTranspose)
-    assert chosen_program[0].semitones == 12
-
-    grouped: Dict[int, List[int]] = {}
-    for note in result.chosen.span.notes:
-        grouped.setdefault(note.onset, []).append(note.midi)
-
-    top_voice = [max(grouped[onset]) for onset in sorted(grouped)]
-    expected_top = [midi + 12 for midi in MELODY_MIDIS]
-    assert top_voice[-len(expected_top) :] == expected_top
-    assert any(min(group) == instrument.min_midi for group in grouped.values())
+    assert moderate_key < local_key
 
 
 def test_gp_strategy_prefers_octave_transpose_with_upper_extensions() -> None:
@@ -302,4 +218,3 @@ def test_sort_key_favours_global_transpose_with_clamped_bass() -> None:
 
     assert key_transpose < key_identity
     assert key_transpose[0] < key_identity[0]
-

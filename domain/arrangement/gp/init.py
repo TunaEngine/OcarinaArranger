@@ -11,6 +11,7 @@ from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
 from .ops import GPPrimitive, GlobalTranspose, LocalOctave, SimplifyRhythm, SpanDescriptor
+from .penalties import ScoringPenalties
 from .recipes import curated_recipes
 from .validation import ProgramValidationError, validate_program
 
@@ -21,8 +22,14 @@ def translate_salvage_trace(
     span: PhraseSpan,
     transposition: int = 0,
     span_limits: Mapping[str, int] | None = None,
+    penalties: ScoringPenalties | None = None,
 ) -> list[GPPrimitive]:
     """Translate arranger v2 salvage events into GP primitives."""
+
+    penalties = penalties or ScoringPenalties()
+    allow_fidelity = penalties.allow_fidelity_edits()
+    allow_simplify = allow_fidelity and penalties.allow_rhythm_simplify()
+    allow_local = allow_fidelity and penalties.allow_melody_shift()
 
     program: list[GPPrimitive] = []
     if transposition:
@@ -33,9 +40,11 @@ def translate_salvage_trace(
         action = event.action.lower()
         reason_code = event.reason_code.lower()
 
-        if "octave" in action or "range-edge" in reason_code:
+        if allow_local and ("octave" in action or "range-edge" in reason_code):
             primitive = _translate_octave_event(event)
-        elif "rhythm" in action or "rhythm" in reason_code or "ornamental" in reason_code:
+        elif allow_simplify and (
+            "rhythm" in action or "rhythm" in reason_code or "ornamental" in reason_code
+        ):
             primitive = _translate_rhythm_event(event)
 
         if primitive is None:
@@ -65,8 +74,14 @@ def seed_programs(
     random_count: int = 3,
     rng: random.Random | None = None,
     span_limits: Mapping[str, int] | None = None,
+    penalties: ScoringPenalties | None = None,
 ) -> list[list[GPPrimitive]]:
     """Build an initial pool of GP programs from salvage data and heuristics."""
+
+    penalties = penalties or ScoringPenalties()
+    allow_fidelity = penalties.allow_fidelity_edits()
+    allow_simplify = allow_fidelity and penalties.allow_rhythm_simplify()
+    allow_local = allow_fidelity and penalties.allow_melody_shift()
 
     rng = rng or random.Random()
     programs: list[list[GPPrimitive]] = []
@@ -80,6 +95,14 @@ def seed_programs(
             return
         if not _program_is_valid(candidate, span, span_limits):
             return
+        if not allow_local and any(
+            isinstance(operation, LocalOctave) for operation in candidate
+        ):
+            return
+        if not allow_simplify and any(
+            isinstance(operation, SimplifyRhythm) for operation in candidate
+        ):
+            return
         programs.append(list(candidate))
         seen.add(key)
 
@@ -89,10 +112,11 @@ def seed_programs(
         span=span,
         transposition=transposition,
         span_limits=span_limits,
+        penalties=penalties,
     )
     _try_add(salvage_program)
 
-    for recipe in curated_recipes(span, instrument):
+    for recipe in curated_recipes(span, instrument, penalties=penalties):
         _try_add(recipe)
 
     for _ in range(max(0, random_count)):
@@ -103,6 +127,7 @@ def seed_programs(
                 rng=rng,
                 max_length=3,
                 span_limits=span_limits,
+                penalties=penalties,
             )
         except RuntimeError:
             continue
@@ -119,8 +144,14 @@ def generate_random_program(
     max_length: int = 3,
     span_limits: Mapping[str, int] | None = None,
     max_attempts: int = 50,
+    penalties: ScoringPenalties | None = None,
 ) -> list[GPPrimitive]:
     """Construct a short random program that passes validation."""
+
+    penalties = penalties or ScoringPenalties()
+    allow_fidelity = penalties.allow_fidelity_edits()
+    allow_simplify = allow_fidelity and penalties.allow_rhythm_simplify()
+    allow_local = allow_fidelity and penalties.allow_melody_shift()
 
     rng = rng or random.Random()
     if not span.notes:
@@ -132,7 +163,14 @@ def generate_random_program(
         length = max(1, min(max_length, rng.randint(1, max_length)))
         program: list[GPPrimitive] = []
         while len(program) < length:
-            primitive = _random_primitive(span, instrument, rng, program)
+            primitive = _random_primitive(
+                span,
+                instrument,
+                rng,
+                program,
+                allow_simplify=allow_simplify,
+                allow_local=allow_local,
+            )
             if primitive is None:
                 break
             program.append(primitive)
@@ -237,11 +275,25 @@ def _random_primitive(
     instrument: InstrumentRange,
     rng: random.Random,
     current: Sequence[GPPrimitive],
+    *,
+    allow_simplify: bool,
+    allow_local: bool,
 ) -> GPPrimitive | None:
-    choices = ["local", "rhythm"]
+    choices: list[str] = []
+    if allow_local:
+        choices.append("local")
+    if allow_simplify:
+        choices.append("rhythm")
     if not any(isinstance(op, GlobalTranspose) for op in current):
         if _global_transpose_candidates(span, instrument):
             choices.append("global")
+    else:
+        # Still consider a global transpose when it is the only available option.
+        if not choices and _global_transpose_candidates(span, instrument):
+            choices.append("global")
+
+    if not choices:
+        return None
 
     kind = rng.choice(choices)
     if kind == "global":

@@ -48,6 +48,41 @@ def test_low_melody_voice_rises_by_octave() -> None:
     assert adjusted.notes[0].ottava_shifts
 
 
+def test_top_voice_near_floor_prefers_boundary_over_octave() -> None:
+    """Melody notes barely below range clamp to the boundary to avoid leaps."""
+
+    instrument = InstrumentRange(min_midi=69, max_midi=89)
+    original = _make_span(65)
+
+    adjusted, event, _ = enforce_instrument_range(
+        original,
+        instrument,
+        beats_per_measure=4,
+    )
+
+    assert event is not None
+    assert adjusted.notes[0].midi == instrument.min_midi
+    assert not adjusted.notes[0].ottava_shifts
+
+
+def test_boundary_clamp_skips_when_surrounded_by_floor_notes() -> None:
+    """Notes squeezed between boundary tones keep the melodic contour."""
+
+    instrument = InstrumentRange(min_midi=57, max_midi=89)
+    original = _make_span(57, 56, 57)
+
+    adjusted, event, _ = enforce_instrument_range(
+        original,
+        instrument,
+        beats_per_measure=4,
+    )
+
+    assert event is not None
+    adjusted_midis = [note.midi for note in adjusted.notes]
+    assert adjusted_midis == [57, 68, 57]
+    assert adjusted.notes[1].ottava_shifts
+
+
 def test_low_inner_voice_still_clamps_to_floor() -> None:
     """Accompaniment voices stay anchored at the instrument boundary."""
 

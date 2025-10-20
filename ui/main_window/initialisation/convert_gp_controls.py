@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
-from viewmodels.arranger_models import ArrangerGPSettings
+from viewmodels.arranger_models import ArrangerGPSettings, gp_settings_warning
 
 
 class ArrangerGPControlsMixin:
@@ -55,6 +55,15 @@ class ArrangerGPControlsMixin:
                 return fallback
             return value if value >= 0 else 0.0
 
+        preference_var = getattr(self, "arranger_gp_apply_preference", None)
+        if isinstance(preference_var, tk.Variable):
+            try:
+                preference_value = str(preference_var.get() or "").strip().lower()
+            except (tk.TclError, AttributeError):
+                preference_value = defaults.apply_program_preference
+        else:
+            preference_value = defaults.apply_program_preference
+
         return ArrangerGPSettings(
             generations=_safe_int(self.arranger_gp_generations, defaults.generations),
             population_size=_safe_int(self.arranger_gp_population, defaults.population_size),
@@ -90,7 +99,32 @@ class ArrangerGPControlsMixin:
             pitch_weight=_safe_weight(
                 self.arranger_gp_pitch_weight, defaults.pitch_weight
             ),
+            fidelity_priority_weight=_safe_weight(
+                self.arranger_gp_fidelity_priority_weight,
+                defaults.fidelity_priority_weight,
+            ),
+            range_clamp_penalty=_safe_weight(
+                self.arranger_gp_range_clamp_penalty, defaults.range_clamp_penalty
+            ),
+            range_clamp_melody_bias=_safe_weight(
+                self.arranger_gp_range_clamp_melody_bias,
+                defaults.range_clamp_melody_bias,
+            ),
+            melody_shift_weight=_safe_weight(
+                self.arranger_gp_melody_shift_weight, defaults.melody_shift_weight
+            ),
+            rhythm_simplify_weight=_safe_weight(
+                self.arranger_gp_rhythm_simplify_weight,
+                defaults.rhythm_simplify_weight,
+            ),
+            apply_program_preference=preference_value,
         )
+
+    def _set_arranger_gp_warning(self, settings: ArrangerGPSettings) -> None:
+        warning_var = getattr(self, "arranger_gp_warning", None)
+        if warning_var is None:
+            return
+        warning_var.set(gp_settings_warning(settings))
 
     def _apply_arranger_gp_vars(self, settings: ArrangerGPSettings) -> None:
         normalized = settings if isinstance(settings, ArrangerGPSettings) else ArrangerGPSettings()
@@ -126,6 +160,31 @@ class ArrangerGPControlsMixin:
             _set_weight(self.arranger_gp_contour_weight, normalized.contour_weight)
             _set_weight(self.arranger_gp_lcs_weight, normalized.lcs_weight)
             _set_weight(self.arranger_gp_pitch_weight, normalized.pitch_weight)
+            _set_weight(
+                self.arranger_gp_fidelity_priority_weight,
+                normalized.fidelity_priority_weight,
+            )
+            _set_weight(
+                self.arranger_gp_range_clamp_penalty,
+                normalized.range_clamp_penalty,
+            )
+            _set_weight(
+                self.arranger_gp_range_clamp_melody_bias,
+                normalized.range_clamp_melody_bias,
+            )
+            _set_weight(
+                self.arranger_gp_melody_shift_weight,
+                normalized.melody_shift_weight,
+            )
+            _set_weight(
+                self.arranger_gp_rhythm_simplify_weight,
+                normalized.rhythm_simplify_weight,
+            )
+            if hasattr(self, "arranger_gp_apply_preference"):
+                self.arranger_gp_apply_preference.set(
+                    normalized.apply_program_preference
+                )
+            self._set_arranger_gp_warning(normalized)
         finally:
             self._suspend_arranger_gp_trace = False
 
@@ -133,12 +192,52 @@ class ArrangerGPControlsMixin:
         if self._suspend_arranger_gp_trace:
             return
         settings = self._collect_arranger_gp_settings()
+        self._set_arranger_gp_warning(settings)
         self._viewmodel.update_settings(arranger_gp_settings=settings)
 
     def reset_arranger_gp_settings(self) -> None:
         defaults = ArrangerGPSettings()
         self._viewmodel.update_settings(arranger_gp_settings=defaults)
         self._apply_arranger_gp_vars(defaults)
+
+    def export_arranger_gp_settings(self) -> None:
+        settings = self._collect_arranger_gp_settings()
+        result = self._viewmodel.export_gp_settings(settings)
+        if result is None:
+            return
+        if result.is_err():
+            message = f"GP preset export failed: {result.error}"
+            if hasattr(self, "status"):
+                try:
+                    self.status.set(message)
+                except Exception:  # pragma: no cover - Tk variable failures
+                    pass
+            return
+        if hasattr(self, "status"):
+            try:
+                self.status.set(self._viewmodel.state.status_message)
+            except Exception:  # pragma: no cover - Tk variable failures
+                pass
+
+    def import_arranger_gp_settings(self) -> None:
+        result = self._viewmodel.import_gp_settings()
+        if result is None:
+            return
+        if result.is_err():
+            message = f"GP preset import failed: {result.error}"
+            if hasattr(self, "status"):
+                try:
+                    self.status.set(message)
+                except Exception:  # pragma: no cover - Tk variable failures
+                    pass
+            return
+        imported = result.unwrap()
+        self._apply_arranger_gp_vars(imported)
+        if hasattr(self, "status"):
+            try:
+                self.status.set(self._viewmodel.state.status_message)
+            except Exception:  # pragma: no cover - Tk variable failures
+                pass
 
     def _sync_arranger_gp_from_state(
         self, settings: ArrangerGPSettings | None

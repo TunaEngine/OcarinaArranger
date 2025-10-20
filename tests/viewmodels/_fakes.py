@@ -22,18 +22,24 @@ class FakeDialogs(FileDialogAdapter):
         save_path: Optional[str] = None,
         project_open_path: Optional[str] = None,
         project_save_path: Optional[str] = None,
+        gp_open_path: Optional[str] = None,
+        gp_save_path: Optional[str] = None,
         part_selection: Sequence[str] | None | object = Ellipsis,
     ) -> None:
         self._open_path = open_path
         self._save_path = save_path
         self._project_open_path = project_open_path
         self._project_save_path = project_save_path
+        self._gp_open_path = gp_open_path
+        self._gp_save_path = gp_save_path
         self._part_selection = part_selection
         self._has_explicit_part_selection = part_selection is not Ellipsis
         self.open_calls: list[None] = []
         self.save_calls: list[str] = []
         self.project_open_calls: list[None] = []
         self.project_save_calls: list[str] = []
+        self.gp_open_calls: list[None] = []
+        self.gp_save_calls: list[str] = []
         self.part_selection_calls: list[
             tuple[tuple[MusicXmlPartInfo, ...], tuple[str, ...]]
         ] = []
@@ -53,6 +59,14 @@ class FakeDialogs(FileDialogAdapter):
     def ask_save_project_path(self, suggested_name: str) -> str | None:
         self.project_save_calls.append(suggested_name)
         return self._project_save_path
+
+    def ask_open_gp_preset_path(self) -> str | None:
+        self.gp_open_calls.append(None)
+        return self._gp_open_path
+
+    def ask_save_gp_preset_path(self, suggested_name: str) -> str | None:
+        self.gp_save_calls.append(suggested_name)
+        return self._gp_save_path
 
     def ask_select_parts(
         self,

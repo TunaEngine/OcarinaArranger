@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict
 
+import tkinter as tk
+
 from shared.ttk import ttk
 from ui.widgets import attach_tooltip
 
@@ -66,6 +68,70 @@ def build_instrument_section(app: "App", parent: ttk.Frame, pad: int) -> ttk.Lab
         wraplength=280,
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
+    targets_section = ttk.LabelFrame(
+        instrument_section,
+        text="Arrangement Targets",
+        padding=pad,
+        style="Panel.TLabelframe",
+    )
+    targets_section.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(pad, 0))
+    instrument_section.rowconfigure(4, weight=1)
+    targets_section.columnconfigure(0, weight=1)
+    targets_section.rowconfigure(2, weight=1)
+    targets_section.rowconfigure(3, weight=1)
+
+    ttk.Label(
+        targets_section,
+        text="Choose how arranger v2 and v3 select instruments for comparison.",
+        style="Hint.TLabel",
+        wraplength=360,
+    ).grid(row=0, column=0, sticky="w")
+
+    strategy_frame = ttk.Frame(targets_section)
+    strategy_frame.grid(row=1, column=0, sticky="w", pady=(4, pad))
+    strategy_options = (
+        ("current", "Current instrument only"),
+        ("starred-best", "Starred instruments (pick best)"),
+    )
+    app._arranger_strategy_buttons = {}
+    for index, (value, label) in enumerate(strategy_options):
+        button = ttk.Radiobutton(
+            strategy_frame,
+            text=label,
+            variable=app.arranger_strategy,
+            value=value,
+            style="Segmented.TRadiobutton",
+        )
+        button.pack(side="left", padx=(0, pad if index == 0 else 0))
+        app._arranger_strategy_buttons[value] = button
+
+    starred_section = ttk.Frame(targets_section)
+    starred_section.grid(row=2, column=0, sticky="nsew")
+    starred_section.columnconfigure(0, weight=1)
+    ttk.Label(
+        starred_section,
+        text="Star instruments to include them when using the starred strategy.",
+        style="Hint.TLabel",
+        wraplength=360,
+    ).grid(row=0, column=0, sticky="w")
+    starred_list = ttk.Frame(starred_section)
+    starred_list.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+    starred_section.rowconfigure(1, weight=1)
+    app._register_starred_container(starred_list)
+
+    summary_section = ttk.LabelFrame(
+        targets_section,
+        text="Arrangement Summary",
+        padding=pad,
+        style="Panel.TLabelframe",
+    )
+    summary_section.grid(row=3, column=0, sticky="nsew", pady=(pad, 0))
+    summary_section.columnconfigure(0, weight=1)
+    summary_section.rowconfigure(0, weight=1)
+    summary_container = ttk.Frame(summary_section)
+    summary_container.grid(row=0, column=0, sticky="nsew")
+    app._register_arranger_summary_container(summary_container)
+
     return instrument_section
 
 
@@ -81,13 +147,39 @@ def build_arranger_mode_section(
     )
     mode_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
     mode_section.columnconfigure(0, weight=1)
-    mode_section.rowconfigure(2, weight=1)
+    mode_section.columnconfigure(1, weight=0)
+    mode_section.rowconfigure(0, weight=1)
 
-    ttk.Label(mode_section, text="Select which arranger experience to use.").grid(
+    scroll_canvas = tk.Canvas(mode_section, highlightthickness=0)
+    scroll_canvas.grid(row=0, column=0, sticky="nsew")
+
+    scrollbar = ttk.Scrollbar(
+        mode_section, orient="vertical", command=scroll_canvas.yview
+    )
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    scroll_canvas.configure(yscrollcommand=scrollbar.set)
+
+    content = ttk.Frame(scroll_canvas)
+    content_id = scroll_canvas.create_window((0, 0), window=content, anchor="nw")
+
+    def _update_scrollregion(_event: tk.Event) -> None:
+        scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all"))
+
+    content.bind("<Configure>", _update_scrollregion)
+
+    def _sync_content_width(event: tk.Event) -> None:
+        scroll_canvas.itemconfigure(content_id, width=event.width)
+
+    scroll_canvas.bind("<Configure>", _sync_content_width)
+
+    content.columnconfigure(0, weight=1)
+    content.rowconfigure(2, weight=1)
+
+    ttk.Label(content, text="Select which arranger experience to use.").grid(
         row=0, column=0, sticky="w"
     )
 
-    mode_selector = ttk.Frame(mode_section)
+    mode_selector = ttk.Frame(content)
     mode_selector.grid(row=1, column=0, sticky="w", pady=(4, pad))
     modes = (
         ("classic", "Classic v1"),
@@ -104,8 +196,8 @@ def build_arranger_mode_section(
             style="Segmented.TRadiobutton",
         ).pack(side="left", padx=padding_x)
 
-    mode_stack = ttk.Frame(mode_section)
-    mode_stack.grid(row=2, column=0, sticky="nsew")
+    mode_stack = ttk.Frame(content)
+    mode_stack.grid(row=2, column=0, sticky="nsew", pady=(pad, 0))
     mode_stack.columnconfigure(0, weight=1)
     mode_stack.rowconfigure(0, weight=1)
 
@@ -192,73 +284,9 @@ def build_arranger_mode_section(
     best_effort_section.columnconfigure(0, weight=1)
     best_effort_section.rowconfigure(0, weight=0)
     best_effort_section.rowconfigure(1, weight=1)
-    best_effort_section.rowconfigure(2, weight=0)
-    best_effort_section.rowconfigure(3, weight=0)
-
-    target_section = ttk.LabelFrame(
-        best_effort_section,
-        text="Target Instruments",
-        padding=pad,
-        style="Panel.TLabelframe",
-    )
-    target_section.grid(row=0, column=0, sticky="nsew")
-    target_section.columnconfigure(0, weight=1)
-    target_section.rowconfigure(2, weight=1)
-
-    ttk.Label(
-        target_section,
-        text="Choose how arranger v2 selects instruments for comparison.",
-        style="Hint.TLabel",
-        wraplength=360,
-    ).grid(row=0, column=0, sticky="w")
-
-    strategy_frame = ttk.Frame(target_section)
-    strategy_frame.grid(row=1, column=0, sticky="w", pady=(4, pad))
-    strategy_options = (
-        ("current", "Current instrument only"),
-        ("starred-best", "Starred instruments (pick best)"),
-    )
-    app._arranger_strategy_buttons = {}
-    for index, (value, label) in enumerate(strategy_options):
-        button = ttk.Radiobutton(
-            strategy_frame,
-            text=label,
-            variable=app.arranger_strategy,
-            value=value,
-            style="Segmented.TRadiobutton",
-        )
-        button.pack(side="left", padx=(0, pad if index == 0 else 0))
-        app._arranger_strategy_buttons[value] = button
-
-    starred_section = ttk.Frame(target_section)
-    starred_section.grid(row=2, column=0, sticky="nsew")
-    starred_section.columnconfigure(0, weight=1)
-    ttk.Label(
-        starred_section,
-        text="Star instruments to include them when using the starred strategy.",
-        style="Hint.TLabel",
-        wraplength=360,
-    ).grid(row=0, column=0, sticky="w")
-    starred_list = ttk.Frame(starred_section)
-    starred_list.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
-    starred_section.rowconfigure(1, weight=1)
-    app._register_starred_container(starred_list)
-
-    summary_section = ttk.LabelFrame(
-        best_effort_section,
-        text="Arrangement Summary",
-        padding=pad,
-        style="Panel.TLabelframe",
-    )
-    summary_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
-    summary_section.columnconfigure(0, weight=1)
-    summary_section.rowconfigure(0, weight=1)
-    summary_container = ttk.Frame(summary_section)
-    summary_container.grid(row=0, column=0, sticky="nsew")
-    app._register_arranger_summary_container(summary_container)
 
     advanced_toggle = ttk.Frame(best_effort_section)
-    advanced_toggle.grid(row=2, column=0, sticky="ew", pady=(pad, 0))
+    advanced_toggle.grid(row=0, column=0, sticky="ew")
     advanced_toggle.columnconfigure(0, weight=1)
     ttk.Checkbutton(
         advanced_toggle,
@@ -272,7 +300,7 @@ def build_arranger_mode_section(
         padding=pad,
         style="Panel.TLabelframe",
     )
-    advanced_section.grid(row=3, column=0, sticky="nsew", pady=(pad, 0))
+    advanced_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
     advanced_section.columnconfigure(0, weight=1)
 
     ttk.Checkbutton(

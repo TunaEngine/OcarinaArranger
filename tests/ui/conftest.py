@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from tests.helpers import require_ttkbootstrap
 
 require_ttkbootstrap()
 
 import pytest
 
+from domain.arrangement.difficulty import DifficultySummary
+from domain.arrangement.gp.fitness import FitnessVector
+from domain.arrangement.soft_key import InstrumentRange
 from ocarina_gui import App, themes
 from ocarina_gui.fingering import FingeringLibrary, InstrumentSpec
 from viewmodels.preview_playback_viewmodel import AudioRenderer, PreviewPlaybackViewModel
@@ -25,6 +30,7 @@ class _StubAudioRenderer(AudioRenderer):
         self.volume = 1.0
         self.volume_requires_render = False
         self.tempo_changes = ()
+        self._shutdown = False
 
     def prepare(self, events, pulses_per_quarter, tempo_changes=None):  # type: ignore[override]
         self._begin_render()
@@ -79,6 +85,12 @@ class _StubAudioRenderer(AudioRenderer):
         listener = self._listener
         if listener is not None:
             listener.render_progress(self._pending_generation, value)
+
+    def shutdown(self) -> None:
+        self._is_playing = False
+        self._pending_generation = None
+        self._listener = None
+        self._shutdown = True
 
     def _begin_render(self) -> None:
         self._generation += 1
@@ -138,9 +150,65 @@ def gui_app(request, monkeypatch):
         "ocarina_gui.audio.build_preview_audio_renderer",
         lambda: _StubAudioRenderer(),
     )
+
+    def _stub_arrange_v3_gp(
+        span,
+        *,
+        instrument_id,
+        config,
+        starred_ids=None,
+        manual_transposition=0,
+        progress_callback=None,
+        **_kwargs,
+    ):
+        total_generations = max(1, int(getattr(config, "generations", 1) or 1))
+        if progress_callback is not None:
+            try:
+                progress_callback(total_generations - 1, total_generations)
+            except Exception:
+                pass
+
+        instrument_range = InstrumentRange(60, 84)
+        difficulty = DifficultySummary(
+            easy=float(span.total_duration or 1),
+            medium=0.0,
+            hard=0.0,
+            very_hard=0.0,
+            tessitura_distance=0.0,
+            leap_exposure=0.0,
+        )
+
+        candidate = SimpleNamespace(
+            instrument_id=instrument_id or "test",
+            instrument=instrument_range,
+            program=(),
+            span=span,
+            difficulty=difficulty,
+            explanations=(),
+            fitness=FitnessVector(0.0, 0.0, 0.0, 0.0),
+        )
+
+        return SimpleNamespace(
+            chosen=candidate,
+            comparisons=(candidate,),
+            strategy="stub-gp",
+            session=SimpleNamespace(
+                generations=total_generations,
+                elapsed_seconds=0.0,
+            ),
+            archive_summary=(),
+            termination_reason="stubbed",
+            fallback=None,
+        )
+
+    monkeypatch.setattr(
+        "services.arranger_preview.arrange_v3_gp",
+        _stub_arrange_v3_gp,
+    )
     app = App()
     app.withdraw()
     app.update_idletasks()
+    app._preview_render_async = False
 
     app._test_audio_renderers = {}
     for key in ("original", "arranged"):
@@ -162,6 +230,37 @@ def gui_app(request, monkeypatch):
 
     def _cleanup() -> None:
         try:
+            try:
+                test_renderers = getattr(app, "_test_audio_renderers", {})
+                for renderer in test_renderers.values():
+                    shutdown = getattr(renderer, "shutdown", None)
+                    if callable(shutdown):
+                        shutdown()
+            except Exception:
+                pass
+            try:
+                playback_map = getattr(app, "_preview_playback", {})
+                for playback in playback_map.values():
+                    audio = getattr(playback, "_audio", None)
+                    shutdown = getattr(audio, "shutdown", None)
+                    if callable(shutdown):
+                        shutdown()
+            except Exception:
+                pass
+            try:
+                cancel_loop = getattr(app, "_cancel_playback_loop", None)
+                if callable(cancel_loop):
+                    cancel_loop()
+            except Exception:
+                pass
+            try:
+                handles = list(getattr(app, "_preview_render_handles", ()))
+                for handle in handles:
+                    join = getattr(handle, "join", None)
+                    if callable(join):
+                        join(timeout=5.0)
+            except Exception:
+                pass
             app.destroy()
         finally:
             themes.set_active_theme(original_theme)

@@ -60,6 +60,7 @@ from .main_viewmodel_part_selection import (
     normalize_available_parts,
     normalize_selected_part_ids,
 )
+from .main_viewmodel_gp_presets import GPSettingsPresetMixin
 from .main_viewmodel_persistence import apply_loaded_project, build_project_snapshot
 
 
@@ -69,7 +70,7 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
-class MainViewModel:
+class MainViewModel(GPSettingsPresetMixin):
     """Expose UI-ready state and commands for the main window."""
 
     def __init__(

@@ -356,9 +356,60 @@ class ArrangerResultsMixin:
         container = self._arranger_telemetry_container
         if container is None:
             return
+        headless = getattr(self, "_headless", False)
         for child in container.winfo_children():
-            child.destroy()
+            try:
+                child.destroy()
+            except Exception:
+                pass
         hints = tuple(telemetry or ())
+        if headless:
+            if not hints:
+                try:
+                    from ocarina_gui.headless.widgets import HeadlessLabel
+                except Exception:  # pragma: no cover - fallback to ttk
+                    placeholder = ttk.Label(
+                        container,
+                        text="No telemetry available yet.",
+                        style="Hint.TLabel",
+                        wraplength=320,
+                        anchor="w",
+                        justify="left",
+                    )
+                else:
+                    placeholder = HeadlessLabel(
+                        text="No telemetry available yet.",
+                        parent=container,
+                        style="Hint.TLabel",
+                        wraplength=320,
+                        anchor="w",
+                        justify="left",
+                    )
+                placeholder.grid(row=0, column=0, sticky="nw")
+                self._arranger_telemetry_placeholder = placeholder
+                return
+            self._arranger_telemetry_placeholder = None
+            try:
+                from ocarina_gui.headless.widgets import HeadlessFrame, HeadlessLabel
+            except Exception:  # pragma: no cover - fallback to ttk logic
+                headless = False
+            else:
+                for index, hint in enumerate(hints):
+                    row_container = HeadlessFrame(parent=container)
+                    row_container.grid(row=index, column=0, sticky="ew", pady=(0, 4))
+                    HeadlessLabel(
+                        text=f"{hint.category}:",
+                        parent=row_container,
+                        style="Emphasis.TLabel",
+                    ).grid(row=0, column=0, sticky="nw", padx=(0, 4))
+                    HeadlessLabel(
+                        text=hint.message,
+                        parent=row_container,
+                        wraplength=320,
+                        justify="left",
+                        anchor="w",
+                    ).grid(row=0, column=1, sticky="nw")
+                return
         if not hints:
             placeholder = ttk.Label(
                 container,
