@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Dict
 
 from shared.ttk import ttk
@@ -230,6 +231,20 @@ def build_arranger_mode_section(
         text="Favor lower register (drop notes by octave when safe)",
         variable=app.favor_lower,
     ).pack(anchor="w", pady=(4, 0))
+    lenient_check = ttk.Checkbutton(
+        preferences_frame,
+        text="Lenient MIDI import (salvage mode)",
+        variable=app.lenient_midi_import,
+    )
+    lenient_check.pack(anchor="w", pady=(4, 0))
+    try:
+        attach_tooltip(
+            lenient_check,
+            "Allow the MIDI importer to salvage malformed data when strict parsing fails.",
+        )
+    except Exception:
+        logger = logging.getLogger(__name__)
+        logger.debug("Failed to attach tooltip to lenient MIDI import toggle", exc_info=True)
 
     manual_frame = ttk.Frame(classic_section)
     manual_frame.grid(row=3, column=0, sticky="w")
@@ -384,6 +399,19 @@ def build_import_export_section(app: "App", parent: ttk.Frame, pad: int) -> ttk.
         anchor="center",
         style="Hint.TLabel",
     ).grid(row=3, column=0, sticky="ew", pady=(pad, 0))
+
+    notice_frame = ttk.Frame(import_section, padding=(pad // 2, pad // 2), style="Panel.TFrame")
+    notice_frame.grid(row=4, column=0, sticky="ew", pady=(pad, 0))
+    notice_frame.columnconfigure(0, weight=1)
+    message = ttk.Label(notice_frame, textvariable=app.midi_import_notice, wraplength=360)
+    message.grid(row=0, column=0, sticky="w")
+    details_button = ttk.Button(
+        notice_frame,
+        text="View details…",
+        command=getattr(app, "_on_view_midi_import_details", lambda: None),
+    )
+    details_button.grid(row=0, column=1, padx=(pad // 2, 0))
+    app._register_midi_import_notice(notice_frame, details_button)
 
     return import_section
 

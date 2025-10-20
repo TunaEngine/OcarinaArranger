@@ -157,6 +157,7 @@ class TransformSettings:
     instrument_id: str = ""
     selected_part_ids: tuple[str, ...] = ()
     grace_settings: GraceTransformSettings = GraceTransformSettings()
+    lenient_midi_import: bool = True
 
 
 __all__ = [

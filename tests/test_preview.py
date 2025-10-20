@@ -6,16 +6,17 @@ import xml.etree.ElementTree as ET
 
 import ocarina_gui.preview as preview
 from ocarina_gui.settings import TransformSettings
-from ocarina_tools import NoteEvent
+from ocarina_tools import NoteEvent, ScoreLoadResult
 
 
 def test_build_preview_data_loads_score_once(monkeypatch) -> None:
     calls: list[str] = []
 
-    def fake_load(path: str):
+    def fake_load(path: str, *, midi_mode: str = "auto"):
         calls.append(path)
         root = ET.Element("score")
-        return ET.ElementTree(root), root
+        tree = ET.ElementTree(root)
+        return ScoreLoadResult(tree=tree, root=root)
 
     monkeypatch.setattr(preview, "load_score", fake_load)
     monkeypatch.setattr(
@@ -56,7 +57,14 @@ def test_build_preview_data_trims_arranged_leading_silence(monkeypatch) -> None:
             return ([NoteEvent(0, 1, 60, 79)], 480)
         return ([NoteEvent(240, 2, 65, 79), NoteEvent(480, 2, 67, 79)], 480)
 
-    monkeypatch.setattr(preview, "load_score", lambda _path: (ET.ElementTree(ET.Element("score")), ET.Element("score")))
+    monkeypatch.setattr(
+        preview,
+        "load_score",
+        lambda _path, *, midi_mode="auto": ScoreLoadResult(
+            tree=ET.ElementTree(ET.Element("score")),
+            root=ET.Element("score"),
+        ),
+    )
     monkeypatch.setattr(preview, "get_note_events", fake_get_note_events)
     monkeypatch.setattr(preview, "get_time_signature", lambda _root: (4, 4))
     monkeypatch.setattr(preview, "transform_to_ocarina", lambda *args, **kwargs: None)
@@ -98,9 +106,9 @@ def test_build_preview_respects_selected_parts(monkeypatch) -> None:
             ET.SubElement(pitch, "octave").text = "4"
         return root
 
-    def fake_load_score(_path: str):
+    def fake_load_score(_path: str, *, midi_mode: str = "auto"):
         root = _make_score_root()
-        return ET.ElementTree(root), root
+        return ScoreLoadResult(tree=ET.ElementTree(root), root=root)
 
     def fake_get_note_events(root: ET.Element, **_kwargs):
         midi_lookup = {"P1": 60, "P2": 72}

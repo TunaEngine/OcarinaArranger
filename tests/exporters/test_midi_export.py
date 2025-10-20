@@ -16,7 +16,7 @@ from ocarina_tools import (
     transform_to_ocarina,
 )
 from ocarina_tools.exporters import OCARINA_GM_PROGRAM
-from ocarina_tools.io import _parse_midi_events, _read_chunk
+from ocarina_tools.midi_import import _parse_midi_events, _read_chunk
 
 from ..helpers import make_chord_score, make_linear_score
 

@@ -84,7 +84,15 @@ def test_convert_exports_files_and_reports_success(gui_app, tmp_path, monkeypatc
     opened = []
     monkeypatch.setattr(gui_app, "_open_path", lambda path: opened.append(path))
 
-    def _fake_convert(self, path: str, output_xml_path: str, settings, pdf_options):
+    def _fake_convert(
+        self,
+        path: str,
+        output_xml_path: str,
+        settings,
+        pdf_options,
+        *,
+        midi_mode: str = "auto",
+    ):
         export_folder = os.path.splitext(output_xml_path)[0]
         saved["folder"] = export_folder
         saved["xml"] = os.path.join(export_folder, os.path.basename(output_xml_path))

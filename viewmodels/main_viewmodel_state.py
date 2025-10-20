@@ -10,6 +10,7 @@ from ocarina_gui.settings import GraceTransformSettings
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from services.project_service import PreviewPlaybackSnapshot
 from ocarina_tools.parts import MusicXmlPartInfo
+from ocarina_tools.midi_import.models import MidiImportReport
 
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
@@ -63,6 +64,9 @@ class MainViewModelState:
     grace_settings: GraceTransformSettings = field(
         default_factory=GraceTransformSettings
     )
+    lenient_midi_import: bool = True
+    midi_import_report: MidiImportReport | None = None
+    midi_import_error: str | None = None
     arranger_result_summary: ArrangerResultSummary | None = None
     arranger_explanations: Tuple[ArrangerExplanationRow, ...] = field(
         default_factory=tuple

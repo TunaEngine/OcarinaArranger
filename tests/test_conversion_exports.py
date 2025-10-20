@@ -8,7 +8,7 @@ import pytest
 from ocarina_gui.conversion import convert_score, derive_export_folder
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_tools import filter_parts
+from ocarina_tools import ScoreLoadResult, filter_parts
 
 
 def test_derive_export_folder_returns_base_name(tmp_path: Path) -> None:
@@ -42,7 +42,10 @@ def _fake_settings() -> TransformSettings:
 def _stub_transform(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "ocarina_gui.conversion.load_score",
-        lambda path: (object(), object()),
+        lambda path, *, midi_mode="auto": ScoreLoadResult(
+            tree=object(),
+            root=object(),
+        ),
     )
     monkeypatch.setattr(
         "ocarina_gui.conversion.transform_to_ocarina",
@@ -134,9 +137,9 @@ def test_convert_score_respects_selected_parts(tmp_path: Path, monkeypatch: pyte
     exporters_parts: dict[str, list[str]] = {}
     summary: dict[str, object] = {"expected_count": expected_note_count}
 
-    def fake_load_score(_path: str):
+    def fake_load_score(_path: str, *, midi_mode: str = "auto"):
         root = _make_score_root()
-        return ET.ElementTree(root), root
+        return ScoreLoadResult(tree=ET.ElementTree(root), root=root)
 
     def fake_transform(tree, root, **kwargs):
         selected = kwargs.get("selected_part_ids")
@@ -176,7 +179,9 @@ def test_convert_score_respects_selected_parts(tmp_path: Path, monkeypatch: pyte
     monkeypatch.setattr("ocarina_gui.conversion.load_score", fake_load_score)
     monkeypatch.setattr("ocarina_gui.conversion.transform_to_ocarina", fake_transform)
     monkeypatch.setattr("ocarina_gui.conversion.collect_used_pitches", fake_collect_used_pitches)
-    monkeypatch.setattr("ocarina_gui.conversion.favor_lower_register", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        "ocarina_gui.conversion.favor_lower_register", lambda *_args, **_kwargs: 0
+    )
 
     settings = TransformSettings(
         prefer_mode="auto",

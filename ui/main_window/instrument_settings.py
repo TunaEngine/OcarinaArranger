@@ -15,6 +15,8 @@ from ocarina_gui.fingering import (
     get_instrument,
     preferred_note_window,
 )
+from ocarina_tools.midi_import.models import MidiImportReport
+from ui.dialogs.midi_import_issues import show_midi_import_issues
 
 if TYPE_CHECKING:
     from viewmodels.main_viewmodel import MainViewModel, MainViewModelState
@@ -40,11 +42,15 @@ class InstrumentSettingsMixin:
     _convert_setting_traces: list[tuple[tk.Variable, str]]
     _reimport_button: ttk.Button | None
     _preview_initial_loading: set[str]
+    _midi_notice_frame: ttk.Frame | None
+    _midi_notice_button: ttk.Button | None
+    _last_midi_import_report: MidiImportReport | None
 
     convert_instrument_var: tk.StringVar
     range_min: tk.StringVar
     range_max: tk.StringVar
     input_path: tk.StringVar
+    midi_import_notice: tk.StringVar
 
     def _initialize_instrument_state(self, state: "MainViewModelState") -> None:
         self._reload_instrument_choices()
@@ -195,6 +201,98 @@ class InstrumentSettingsMixin:
         except Exception:
             pass
         self._update_reimport_button_state()
+
+    def _register_midi_import_notice(
+        self, frame: ttk.Frame, details_button: ttk.Button
+    ) -> None:
+        self._midi_notice_frame = frame
+        self._midi_notice_button = details_button
+        self._last_midi_import_report = None
+        try:
+            frame.grid_remove()
+        except Exception:
+            pass
+        try:
+            details_button.state(["disabled"])
+        except Exception:
+            pass
+
+    def _update_midi_import_notice(
+        self, report: MidiImportReport | None, error: str | None = None
+    ) -> None:
+        frame = getattr(self, "_midi_notice_frame", None)
+        button = getattr(self, "_midi_notice_button", None)
+        message_var = getattr(self, "midi_import_notice", None)
+        if error is None:
+            try:
+                error = getattr(self._viewmodel.state, "midi_import_error", None)
+            except Exception:
+                error = None
+        show_notice = bool(
+            report
+            and isinstance(report, MidiImportReport)
+            and str(report.mode).strip().lower() == "lenient"
+        )
+        show_error = bool(error)
+        if not show_notice and not show_error:
+            self._last_midi_import_report = None
+            if isinstance(message_var, tk.StringVar):
+                message_var.set("")
+            if frame is not None:
+                try:
+                    frame.grid_remove()
+                except Exception:
+                    pass
+            if button is not None:
+                try:
+                    button.state(["disabled"])
+                except Exception:
+                    pass
+            return
+
+        if show_error:
+            self._last_midi_import_report = None
+            message = f"Preview failed: {error}"
+        else:
+            assert isinstance(report, MidiImportReport)
+            self._last_midi_import_report = report
+            issues = report.issues or ()
+            track_ids = {issue.track_index for issue in issues}
+            issue_count = len(issues)
+            track_count = len(track_ids)
+            if issue_count and track_count:
+                issue_text = "issue" if issue_count == 1 else "issues"
+                track_text = "track" if track_count == 1 else "tracks"
+                message = (
+                    f"Lenient MIDI import recovered {issue_count} {issue_text} "
+                    f"across {track_count} {track_text}."
+                )
+            else:
+                message = "Lenient MIDI import salvaged the MIDI file after strict parsing failed."
+        if isinstance(message_var, tk.StringVar):
+            message_var.set(message)
+        if frame is not None:
+            try:
+                frame.grid()
+            except Exception:
+                pass
+        if button is not None:
+            try:
+                if show_notice:
+                    button.state(["!disabled"])
+                else:
+                    button.state(["disabled"])
+            except Exception:
+                pass
+
+    def _on_view_midi_import_details(self) -> None:
+        report = getattr(self, "_last_midi_import_report", None)
+        if not isinstance(report, MidiImportReport):
+            return
+        try:
+            show_midi_import_issues(self, report)
+        except Exception:
+            logger.exception("Failed to open MIDI import issues dialog")
 
     def _register_convert_setting_var(self, var: tk.Variable) -> None:
         try:

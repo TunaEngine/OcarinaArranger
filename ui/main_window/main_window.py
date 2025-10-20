@@ -70,6 +70,13 @@ class MainWindow(
                 selected_mode = stored_mode
         state.arranger_mode = selected_mode
 
+        lenient_import = True
+        if isinstance(preferences, Preferences):
+            stored_lenient = getattr(preferences, "lenient_midi_import", None)
+            if isinstance(stored_lenient, bool):
+                lenient_import = stored_lenient
+        state.lenient_midi_import = lenient_import
+
         self._setup_instrument_attributes(state)
         self._create_convert_controls(state)
         self._setup_theme_support(preferences, current_theme)

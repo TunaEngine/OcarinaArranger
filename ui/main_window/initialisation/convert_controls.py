@@ -52,6 +52,9 @@ class ConvertControlsMixin(
         self.prefer_flats = tk.BooleanVar(master=self, value=state.prefer_flats)
         self.collapse_chords = tk.BooleanVar(master=self, value=state.collapse_chords)
         self.favor_lower = tk.BooleanVar(master=self, value=state.favor_lower)
+        self.lenient_midi_import = tk.BooleanVar(
+            master=self, value=bool(getattr(state, "lenient_midi_import", True))
+        )
         self.transpose_offset = tk.IntVar(master=self, value=state.transpose_offset)
         self.convert_instrument_var = tk.StringVar(
             master=self,
@@ -104,6 +107,10 @@ class ConvertControlsMixin(
         self._arranger_summary_container: ttk.Frame | None = None
         self._arranger_summary_body: ttk.Frame | None = None
         self._arranger_summary_placeholder: ttk.Label | None = None
+        self.midi_import_notice = tk.StringVar(master=self, value="")
+        self._midi_notice_frame: ttk.Frame | None = None
+        self._midi_notice_button: ttk.Button | None = None
+        self._suspend_lenient_midi_trace = False
         gp_state = getattr(state, "arranger_gp_settings", ArrangerGPSettings())
         if not isinstance(gp_state, ArrangerGPSettings):
             gp_state = ArrangerGPSettings()
@@ -223,6 +230,7 @@ class ConvertControlsMixin(
         self._register_convert_setting_var(self.prefer_flats)
         self._register_convert_setting_var(self.collapse_chords)
         self._register_convert_setting_var(self.favor_lower)
+        self._register_convert_setting_var(self.lenient_midi_import)
         self._register_convert_setting_var(self.range_min)
         self._register_convert_setting_var(self.range_max)
         self._register_convert_setting_var(self.convert_instrument_var)
@@ -237,6 +245,9 @@ class ConvertControlsMixin(
         self._register_grace_setting_vars()
         self.arranger_mode.trace_add("write", self._on_arranger_mode_changed)
         self.arranger_strategy.trace_add("write", self._on_arranger_strategy_changed)
+        self.lenient_midi_import.trace_add(
+            "write", self._on_lenient_midi_import_changed
+        )
         self.arranger_dp_slack.trace_add(
             "write", self._on_arranger_dp_slack_changed
         )
@@ -319,6 +330,35 @@ class ConvertControlsMixin(
                 advanced_refresh()
             except Exception:
                 logger.debug("Advanced arranger visibility update failed", exc_info=True)
+
+    def _on_lenient_midi_import_changed(self, *_args: object) -> None:
+        if self._suspend_lenient_midi_trace:
+            return
+        try:
+            enabled = bool(self.lenient_midi_import.get())
+        except Exception:
+            enabled = True
+        self._viewmodel.update_settings(lenient_midi_import=enabled)
+        preferences = self.preferences
+        if (
+            isinstance(preferences, Preferences)
+            and preferences.lenient_midi_import != enabled
+        ):
+            preferences.lenient_midi_import = enabled
+            try:
+                save_preferences(preferences)
+            except Exception:
+                logger.warning(
+                    "Failed to persist MIDI import mode preference",
+                    extra={"lenient": enabled},
+                )
+        if not enabled and hasattr(self, "_update_midi_import_notice"):
+            try:
+                self._update_midi_import_notice(None)
+            except Exception:
+                logger.exception(
+                    "Failed to hide MIDI import notice after disabling lenient mode"
+                )
 
     def _on_arranger_strategy_changed(self, *_args: object) -> None:
         if self._suppress_arranger_strategy_trace:

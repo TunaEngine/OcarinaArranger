@@ -22,7 +22,7 @@ Feature: File selection and preview rendering
     And the preview service will fail with "Preview failed to build"
     When the user chooses a score
     And the user renders previews
-    Then the status bar shows "Preview failed."
+    Then the status bar shows "Preview failed: Preview failed to build"
     And the last preview attempt failed
     And an error dialog was shown with title "Preview failed"
     And the error message contains "Preview failed to build"

@@ -1,5 +1,6 @@
 ﻿__pycache__
 *.mid
+!tests/fixtures/midi/*.mid
 ocarina_gui/config/*
 !ocarina_gui/config/fingering_config.json
 !ocarina_gui/config/themes.json

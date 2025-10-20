@@ -157,7 +157,8 @@ def test_auto_render_suppresses_preview_error_dialog(gui_app, tmp_path, monkeypa
     gui_app.update_idletasks()
 
     assert not calls
-    assert gui_app.status.get() == "Preview failed."
+    status = gui_app.status.get()
+    assert status.startswith("Preview failed:")
 
     gui_app.render_previews()
     gui_app.update_idletasks()

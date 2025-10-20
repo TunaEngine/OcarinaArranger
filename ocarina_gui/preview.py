@@ -19,6 +19,7 @@ from ocarina_tools import (
     load_score,
     transform_to_ocarina,
 )
+from ocarina_tools.midi_import.models import MidiImportReport
 from .settings import TransformSettings
 
 @dataclass(frozen=True)
@@ -32,10 +33,18 @@ class PreviewData:
     arranged_range: Tuple[int, int]
     tempo_bpm: int
     tempo_changes: Sequence[TempoChange]
+    midi_report: MidiImportReport | None = None
 
 
-def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewData:
-    _, root_original = load_score(input_path)
+def build_preview_data(
+    input_path: str,
+    settings: TransformSettings,
+    *,
+    midi_mode: str = "auto",
+) -> PreviewData:
+    load_result = load_score(input_path, midi_mode=midi_mode)
+    root_original = load_result.root
+    midi_report = getattr(load_result, "midi_report", None)
     root_filtered = copy.deepcopy(root_original)
     if settings.selected_part_ids:
         filter_parts(root_filtered, settings.selected_part_ids)
@@ -87,6 +96,7 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
         arranged_range=arranged_range,
         tempo_bpm=tempo_bpm,
         tempo_changes=tuple(tempo_changes),
+        midi_report=midi_report,
     )
 
 

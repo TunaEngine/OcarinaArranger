@@ -92,12 +92,17 @@ class StubScoreService:
     last_convert_settings: Optional[TransformSettings] = None
     part_metadata: tuple[MusicXmlPartInfo, ...] = ()
     part_metadata_calls: list[str] = field(default_factory=list)
+    last_midi_mode: Optional[str] = None
+    metadata_error: Optional[Exception] = None
 
-    def build_preview(self, path: str, settings: TransformSettings) -> PreviewData:
+    def build_preview(
+        self, path: str, settings: TransformSettings, *, midi_mode: str = "auto"
+    ) -> PreviewData:
         if self.preview_error:
             raise self.preview_error
         assert self.preview is not None
         self.last_preview_settings = settings
+        self.last_midi_mode = midi_mode
         return self.preview
 
     def convert(
@@ -106,15 +111,23 @@ class StubScoreService:
         output_xml_path: str,
         settings: TransformSettings,
         pdf_options,
+        *,
+        midi_mode: str = "auto",
     ) -> ConversionResult:
         if self.convert_error:
             raise self.convert_error
         assert self.conversion is not None
         self.last_convert_settings = settings
+        self.last_midi_mode = midi_mode
         return self.conversion
 
-    def load_part_metadata(self, path: str) -> tuple[MusicXmlPartInfo, ...]:
+    def load_part_metadata(
+        self, path: str, *, midi_mode: str = "auto"
+    ) -> tuple[MusicXmlPartInfo, ...]:
         self.part_metadata_calls.append(path)
+        self.last_midi_mode = midi_mode
+        if self.metadata_error:
+            raise self.metadata_error
         return self.part_metadata
 
 

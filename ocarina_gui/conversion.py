@@ -13,6 +13,7 @@ from ocarina_tools import (
     load_score,
     transform_to_ocarina,
 )
+from ocarina_tools.midi_import.models import MidiImportReport
 
 from .settings import TransformSettings
 from .pdf_export.types import PdfExportOptions
@@ -60,6 +61,7 @@ class ConversionResult:
     output_midi_path: str
     output_pdf_paths: Dict[str, str]
     output_folder: str
+    midi_report: MidiImportReport | None = None
 
 
 def derive_export_folder(output_xml_path: str) -> str:
@@ -86,8 +88,11 @@ def convert_score(
     export_midi: MidiExporter,
     export_pdf: PdfExporter,
     pdf_options: PdfExportOptions,
+    *,
+    midi_mode: str = "auto",
 ) -> ConversionResult:
-    tree, root = load_score(input_path)
+    load_result = load_score(input_path, midi_mode=midi_mode)
+    tree, root = load_result
 
     summary = transform_to_ocarina(
         tree,
@@ -153,4 +158,5 @@ def convert_score(
         output_midi_path=output_midi_path,
         output_pdf_paths=pdf_paths,
         output_folder=export_folder,
+        midi_report=getattr(load_result, "midi_report", None),
     )

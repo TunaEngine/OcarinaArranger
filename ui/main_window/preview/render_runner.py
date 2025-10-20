@@ -215,7 +215,25 @@ def render_previews_for_ui(ui: Any) -> PreviewRenderHandle:
                 messagebox.showerror("Preview failed", result.error)
             else:
                 logger.info("Preview error dialog suppressed during automatic render")
+            updater = getattr(ui, "_update_midi_import_notice", None)
+            if callable(updater):
+                try:
+                    updater(getattr(ui._viewmodel.state, "midi_import_report", None))
+                except Exception:
+                    logger.exception("Failed to refresh MIDI import notice after preview error")
             ui.status.set(ui._viewmodel.state.status_message)
+            sync_controls = getattr(ui, "_sync_controls_from_state", None)
+            if callable(sync_controls):
+                try:
+                    sync_controls()
+                except Exception:
+                    logger.exception("Failed to resynchronise controls after preview failure")
+            refresh_title = getattr(ui, "_refresh_window_title", None)
+            if callable(refresh_title):
+                try:
+                    refresh_title()
+                except Exception:
+                    logger.exception("Failed to refresh window title after preview failure")
             for side in sides:
                 ui._set_preview_initial_loading(side, False)
             _finalise(result=result)

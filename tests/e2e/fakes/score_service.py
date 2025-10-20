@@ -13,6 +13,7 @@ from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.settings import TransformSettings
+from ocarina_tools.io import ScoreLoadResult
 from services.score_service import ScoreService
 
 
@@ -104,7 +105,9 @@ class FakeScoreService:
         return len(self._preview_results)
 
     # --- Hooks wired into ScoreService ---------------------------------
-    def _build_preview_data(self, path: str, settings: TransformSettings) -> PreviewData:
+    def _build_preview_data(
+        self, path: str, settings: TransformSettings, *, midi_mode: str = "auto"
+    ) -> PreviewData:
         if not self._preview_results:
             raise AssertionError("No queued preview results for FakeScoreService")
         self.preview_calls.append(
@@ -130,6 +133,7 @@ class FakeScoreService:
         export_midi,  # noqa: ANN001 - protocol hook
         export_pdf,  # noqa: ANN001 - protocol hook
         pdf_options: PdfExportOptions,
+        midi_mode: str = "auto",
     ) -> ConversionResult:
         if self._conversion_outcomes:
             outcome = self._conversion_outcomes.popleft()
@@ -156,7 +160,7 @@ class FakeScoreService:
 
     def as_service(self) -> ScoreService:
         return ScoreService(
-            load_score=lambda path: (object(), object()),
+            load_score=lambda path, **_: ScoreLoadResult(tree=object(), root=object()),
             build_preview_data=self._build_preview_data,
             convert_score=self._convert_score,
             export_musicxml=self._export_passthrough,

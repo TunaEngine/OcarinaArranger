@@ -62,6 +62,12 @@ class PreviewCommandsMixin:
         state = self._viewmodel.state
         self.input_path.set(state.input_path)
         self.pitch_list = list(state.pitch_list)
+        updater = getattr(self, "_update_midi_import_notice", None)
+        if callable(updater):
+            try:
+                updater(state.midi_import_report)
+            except Exception:
+                logger.exception("Failed to refresh MIDI import notice after browse")
 
     def render_previews(self) -> PreviewRenderHandle:
         return render_previews_for_ui(self)
@@ -84,6 +90,12 @@ class PreviewCommandsMixin:
             logger.error("Conversion failed: %s", result.error)
             messagebox.showerror("Conversion failed", result.error)
             self.status.set(self._viewmodel.state.status_message)
+            updater = getattr(self, "_update_midi_import_notice", None)
+            if callable(updater):
+                try:
+                    updater(self._viewmodel.state.midi_import_report)
+                except Exception:
+                    logger.exception("Failed to refresh MIDI import notice after conversion error")
             return result
         conversion = result.unwrap()
         logger.info(
@@ -95,6 +107,12 @@ class PreviewCommandsMixin:
         )
         self._after_conversion(conversion)
         self.status.set(self._viewmodel.state.status_message)
+        updater = getattr(self, "_update_midi_import_notice", None)
+        if callable(updater):
+            try:
+                updater(self._viewmodel.state.midi_import_report)
+            except Exception:
+                logger.exception("Failed to refresh MIDI import notice after conversion")
         return result
 
     def reimport_and_arrange(self) -> None:
@@ -118,6 +136,12 @@ class PreviewCommandsMixin:
             parts = self._viewmodel.load_part_metadata()
         else:
             parts = self._viewmodel.state.available_parts
+        updater = getattr(self, "_update_midi_import_notice", None)
+        if callable(updater):
+            try:
+                updater(self._viewmodel.state.midi_import_report)
+            except Exception:
+                logger.exception("Failed to refresh MIDI import notice during part selection")
         if not parts:
             return ()
         if len(parts) == 1:
@@ -139,8 +163,14 @@ class PreviewCommandsMixin:
         in_path = self._require_input_path("Please choose a valid input file first.")
         if not in_path:
             return
+        midi_mode = "auto"
         try:
-            tree, root = load_score(in_path)
+            midi_mode = "auto" if bool(self.lenient_midi_import.get()) else "strict"
+        except Exception:
+            midi_mode = "auto"
+        try:
+            result = load_score(in_path, midi_mode=midi_mode)
+            tree, root = result
             tmp_mid = os.path.join(os.path.dirname(__file__), "_preview_original.mid")
             export_midi_poly(
                 root,
@@ -157,8 +187,14 @@ class PreviewCommandsMixin:
         if not in_path:
             return
         settings = self._current_settings()
+        midi_mode = "auto"
         try:
-            tree, root = load_score(in_path)
+            midi_mode = "auto" if bool(self.lenient_midi_import.get()) else "strict"
+        except Exception:
+            midi_mode = "auto"
+        try:
+            result = load_score(in_path, midi_mode=midi_mode)
+            tree, root = result
             transform_to_ocarina(
                 tree,
                 root,

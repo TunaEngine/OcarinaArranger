@@ -25,6 +25,13 @@ class PreviewRenderingMixin(PreviewPlaybackSupportMixin):
     def _apply_preview_data(self, data: PreviewData) -> None:
         self._pending_preview_data = data
 
+        updater = getattr(self, "_update_midi_import_notice", None)
+        if callable(updater):
+            try:
+                updater(getattr(data, "midi_report", None))
+            except Exception:
+                logger.exception("Failed to refresh MIDI import notice after preview")
+
         target_instrument = getattr(self._viewmodel.state, "instrument_id", "")
         if target_instrument and target_instrument != getattr(
             self, "_selected_instrument_id", ""

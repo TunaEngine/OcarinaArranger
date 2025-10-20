@@ -36,6 +36,7 @@ class Preferences:
     auto_update_enabled: bool | None = None
     update_channel: str | None = UPDATE_CHANNEL_STABLE
     arranger_mode: str | None = None
+    lenient_midi_import: bool | None = None
 
 
 def _default_preferences_path() -> Path:
@@ -130,6 +131,25 @@ def load_preferences(path: Path | None = None) -> Preferences:
     else:
         arranger_mode = None
 
+    raw_lenient_import = data.get("lenient_midi_import")
+    if isinstance(raw_lenient_import, bool):
+        lenient_midi_import = raw_lenient_import
+    elif isinstance(raw_lenient_import, (int, float)):
+        try:
+            lenient_midi_import = bool(int(raw_lenient_import))
+        except (TypeError, ValueError):
+            lenient_midi_import = None
+    elif isinstance(raw_lenient_import, str):
+        normalized = raw_lenient_import.strip().lower()
+        if normalized in {"1", "true", "t", "yes", "on"}:
+            lenient_midi_import = True
+        elif normalized in {"0", "false", "f", "no", "off", ""}:
+            lenient_midi_import = False
+        else:
+            lenient_midi_import = None
+    else:
+        lenient_midi_import = None
+
     return Preferences(
         theme_id=theme_id,
         log_verbosity=log_verbosity,
@@ -139,6 +159,7 @@ def load_preferences(path: Path | None = None) -> Preferences:
         auto_update_enabled=auto_update_enabled,
         update_channel=update_channel,
         arranger_mode=arranger_mode,
+        lenient_midi_import=lenient_midi_import,
     )
 
 
@@ -170,6 +191,8 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
         and preferences.arranger_mode in ARRANGER_MODES
     ):
         data["arranger_mode"] = preferences.arranger_mode
+    if isinstance(preferences.lenient_midi_import, bool):
+        data["lenient_midi_import"] = preferences.lenient_midi_import
 
     try:
         location.parent.mkdir(parents=True, exist_ok=True)

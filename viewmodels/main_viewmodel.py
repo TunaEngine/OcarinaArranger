@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 import os
-from pathlib import Path
 from threading import RLock
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Optional
@@ -16,9 +14,8 @@ from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from adapters.file_dialog import FileDialogAdapter
 from ocarina_tools.parts import MusicXmlPartInfo
+from ocarina_tools.midi_import.models import MidiImportReport
 from services.project_service import (
-    LoadedProject,
-    ProjectPersistenceError,
     ProjectService,
     PreviewPlaybackSnapshot,
 )
@@ -35,11 +32,7 @@ from services.arranger_preview import (
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
     ArrangerEditBreakdown,
-    ArrangerExplanationRow,
     ArrangerGPSettings,
-    ArrangerInstrumentSummary,
-    ArrangerResultSummary,
-    ArrangerTelemetryHint,
 )
 from .main_viewmodel_state import (
     ARRANGER_STRATEGIES,
@@ -52,6 +45,7 @@ from .main_viewmodel_arranger_helpers import (
     apply_arranger_results_from_preview,
     preview_with_arranger_events,
 )
+from .main_viewmodel_arranger_state import MainViewModelArrangerStateMixin
 from .main_viewmodel_arranger_settings import (
     normalize_arranger_budgets,
     normalize_arranger_gp_settings,
@@ -62,14 +56,20 @@ from .main_viewmodel_part_selection import (
     normalize_selected_part_ids,
 )
 from .main_viewmodel_gp_presets import GPSettingsPresetMixin
-from .main_viewmodel_persistence import apply_loaded_project, build_project_snapshot
+from .main_viewmodel_project import MainViewModelProjectMixin
+from .main_viewmodel_preview_state import (
+    PreviewStateSnapshot,
+    capture_preview_state,
+    restore_preview_state,
+)
 
 logger = logging.getLogger(__name__)
 
-_UNSET = object()
-
-
-class MainViewModel(GPSettingsPresetMixin):
+class MainViewModel(
+    GPSettingsPresetMixin,
+    MainViewModelArrangerStateMixin,
+    MainViewModelProjectMixin,
+):
     """Expose UI-ready state and commands for the main window."""
 
     def __init__(
@@ -86,6 +86,7 @@ class MainViewModel(GPSettingsPresetMixin):
         self._last_pdf_options: PdfExportOptions | None = None
         self._pitch_entries: list[str] = []
         self._pending_input_confirmation = False
+        self._last_successful_input_snapshot: PreviewStateSnapshot | None = None
         self._state_lock = RLock()
         logger.info("MainViewModel initialised")
 
@@ -119,11 +120,20 @@ class MainViewModel(GPSettingsPresetMixin):
             | tuple[int, int, object]
         ] = None,
         grace_settings: Optional[GraceTransformSettings | Mapping[str, Any]] = None,
+        lenient_midi_import: Optional[bool] = None,
     ) -> None:
         with self._state_lock:
             if input_path is not None:
                 normalized_path = input_path
                 if normalized_path != self.state.input_path:
+                    if (
+                        self._last_successful_input_snapshot is not None
+                        and self._last_successful_input_snapshot.input_path
+                        == self.state.input_path
+                    ):
+                        self._last_successful_input_snapshot = capture_preview_state(
+                            self.state, self._pitch_entries
+                        )
                     self.state.preview_settings = {}
                     self.state.available_parts = ()
                     self.state.selected_part_ids = ()
@@ -134,6 +144,8 @@ class MainViewModel(GPSettingsPresetMixin):
                     self.state.pitch_list = []
                     self._pitch_entries = []
                     self._pending_input_confirmation = bool(normalized_path)
+                    self.state.midi_import_report = None
+                    self.state.midi_import_error = None
                 self.state.input_path = normalized_path
             if prefer_mode is not None:
                 self.state.prefer_mode = prefer_mode
@@ -204,43 +216,8 @@ class MainViewModel(GPSettingsPresetMixin):
                     grace_settings,
                     base_grace,
                 )
-
-    def update_arranger_summary(
-        self,
-        *,
-        summaries: Optional[list[ArrangerInstrumentSummary] | tuple[ArrangerInstrumentSummary, ...]] = None,
-        strategy: Optional[str] = None,
-    ) -> None:
-        """Refresh arranger v2 summary data exposed to the UI."""
-
-        with self._state_lock:
-            if strategy is not None and strategy in ARRANGER_STRATEGIES:
-                self.state.arranger_strategy = strategy
-            if summaries is not None:
-                self.state.arranger_strategy_summary = tuple(summaries)
-
-    def update_arranger_results(
-        self,
-        *,
-        summary: ArrangerResultSummary | None | object = _UNSET,
-        explanations: Optional[Iterable[ArrangerExplanationRow]] = None,
-        telemetry: Optional[Iterable[ArrangerTelemetryHint]] = None,
-    ) -> None:
-        """Refresh arranger v2 outcome details used by the results panel."""
-
-        with self._state_lock:
-            if summary is not _UNSET:
-                self.state.arranger_result_summary = summary  # type: ignore[assignment]
-            if explanations is not None:
-                self.state.arranger_explanations = tuple(explanations)
-            if telemetry is not None:
-                self.state.arranger_telemetry = tuple(telemetry)
-
-    def reset_arranger_budgets(self) -> None:
-        """Restore arranger salvage budgets to default values."""
-
-        with self._state_lock:
-            self.state.arranger_budgets = ArrangerBudgetSettings()
+            if lenient_midi_import is not None:
+                self.state.lenient_midi_import = bool(lenient_midi_import)
 
     def settings(self) -> TransformSettings:
         with self._state_lock:
@@ -255,7 +232,21 @@ class MainViewModel(GPSettingsPresetMixin):
                 instrument_id=self.state.instrument_id,
                 selected_part_ids=self.state.selected_part_ids,
                 grace_settings=self.state.grace_settings,
+                lenient_midi_import=self.state.lenient_midi_import,
             )
+
+    def _midi_import_mode(self) -> str:
+        with self._state_lock:
+            enabled = bool(getattr(self.state, "lenient_midi_import", True))
+        return "auto" if enabled else "strict"
+
+    def update_midi_import_report(self, report: MidiImportReport | None) -> None:
+        with self._state_lock:
+            self.state.midi_import_report = report
+
+    def update_midi_import_error(self, message: str | None) -> None:
+        with self._state_lock:
+            self.state.midi_import_error = message
 
     # ------------------------------------------------------------------
     # Commands used by the UI
@@ -266,14 +257,20 @@ class MainViewModel(GPSettingsPresetMixin):
         if not path:
             logger.debug("Skipping part metadata load: no input path set")
             self.update_settings(available_parts=())
+            self.update_midi_import_report(None)
             return ()
         parts: tuple[MusicXmlPartInfo, ...] = ()
+        midi_mode = self._midi_import_mode()
         try:
-            loaded = self._score_service.load_part_metadata(path)
-        except Exception:
+            loaded = self._score_service.load_part_metadata(path, midi_mode=midi_mode)
+        except Exception as exc:
             logger.exception("Failed to load part metadata", extra={"path": path})
+            self.update_midi_import_report(getattr(self._score_service, "last_midi_report", None))
+            self.update_midi_import_error(str(exc) or exc.__class__.__name__)
         else:
             parts = tuple(loaded)
+            self.update_midi_import_report(getattr(self._score_service, "last_midi_report", None))
+            self.update_midi_import_error(None)
         self.update_settings(available_parts=parts)
         with self._state_lock:
             if self.state.available_parts and not self.state.selected_part_ids:
@@ -287,8 +284,13 @@ class MainViewModel(GPSettingsPresetMixin):
             allowed = (part.part_id for part in self.state.available_parts)
         normalized = normalize_selected_part_ids(part_ids, allowed)
         self.update_settings(selected_part_ids=normalized)
+        confirmed_selection = bool(normalized) or bool(part_ids)
         with self._state_lock:
-            self._pending_input_confirmation = False
+            if (
+                confirmed_selection
+                and self.state.midi_import_error is None
+            ):
+                self._pending_input_confirmation = False
             return self.state.selected_part_ids
 
     def ask_select_parts(
@@ -351,13 +353,25 @@ class MainViewModel(GPSettingsPresetMixin):
             path = require_result.unwrap()
             settings_snapshot = self.settings()
         logger.info("Building preview data", extra={"path": path})
+        midi_mode = self._midi_import_mode()
         try:
-            preview = self._score_service.build_preview(path, settings_snapshot)
+            preview = self._score_service.build_preview(
+                path,
+                settings_snapshot,
+                midi_mode=midi_mode,
+            )
+            self.update_midi_import_report(getattr(self._score_service, "last_midi_report", None))
+            self.update_midi_import_error(None)
         except Exception as exc:
+            error_message = str(exc) or exc.__class__.__name__
             with self._state_lock:
-                self.state.status_message = "Preview failed."
+                self.state.status_message = f"Preview failed: {error_message}"
+                self._restore_last_successful_preview_locked()
+                self._pending_input_confirmation = bool(self.state.input_path)
+            self.update_midi_import_report(None)
+            self.update_midi_import_error(error_message)
             logger.exception("Failed to build preview", extra={"path": path})
-            return Result.err(str(exc))
+            return Result.err(error_message)
         with self._state_lock:
             self.state.status_message = "Preview rendered."
         computation: ArrangerComputation | None = None
@@ -372,6 +386,12 @@ class MainViewModel(GPSettingsPresetMixin):
             self.update_arranger_summary(summaries=(), strategy=self.state.arranger_strategy)
             self.update_arranger_results(summary=None, explanations=(), telemetry=())
         updated_preview = preview_with_arranger_events(preview, computation)
+        with self._state_lock:
+            self.state.status_message = "Preview rendered."
+            self._pending_input_confirmation = False
+            self._last_successful_input_snapshot = capture_preview_state(
+                self.state, self._pitch_entries
+            )
         logger.info("Preview build completed", extra={"path": path})
         return Result.ok(updated_preview)
 
@@ -395,68 +415,38 @@ class MainViewModel(GPSettingsPresetMixin):
             logger.info("Conversion cancelled while choosing destination", extra={"path": path})
             return None
         options = pdf_options or PdfExportOptions.with_defaults()
+        midi_mode = self._midi_import_mode()
         try:
-            result = self._score_service.convert(path, save_path, self.settings(), options)
+            result = self._score_service.convert(
+                path,
+                save_path,
+                self.settings(),
+                options,
+                midi_mode=midi_mode,
+            )
         except Exception as exc:
-            self.state.status_message = "Conversion failed."
-            logger.exception("Conversion failed", extra={"input_path": path, "output_path": save_path})
-            return Result.err(str(exc))
+            error_message = str(exc) or exc.__class__.__name__
+            with self._state_lock:
+                self.state.status_message = "Conversion failed."
+            self.update_midi_import_error(error_message)
+            logger.exception(
+                "Conversion failed",
+                extra={"input_path": path, "output_path": save_path},
+            )
+            return Result.err(error_message)
+        self.update_midi_import_report(getattr(result, "midi_report", None))
+        self.update_midi_import_error(None)
         self.state.pitch_list = list(result.used_pitches)
         self._pitch_entries = list(result.used_pitches)
         self._last_conversion = result
         self._last_pdf_options = options
-        self.state.status_message = "Converted OK."
+        with self._state_lock:
+            self.state.status_message = "Converted OK."
         logger.info(
             "Conversion succeeded",
             extra={"input_path": path, "output_xml": str(result.output_xml_path)},
         )
         return Result.ok(result)
-
-    def save_project(self) -> Optional[Result[str, str]]:
-        require_result = self._require_existing_input("Choose a valid input file before saving a project.")
-        if require_result.is_err():
-            return Result.err(require_result.error)
-        input_path = require_result.unwrap()
-        base = os.path.splitext(os.path.basename(input_path))[0] or "ocarina-project"
-        destination = self._dialogs.ask_save_project_path(f"{base}.ocarina")
-        if not destination:
-            logger.info("Project save cancelled", extra={"input_path": input_path})
-            return None
-        return self.save_project_to(destination)
-
-    def save_project_to(self, destination: str | Path) -> Result[str, str]:
-        snapshot = build_project_snapshot(self)
-        try:
-            saved = self._project_service.save(snapshot, Path(destination))
-        except ProjectPersistenceError as exc:
-            self.state.status_message = "Project save failed."
-            logger.exception("Project save failed", extra={"destination": str(destination)})
-            return Result.err(str(exc))
-        with self._state_lock:
-            self.state.status_message = "Project saved."
-            self.state.project_path = str(saved)
-        logger.info("Project saved", extra={"destination": str(saved)})
-        return Result.ok(str(saved))
-
-    def open_project(self, extract_dir: Path | None = None) -> Optional[Result[LoadedProject, str]]:
-        path = self._dialogs.ask_open_project_path()
-        if not path:
-            logger.info("Project load cancelled")
-            return None
-        return self.load_project_from(path, extract_dir)
-
-    def load_project_from(
-        self, project_path: str | Path, extract_dir: Path | None = None
-    ) -> Result[LoadedProject, str]:
-        try:
-            loaded = self._project_service.load(Path(project_path), extract_dir)
-        except ProjectPersistenceError as exc:
-            self.state.status_message = "Project load failed."
-            logger.exception("Project load failed", extra={"path": str(project_path)})
-            return Result.err(str(exc))
-        self._apply_loaded_project(loaded)
-        logger.info("Project loaded", extra={"path": str(project_path)})
-        return Result.ok(loaded)
 
     def pitch_entries(self) -> list[str]:
         with self._state_lock:
@@ -477,9 +467,6 @@ class MainViewModel(GPSettingsPresetMixin):
             return Result.err(message)
         return Result.ok(path)
 
-    def _apply_loaded_project(self, loaded: LoadedProject) -> None:
-        apply_loaded_project(self, loaded)
-
     def update_preview_settings(
         self, preview_settings: dict[str, PreviewPlaybackSnapshot]
     ) -> None:
@@ -487,6 +474,12 @@ class MainViewModel(GPSettingsPresetMixin):
 
     def preview_settings(self) -> dict[str, PreviewPlaybackSnapshot]:
         return dict(self.state.preview_settings)
+
+    def _restore_last_successful_preview_locked(self) -> None:
+        snapshot = self._last_successful_input_snapshot
+        if snapshot is None:
+            return
+        self._pitch_entries = restore_preview_state(self.state, snapshot)
     # ------------------------------------------------------------------
     # Arranger helpers
     # ------------------------------------------------------------------

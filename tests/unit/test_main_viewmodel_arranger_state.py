@@ -12,6 +12,7 @@ from services.project_service_gp import export_gp_preset
 from services.score_service import ScoreService
 from ocarina_gui.settings import TransformSettings
 from ocarina_tools.parts import MusicXmlPartInfo
+from ocarina_tools.io import ScoreLoadResult
 from viewmodels.arranger_models import (
     ArrangerBudgetSettings,
     ArrangerGPSettings,
@@ -70,7 +71,7 @@ def _make_viewmodel(
     """Create a view-model instance with stubbed dependencies."""
 
     stub_score_service = ScoreService(
-        load_score=lambda path: (None, None),
+        load_score=lambda path, **_: ScoreLoadResult(tree=None, root=None),
         build_preview_data=lambda path, settings: None,
         convert_score=lambda *args, **kwargs: None,
         export_musicxml=lambda *args, **kwargs: None,

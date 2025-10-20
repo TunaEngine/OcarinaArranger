@@ -28,6 +28,7 @@ def test_convert_success_updates_state(tmp_path: Path, conversion_result: Conver
     assert result is not None and result.is_ok()
     assert viewmodel.state.status_message == "Converted OK."
     assert viewmodel.state.pitch_list == conversion_result.used_pitches
+    assert viewmodel.state.midi_import_error is None
 
 
 def test_convert_handles_cancellation(tmp_path: Path, conversion_result: ConversionResult) -> None:
@@ -53,6 +54,7 @@ def test_convert_propagates_error(tmp_path: Path, conversion_result: ConversionR
     assert result is not None and result.is_err()
     assert result.error == "boom"
     assert viewmodel.state.status_message == "Conversion failed."
+    assert viewmodel.state.midi_import_error == "boom"
 
 
 def test_convert_passes_manual_transpose_setting(tmp_path: Path, conversion_result: ConversionResult) -> None:

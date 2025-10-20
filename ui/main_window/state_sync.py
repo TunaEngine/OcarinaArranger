@@ -18,6 +18,11 @@ class MainWindowStateSyncMixin:
             self.prefer_flats.set(bool(state.prefer_flats))
             self.collapse_chords.set(bool(state.collapse_chords))
             self.favor_lower.set(bool(state.favor_lower))
+            self._suspend_lenient_midi_trace = True
+            try:
+                self.lenient_midi_import.set(bool(getattr(state, "lenient_midi_import", True)))
+            finally:
+                self._suspend_lenient_midi_trace = False
             self.range_min.set(state.range_min or DEFAULT_MIN)
             self.range_max.set(state.range_max or DEFAULT_MAX)
             self._suppress_arranger_mode_trace = True
@@ -107,6 +112,12 @@ class MainWindowStateSyncMixin:
         if hasattr(self, "_refresh_arranger_results_from_state"):
             try:
                 self._refresh_arranger_results_from_state()
+            except Exception:
+                pass
+        updater = getattr(self, "_update_midi_import_notice", None)
+        if callable(updater):
+            try:
+                updater(getattr(state, "midi_import_report", None))
             except Exception:
                 pass
         refresh = getattr(self, "_update_arranger_mode_layout", None)

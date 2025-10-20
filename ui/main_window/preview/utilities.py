@@ -69,6 +69,9 @@ class PreviewUtilitiesMixin:
                 if hasattr(self, "_collect_grace_settings")
                 else GraceTransformSettings()
             ),
+            lenient_midi_import=self.lenient_midi_import.get()
+            if hasattr(self, "lenient_midi_import")
+            else True,
         )
         preview_settings: dict[str, PreviewPlaybackSnapshot] = {}
         applied_by_side = getattr(self, "_preview_applied_settings", {})
@@ -343,6 +346,11 @@ class PreviewUtilitiesMixin:
             ),
             "arranger_gp_settings": _gp_snapshot(),
             "grace_settings": _grace_snapshot(),
+            "lenient_midi_import": (
+                bool(self.lenient_midi_import.get())
+                if hasattr(self, "lenient_midi_import")
+                else True
+            ),
         }
 
     def _record_preview_import(self) -> None:

@@ -1,4 +1,5 @@
-from .io import load_score
+from .io import ScoreLoadResult, load_score
+from .midi_import import read_midi
 from .key_analysis import analyze_key, compute_transpose_semitones
 from .pitch import midi_to_name, midi_to_pitch, parse_note_name, pitch_to_midi
 from .adaptation import collect_used_pitches, favor_lower_register, transform_to_ocarina
@@ -16,6 +17,8 @@ from .parts import MusicXmlPartInfo, filter_parts, list_parts
 
 __all__ = [
     "load_score",
+    "ScoreLoadResult",
+    "read_midi",
     "analyze_key",
     "compute_transpose_semitones",
     "pitch_to_midi",
