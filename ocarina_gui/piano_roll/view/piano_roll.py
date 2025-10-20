@@ -228,6 +228,7 @@ class PianoRoll(
                 self._ticks_per_measure,
                 total_ticks=total_ticks,
             )
+            self._redraw_tempo_markers()
             return
 
         outcome = self._renderer.render(

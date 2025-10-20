@@ -145,6 +145,60 @@ def test_preview_tempo_markers_follow_tempo_changes(gui_app, tmp_path):
             assert staff.canvas.itemcget(item, "text") == label
 
 
+def test_preview_tempo_markers_survive_zoom(gui_app, tmp_path):
+    tree, _ = make_score_with_tempo_changes()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    roll = gui_app.roll_orig
+    staff = gui_app.staff_orig
+    assert roll is not None
+    assert staff is not None
+
+    expected_labels = set(_canvas_marker_texts(roll.canvas))
+    assert expected_labels
+
+    roll.set_zoom(2)
+    gui_app.update_idletasks()
+    roll.set_time_zoom(1.5)
+    gui_app.update_idletasks()
+    staff.set_time_zoom(0.75)
+    gui_app.update_idletasks()
+
+    assert roll._tempo_marker_items  # type: ignore[attr-defined]
+    assert staff._tempo_marker_items  # type: ignore[attr-defined]
+    assert set(_canvas_marker_texts(roll.canvas)) == expected_labels
+    assert set(_canvas_marker_texts(staff.canvas)) == expected_labels
+    assert set(label for _tick, label in gui_app._preview_tempo_marker_pairs["original"]) == expected_labels
+
+
+def test_preview_tempo_markers_survive_wrapped_zoom(gui_app, tmp_path):
+    tree, _ = make_score_with_tempo_changes()
+    path = write_score(tmp_path, tree)
+    gui_app.input_path.set(str(path))
+    gui_app.render_previews()
+    gui_app.update_idletasks()
+
+    roll = gui_app.roll_orig
+    assert roll is not None
+
+    roll.set_time_scroll_orientation("vertical")
+    gui_app.update_idletasks()
+
+    roll.set_zoom(2)
+    gui_app.update_idletasks()
+
+    expected_labels = set(_canvas_marker_texts(roll.canvas))
+    assert expected_labels
+
+    roll.set_time_zoom(1.5)
+    gui_app.update_idletasks()
+
+    assert set(_canvas_marker_texts(roll.canvas)) == expected_labels
+
+
 def test_preview_metronome_toggle_updates_viewmodel(gui_app, tmp_path):
     tree, _ = make_linear_score()
     path = write_score(tmp_path, tree)
