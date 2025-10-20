@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import Sequence, Tuple
 
 from domain.arrangement.config import GraceSettings
 from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.melody import isolate_melody as _isolate_melody
-from domain.arrangement.phrase import PhraseSpan
+from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.range_guard import enforce_instrument_range
 from domain.arrangement.soft_key import InstrumentRange
 
@@ -21,7 +21,11 @@ from .program_utils import (
     describe_program as _describe_program,
     span_within_instrument_range as _span_within_instrument_range,
 )
-from .strategy_alignment import _align_uniform_octave_span, _uniform_octave_shift
+from .strategy_alignment import (
+    _align_top_voice_to_baseline,
+    _align_uniform_octave_span,
+    _uniform_octave_shift,
+)
 from .strategy_scoring import _melody_shift_penalty, _top_voice_notes
 from .strategy_types import GPInstrumentCandidate
 
@@ -42,9 +46,15 @@ def _evaluate_program_candidate(
     candidate_span: PhraseSpan | None = None,
     allow_range_clamp: bool = True,
     grace_settings: GraceSettings | None = None,
+    baseline_top_voice: Sequence[PhraseNote] | None = None,
+    expected_offset: int | None = None,
+    reference_span: PhraseSpan | None = None,
+    uniform_reference_top_voice: Sequence[PhraseNote] | None = None,
+    uniform_reference_deltas: Sequence[int] | None = None,
 ) -> tuple[GPInstrumentCandidate, ExplanationEvent | None]:
     if candidate_span is None:
         candidate_span = phrase if not program else _apply_program(program, phrase)
+    reference_span = reference_span or phrase
     range_event: ExplanationEvent | None = None
     clamp_disabled_out_of_range = False
     uniform_shift = _uniform_octave_shift(program, phrase)
@@ -80,10 +90,25 @@ def _evaluate_program_candidate(
             if range_event is not None and uniform_shift is not None:
                 candidate_span = _align_uniform_octave_span(
                     candidate_span,
-                    original_span=phrase,
+                    reference_span=reference_span,
                     instrument=instrument,
                     uniform_shift=uniform_shift,
                 )
+
+    if baseline_top_voice and expected_offset is not None:
+        candidate_span = _align_top_voice_to_baseline(
+            candidate_span,
+            baseline_top_voice=baseline_top_voice,
+            instrument=instrument,
+            expected_offset=expected_offset,
+        )
+    if uniform_reference_top_voice:
+        candidate_span = _align_top_voice_to_baseline(
+            candidate_span,
+            baseline_top_voice=uniform_reference_top_voice,
+            instrument=instrument,
+            expected_offset=0,
+        )
 
     difficulty = summarize_difficulty(
         candidate_span, instrument, grace_settings=grace_settings
@@ -115,11 +140,14 @@ def _evaluate_program_candidate(
                 top_candidate[index].midi - top_original[index].midi
                 for index in range(sample)
             ]
+            allowed_deltas: set[int] = {int(penalty_shift)}
+            if uniform_reference_deltas:
+                allowed_deltas.update(int(delta) for delta in uniform_reference_deltas)
             unique_deltas = set(delta_values)
-            if len(unique_deltas) == 1 and penalty_shift in unique_deltas:
+            if unique_deltas.issubset(allowed_deltas):
                 shift_penalty = 0.0
             else:
-                matches = sum(1 for delta in delta_values if delta == penalty_shift)
+                matches = sum(1 for delta in delta_values if delta in allowed_deltas)
                 mismatch_ratio = 1.0 - (matches / sample)
                 if mismatch_ratio > 0:
                     shift_penalty = max(shift_penalty, mismatch_ratio * 12.0)

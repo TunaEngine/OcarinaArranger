@@ -12,8 +12,7 @@ from domain.arrangement.config import (
 )
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.melody import isolate_melody as _isolate_melody
-from domain.arrangement.phrase import PhraseSpan
-from domain.arrangement.soft_key import InstrumentRange
+from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.logging_utils import (
     describe_difficulty,
     describe_instrument,
@@ -21,25 +20,24 @@ from domain.arrangement.logging_utils import (
     span_note_names,
 )
 
-from .fitness import FitnessConfig, compute_fitness, melody_pitch_penalty
+from .fitness import compute_fitness, melody_pitch_penalty
 from .ops import GPPrimitive
-from .session import GPSessionConfig, GPSessionResult, run_gp_session
-from .session_logging import serialize_individual
 from .program_utils import (
+    auto_range_programs as _auto_range_programs,
     describe_program as _describe_program,
-    program_candidates as _program_candidates,
 )
+from .session import GPSessionConfig, run_gp_session
+from .session_logging import serialize_individual
+from .strategy_alignment import _align_top_voice_to_target
+from .strategy_evaluation import _evaluate_program_candidate
+from .strategy_instrument import score_instrument as _score_instrument
 from .strategy_scoring import (
-    ScoringPenalties,
     _difficulty_sort_key,
     _melody_shift_penalty,
     _summarize_individual,
+    _top_voice_notes,
 )
-from .program_utils import auto_range_programs as _auto_range_programs
-from .strategy_candidates import generate_candidate_programs
 from .strategy_types import GPArrangementStrategyResult, GPInstrumentCandidate
-from .strategy_alignment import _align_top_voice_to_target
-from .strategy_evaluation import _evaluate_program_candidate
 
 
 if TYPE_CHECKING:
@@ -49,134 +47,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 # Re-export the melody isolation helper so existing tests can monkeypatch via this module.
 isolate_melody = _isolate_melody
-
-
-def _score_instrument(
-    *,
-    instrument_id: str,
-    instrument: InstrumentRange,
-    phrase: PhraseSpan,
-    programs: Sequence[Sequence[GPPrimitive]],
-    fitness_config: FitnessConfig | None,
-    beats_per_measure: int,
-    manual_transposition: int = 0,
-    preferred_register_shift: int | None = None,
-    penalties: ScoringPenalties | None = None,
-    grace_settings: GraceSettings | None = None,
-) -> tuple[
-    GPInstrumentCandidate,
-    tuple[int, float, float, float, float, float, float, float, float, float, float],
-    tuple[tuple[GPPrimitive, ...], ...],
-]:
-    penalties = penalties or ScoringPenalties()
-    allow_range_clamp = penalties.allow_range_clamp()
-
-    candidate_programs, auto_programs = generate_candidate_programs(
-        programs,
-        phrase=phrase,
-        instrument=instrument,
-        beats_per_measure=beats_per_measure,
-        manual_transposition=manual_transposition,
-        preferred_register_shift=preferred_register_shift,
-        auto_range_factory=_auto_range_programs,
-    )
-    if auto_programs:
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "arrange_v3_gp:auto programs instrument_id=%s programs=%s",
-                instrument_id,
-                [_describe_program(program) for program in auto_programs],
-            )
-    elif manual_transposition and logger.isEnabledFor(logging.DEBUG):
-        logger.debug(
-            "arrange_v3_gp:auto programs skipped instrument_id=%s manual_transposition=%+d",
-            instrument_id,
-            manual_transposition,
-        )
-
-    program_spans = _program_candidates(programs=candidate_programs, phrase=phrase)
-    candidates: list[GPInstrumentCandidate] = []
-    fallback_candidates: list[GPInstrumentCandidate] = []
-    identity_candidate: GPInstrumentCandidate | None = None
-
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug(
-            "arrange_v3_gp:score start instrument_id=%s instrument=%s programs=%d",
-            instrument_id,
-            describe_instrument(instrument),
-            len(program_spans),
-        )
-
-    for program, candidate_span in program_spans.items():
-        candidate, range_event = _evaluate_program_candidate(
-            program,
-            instrument_id=instrument_id,
-            instrument=instrument,
-            phrase=phrase,
-            beats_per_measure=beats_per_measure,
-            fitness_config=fitness_config,
-            candidate_span=candidate_span,
-            allow_range_clamp=allow_range_clamp,
-            grace_settings=grace_settings,
-        )
-        if not program:
-            identity_candidate = candidate
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "arrange_v3_gp:score candidate instrument_id=%s program=%s %s fitness=%s melody_penalty=%.3f range_clamped=%s span=%s",
-                instrument_id,
-                _describe_program(candidate.program),
-                describe_difficulty(candidate.difficulty),
-                candidate.fitness.as_tuple(),
-                candidate.melody_penalty,
-                range_event.reason if range_event is not None else None,
-                describe_span(candidate.span),
-            )
-        fallback_candidates.append(candidate)
-        if not allow_range_clamp and range_event is not None:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "arrange_v3_gp:skip candidate instrument_id=%s reason=range-clamp-disabled program=%s",
-                    instrument_id,
-                    _describe_program(candidate.program),
-                )
-            continue
-        candidates.append(candidate)
-
-    if not candidates:
-        candidates = fallback_candidates
-    if not candidates:  # pragma: no cover - defensive
-        raise RuntimeError("Unable to score instrument without GP programs")
-
-    fidelity_baseline = (
-        identity_candidate.fitness.fidelity if identity_candidate is not None else None
-    )
-    fidelity_importance = (
-        fitness_config.fidelity.weight if fitness_config is not None else 1.0
-    )
-    melody_baseline = (
-        identity_candidate.melody_penalty if identity_candidate is not None else None
-    )
-    melody_importance = fidelity_importance
-
-    keyed_candidates = [
-        (
-            _difficulty_sort_key(
-                candidate,
-                baseline_fidelity=fidelity_baseline,
-                fidelity_importance=fidelity_importance,
-                baseline_melody=melody_baseline,
-                melody_importance=melody_importance,
-                penalties=penalties,
-            ),
-            candidate,
-        )
-        for candidate in candidates
-    ]
-    keyed_candidates.sort(key=lambda item: item[0])
-    best_key, best_candidate = keyed_candidates[0]
-
-    return best_candidate, best_key, tuple(candidate_programs)
 
 
 def arrange_v3_gp(
@@ -292,23 +162,22 @@ def arrange_v3_gp(
     archive_summary = tuple(serialize_individual(individual) for individual in session.archive)
 
     starred_order = tuple(dict.fromkeys(starred_ids or ()))
-    candidate_ids: list[str] = []
-    if not starred_order:
-        candidate_ids.append(instrument_id)
-    else:
-        if instrument_id in starred_order:
-            candidate_ids.append(instrument_id)
-        for starred in starred_order:  # preserve declaration order
-            if starred not in candidate_ids:
-                candidate_ids.append(starred)
+    candidate_ids: list[str] = [instrument_id]
+    for starred in starred_order:  # preserve declaration order
+        if starred not in candidate_ids:
+            candidate_ids.append(starred)
 
     candidates: list[GPInstrumentCandidate] = []
     candidate_keys: dict[
         str,
         tuple[int, float, float, float, float, float, float, float, float, float, float],
     ] = {}
+    baseline_top_voice: tuple[PhraseNote, ...] | None = None
     for candidate_id in candidate_ids:
         instrument = get_instrument_range(candidate_id)
+        expected_offset = None
+        if baseline_top_voice is not None:
+            expected_offset = instrument.min_midi - base_instrument.min_midi
         candidate, sort_key, used_programs = _score_instrument(
             instrument_id=candidate_id,
             instrument=instrument,
@@ -320,9 +189,13 @@ def arrange_v3_gp(
             preferred_register_shift=preferred_register_shift,
             penalties=penalties,
             grace_settings=active_grace,
+            baseline_top_voice=baseline_top_voice,
+            expected_offset=expected_offset,
         )
         candidates.append(candidate)
         candidate_keys[candidate.instrument_id] = sort_key
+        if candidate_id == instrument_id and baseline_top_voice is None:
+            baseline_top_voice = _top_voice_notes(candidate.span)
         for program in used_programs:
             if program not in programs:
                 programs.append(program)
@@ -344,9 +217,23 @@ def arrange_v3_gp(
             ],
         )
 
+    if starred_order:
+        comparison_ids: list[str] = []
+        if instrument_id in starred_order:
+            comparison_ids.append(instrument_id)
+        for starred in starred_order:
+            if starred not in comparison_ids:
+                comparison_ids.append(starred)
+    else:
+        comparison_ids = [instrument_id]
+    candidate_by_id = {candidate.instrument_id: candidate for candidate in candidates}
     ranked = tuple(
         sorted(
-            candidates,
+            (
+                candidate_by_id[candidate_id]
+                for candidate_id in comparison_ids
+                if candidate_id in candidate_by_id
+            ),
             key=lambda candidate: candidate_keys[candidate.instrument_id],
         )
     )
@@ -414,5 +301,10 @@ __all__ = [
     "arrange_v3_gp",
     "compute_fitness",
     "melody_pitch_penalty",
+    "_auto_range_programs",
+    "_difficulty_sort_key",
+    "_melody_shift_penalty",
+    "_score_instrument",
+    "_evaluate_program_candidate",
 ]
 

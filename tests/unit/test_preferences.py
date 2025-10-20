@@ -15,6 +15,7 @@ def test_preferences_round_trip(tmp_path):
         preview_layout_mode="piano_vertical",
         auto_update_enabled=False,
         arranger_mode="best_effort",
+        instrument_id="alto_c",
     )
 
     save_preferences(preferences, path)
@@ -27,6 +28,7 @@ def test_preferences_round_trip(tmp_path):
     assert loaded.preview_layout_mode == "piano_vertical"
     assert loaded.auto_update_enabled is False
     assert loaded.arranger_mode == "best_effort"
+    assert loaded.instrument_id == "alto_c"
 
 
 def test_load_preferences_with_invalid_types(tmp_path):
@@ -41,6 +43,7 @@ def test_load_preferences_with_invalid_types(tmp_path):
                 "preview_layout_mode": "unsupported",
                 "auto_update_enabled": "nope",
                 "arranger_mode": 17,
+                "instrument_id": 14,
             }
         ),
         encoding="utf-8",
@@ -54,6 +57,7 @@ def test_load_preferences_with_invalid_types(tmp_path):
     assert loaded.preview_layout_mode is None
     assert loaded.auto_update_enabled is None
     assert loaded.arranger_mode is None
+    assert loaded.instrument_id is None
 
 
 def test_load_preferences_normalizes_gp_modes(tmp_path):
@@ -69,3 +73,16 @@ def test_load_preferences_normalizes_gp_modes(tmp_path):
     loaded = load_preferences(path)
 
     assert loaded.arranger_mode == "gp"
+
+
+def test_load_preferences_trims_instrument_id(tmp_path):
+    path = tmp_path / "prefs.json"
+    path.write_text(json.dumps({"instrument_id": "  alto_c_6  "}), encoding="utf-8")
+
+    loaded = load_preferences(path)
+    assert loaded.instrument_id == "alto_c_6"
+
+    path.write_text(json.dumps({"instrument_id": "   "}), encoding="utf-8")
+
+    loaded = load_preferences(path)
+    assert loaded.instrument_id is None

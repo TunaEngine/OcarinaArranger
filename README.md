@@ -94,15 +94,15 @@ The **Show advanced arranger controls** panel now exposes a dedicated **Grace no
 that controls how ornamental notes are realized during import and how aggressively they are
 preserved during arranging:
 
-* **Policy** – choose between tempo-weighted theft (default) or the fixed "steal" behaviour.
-* **Fractions** – set up to three proportional weights that apportion time from the anchor note
+- **Policy** – choose between tempo-weighted theft (default) or the fixed "steal" behaviour.
+- **Fractions** – set up to three proportional weights that apportion time from the anchor note
   to each grace in a chain.
-* **Max chain** – cap how many graces are allowed to survive before the anchor.
-* **Anchor minimum** – ensure the principal note keeps at least the selected fraction of a beat
+- **Max chain** – cap how many graces are allowed to survive before the anchor.
+- **Anchor minimum** – ensure the principal note keeps at least the selected fraction of a beat
   after theft.
-* **Fold/Drop toggles** – decide whether out-of-range graces are folded into range or dropped.
-* **Tempo thresholds** – configure the slow/fast BPM limits used for pruning at extreme speeds.
-* **Grace bonus** – control the difficulty reduction awarded when graces remain in the output.
+- **Fold/Drop toggles** – decide whether out-of-range graces are folded into range or dropped.
+- **Tempo thresholds** – configure the slow/fast BPM limits used for pruning at extreme speeds.
+- **Grace bonus** – control the difficulty reduction awarded when graces remain in the output.
 
 The viewmodel, project manifests and importer all honour these settings, so the configured grace
 behaviour survives project saves and reloads without additional tweaks.
@@ -178,8 +178,8 @@ virtualenv binaries directly):
 xvfb-run -a .venv/bin/pytest
 ```
 
-On Windows the activation command is `\.venv\\Scripts\\activate` and the
-pytest binary lives under `\.venv\\Scripts\\pytest.exe`.
+On Windows the activation command is `.venv\Scripts\activate` and the
+pytest binary lives under `.venv\Scripts\pytest.exe`.
 
 For the roadmap that tracks behaviour-driven UI coverage, see
 [`docs/e2e_test_plan.md`](docs/e2e_test_plan.md).

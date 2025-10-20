@@ -356,9 +356,10 @@ class PreviewPlaybackControlMixin:
         if playback is None:
             return
         self._cancel_loop_range_selection(side)
+        raw_volume = float(playback.state.volume) * 100.0
+        target_volume = max(0.0, min(100.0, raw_volume))
         volume_var = self._preview_volume_vars.get(side)
         if volume_var is not None:
-            target_volume = float(playback.state.volume) * 100.0
             try:
                 target_volume = self._set_volume_controls_value(side, target_volume)
             except AttributeError:
@@ -369,8 +370,10 @@ class PreviewPlaybackControlMixin:
                     pass
                 finally:
                     self._suspend_volume_update.discard(side)
-            if target_volume > 0.0:
-                self._preview_volume_memory[side] = target_volume
+        else:
+            target_volume = max(0.0, min(100.0, raw_volume))
+        if target_volume > 0.0:
+            self._preview_volume_memory[side] = target_volume
         tempo_var = self._preview_tempo_vars.get(side)
         if tempo_var is not None:
             self._suspend_tempo_update.add(side)
@@ -428,13 +431,18 @@ class PreviewPlaybackControlMixin:
             ):
                 tempo_to_apply = float(preview_data.tempo_bpm)
                 playback.state.tempo_bpm = tempo_to_apply
-        self._preview_applied_settings[side] = {
-            "tempo": tempo_to_apply,
-            "metronome": playback.state.metronome_enabled,
-            "loop_enabled": playback.state.loop.enabled,
-            "loop_start": start_beats,
-            "loop_end": end_beats,
-        }
+        applied_snapshot = dict(self._preview_applied_settings.get(side, {}))
+        applied_snapshot.update(
+            {
+                "tempo": tempo_to_apply,
+                "metronome": playback.state.metronome_enabled,
+                "loop_enabled": playback.state.loop.enabled,
+                "loop_start": start_beats,
+                "loop_end": end_beats,
+                "volume": target_volume,
+            }
+        )
+        self._preview_applied_settings[side] = applied_snapshot
         self._update_preview_apply_cancel_state(side)
         self._update_loop_marker_visuals(side)
 

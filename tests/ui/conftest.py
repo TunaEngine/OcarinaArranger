@@ -13,6 +13,7 @@ from domain.arrangement.gp.fitness import FitnessVector
 from domain.arrangement.soft_key import InstrumentRange
 from ocarina_gui import App, themes
 from ocarina_gui.fingering import FingeringLibrary, InstrumentSpec
+from ocarina_gui.preferences import Preferences
 from viewmodels.preview_playback_viewmodel import AudioRenderer, PreviewPlaybackViewModel
 
 
@@ -110,6 +111,26 @@ class _StubAudioRenderer(AudioRenderer):
 @pytest.fixture
 def gui_app(request, monkeypatch):
     original_theme = themes.get_current_theme_id()
+
+    preference_instrument_id: str | None = None
+    if hasattr(request, "param"):
+        param = request.param
+        if isinstance(param, dict):
+            preference_instrument_id = param.get("instrument_id")
+        elif isinstance(param, str):
+            preference_instrument_id = param
+
+    stub_preferences: Preferences | None = None
+    if preference_instrument_id:
+        stub_preferences = Preferences(instrument_id=str(preference_instrument_id))
+
+        def _load_preferences_stub(_path=None):  # type: ignore[unused-argument]
+            return stub_preferences
+
+        monkeypatch.setattr(
+            "ui.main_window.initialisation.load_preferences",
+            _load_preferences_stub,
+        )
 
     stub_instrument = InstrumentSpec.from_dict(
         {

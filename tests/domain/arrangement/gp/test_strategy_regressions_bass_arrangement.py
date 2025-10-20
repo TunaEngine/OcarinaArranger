@@ -9,6 +9,7 @@ from domain.arrangement.gp.selection import Individual
 from domain.arrangement.gp.strategy import arrange_v3_gp
 from domain.arrangement.soft_key import InstrumentRange
 
+from tests.domain.arrangement.gp.bass_melody_data import ARRANGING_CONSISTENCY_TRACK
 from tests.domain.arrangement.gp.bass_test_helpers import (
     MELODY_MIDIS,
     assert_constant_offset,
@@ -306,4 +307,72 @@ def test_arranger_keeps_uniform_offset_for_longer_phrase() -> None:
         alto_result.winner_candidate,
         melody_length,
         expected_offset,
+    )
+
+
+def test_arranger_keeps_uniform_offset_for_consistency_track() -> None:
+    """The arranging consistency track keeps uniform offsets across voices."""
+
+    bass_range = InstrumentRange(min_midi=57, max_midi=77, comfort_center=67)
+    alto_range = InstrumentRange(min_midi=69, max_midi=89, comfort_center=79)
+    soprano_range = InstrumentRange(min_midi=81, max_midi=101, comfort_center=91)
+
+    register_instrument_range("bass_c_12", bass_range)
+    register_instrument_range("alto_c_12", alto_range)
+    register_instrument_range("soprano_c_12", soprano_range)
+
+    phrase = make_span(ARRANGING_CONSISTENCY_TRACK)
+
+    result = arrange_v3_gp(
+        phrase,
+        instrument_id="bass_c_12",
+        starred_ids=("alto_c_12", "soprano_c_12"),
+        config=gp_config(),
+    )
+
+    candidates = {candidate.instrument_id: candidate for candidate in result.comparisons}
+    if "bass_c_12" not in candidates:
+        candidates["bass_c_12"] = result.winner_candidate
+
+    melody_length = len(ARRANGING_CONSISTENCY_TRACK)
+    bass_to_alto = alto_range.min_midi - bass_range.min_midi
+    alto_to_soprano = soprano_range.min_midi - alto_range.min_midi
+    bass_to_soprano = soprano_range.min_midi - bass_range.min_midi
+
+    assert_constant_offset(
+        candidates["bass_c_12"],
+        candidates["alto_c_12"],
+        melody_length,
+        bass_to_alto,
+    )
+    assert_constant_offset(
+        candidates["alto_c_12"],
+        candidates["soprano_c_12"],
+        melody_length,
+        alto_to_soprano,
+    )
+    assert_constant_offset(
+        candidates["bass_c_12"],
+        candidates["soprano_c_12"],
+        melody_length,
+        bass_to_soprano,
+    )
+
+    assert_constant_offset(
+        result.winner_candidate,
+        candidates["alto_c_12"],
+        melody_length,
+        bass_to_alto,
+    )
+    assert_constant_offset(
+        candidates["alto_c_12"],
+        candidates["soprano_c_12"],
+        melody_length,
+        alto_to_soprano,
+    )
+    assert_constant_offset(
+        result.winner_candidate,
+        candidates["soprano_c_12"],
+        melody_length,
+        bass_to_soprano,
     )

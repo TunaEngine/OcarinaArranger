@@ -13,8 +13,10 @@ from ocarina_gui.fingering import (
     get_available_instruments,
     get_current_instrument_id,
     get_instrument,
+    set_active_instrument,
     preferred_note_window,
 )
+from ocarina_gui.preferences import Preferences, save_preferences
 from ocarina_tools.midi_import.models import MidiImportReport
 from ui.dialogs.midi_import_issues import show_midi_import_issues
 
@@ -65,6 +67,22 @@ class InstrumentSettingsMixin:
             return
 
         state.instrument_id = selected_id
+        try:
+            set_active_instrument(selected_id)
+        except Exception:
+            logger.exception(
+                "Failed to activate fingering instrument during initialisation",
+                extra={"instrument_id": selected_id},
+            )
+        else:
+            try:
+                active_id = get_current_instrument_id()
+            except Exception:  # pragma: no cover - defensive
+                active_id = selected_id
+            if active_id and active_id in self._instrument_name_by_id:
+                selected_id = active_id
+                self._selected_instrument_id = active_id
+                state.instrument_id = active_id
         try:
             spec = get_instrument(selected_id)
         except Exception:
@@ -173,6 +191,18 @@ class InstrumentSettingsMixin:
                 self.range_max.set(preferred_max)
             self._viewmodel.state.range_min = preferred_min
             self._viewmodel.state.range_max = preferred_max
+
+        preferences = getattr(self, "preferences", None)
+        if isinstance(preferences, Preferences):
+            normalized_instrument_id = instrument_id.strip()
+            if normalized_instrument_id and preferences.instrument_id != normalized_instrument_id:
+                preferences.instrument_id = normalized_instrument_id
+                try:
+                    save_preferences(preferences)
+                except Exception:
+                    logger.warning(
+                        "Failed to persist instrument selection", extra={"instrument_id": normalized_instrument_id}
+                    )
         self._refresh_instrument_combo_values()
         self._refresh_range_combobox_values()
         self._on_convert_setting_changed()

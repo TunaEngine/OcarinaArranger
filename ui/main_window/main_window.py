@@ -77,6 +77,13 @@ class MainWindow(
                 lenient_import = stored_lenient
         state.lenient_midi_import = lenient_import
 
+        if isinstance(preferences, Preferences):
+            stored_instrument = getattr(preferences, "instrument_id", None)
+            if isinstance(stored_instrument, str):
+                normalized_instrument = stored_instrument.strip()
+                if normalized_instrument:
+                    state.instrument_id = normalized_instrument
+
         self._setup_instrument_attributes(state)
         self._create_convert_controls(state)
         self._setup_theme_support(preferences, current_theme)

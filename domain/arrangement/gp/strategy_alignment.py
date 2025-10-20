@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Sequence, Tuple
 
-from domain.arrangement.phrase import PhraseSpan
+from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
 from .ops import GPPrimitive, GlobalTranspose, LocalOctave
@@ -62,19 +62,19 @@ def _uniform_octave_shift(
 def _align_uniform_octave_span(
     candidate_span: PhraseSpan,
     *,
-    original_span: PhraseSpan,
+    reference_span: PhraseSpan,
     instrument: InstrumentRange,
     uniform_shift: int | None,
 ) -> PhraseSpan:
     """Align uniformly shifted spans toward a consistent octave offset."""
 
-    if not candidate_span.notes or not original_span.notes:
+    if not candidate_span.notes or not reference_span.notes:
         return candidate_span
     if uniform_shift is None:
         return candidate_span
 
     original_top: Dict[int, int] = {}
-    for note in original_span.notes:
+    for note in reference_span.notes:
         current = original_top.get(note.onset)
         if current is None or note.midi > current:
             original_top[note.onset] = note.midi
@@ -131,6 +131,74 @@ def _align_uniform_octave_span(
     return candidate_span.with_notes(tuple(candidate_notes))
 
 
+def _align_top_voice_to_baseline(
+    candidate_span: PhraseSpan,
+    *,
+    baseline_top_voice: Sequence[PhraseNote],
+    instrument: InstrumentRange,
+    expected_offset: int,
+) -> PhraseSpan:
+    """Align *candidate_span*'s top voice toward ``baseline_top_voice`` plus an offset."""
+
+    if not candidate_span.notes or not baseline_top_voice:
+        return candidate_span
+
+    baseline_targets: Dict[int, int] = {
+        note.onset: note.midi + expected_offset for note in baseline_top_voice
+    }
+    candidate_notes = list(candidate_span.notes)
+    top_indices: Dict[int, int] = {}
+    for index, note in enumerate(candidate_notes):
+        existing = top_indices.get(note.onset)
+        if existing is None or note.midi >= candidate_notes[existing].midi:
+            top_indices[note.onset] = index
+
+    if not top_indices:
+        return candidate_span
+
+    comfort_center = getattr(instrument, "comfort_center", None)
+    changed = False
+    for onset, index in top_indices.items():
+        desired = baseline_targets.get(onset)
+        if desired is None:
+            continue
+        current = candidate_notes[index]
+        options: List[Tuple[int, float, float, int, int]] = []
+        for octave_delta in range(-4, 5):
+            candidate_midi = int(desired + octave_delta * 12)
+            if not (instrument.min_midi <= candidate_midi <= instrument.max_midi):
+                continue
+            pitch_class_mismatch = 0 if (candidate_midi - desired) % 12 == 0 else 1
+            distance = abs(candidate_midi - desired)
+            comfort_metric = (
+                abs(candidate_midi - comfort_center)
+                if comfort_center is not None
+                else 0.0
+            )
+            original_distance = abs(candidate_midi - current.midi)
+            options.append(
+                (
+                    pitch_class_mismatch,
+                    distance,
+                    comfort_metric,
+                    original_distance,
+                    candidate_midi,
+                )
+            )
+        if not options:
+            continue
+        options.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
+        best_midi = options[0][4]
+        if best_midi != current.midi:
+            candidate_notes[index] = current.with_midi(best_midi)
+            changed = True
+
+    if not changed:
+        return candidate_span
+
+    return candidate_span.with_notes(tuple(candidate_notes))
+
+
 def _align_top_voice_to_target(
     candidate: GPInstrumentCandidate,
     *,
@@ -173,5 +241,6 @@ __all__ = [
     "_targets_full_span",
     "_uniform_octave_shift",
     "_align_uniform_octave_span",
+    "_align_top_voice_to_baseline",
     "_align_top_voice_to_target",
 ]

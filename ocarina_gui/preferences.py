@@ -37,6 +37,7 @@ class Preferences:
     update_channel: str | None = UPDATE_CHANNEL_STABLE
     arranger_mode: str | None = None
     lenient_midi_import: bool | None = None
+    instrument_id: str | None = None
 
 
 def _default_preferences_path() -> Path:
@@ -150,6 +151,13 @@ def load_preferences(path: Path | None = None) -> Preferences:
     else:
         lenient_midi_import = None
 
+    raw_instrument_id = data.get("instrument_id")
+    if isinstance(raw_instrument_id, str):
+        stripped_instrument_id = raw_instrument_id.strip()
+        instrument_id = stripped_instrument_id or None
+    else:
+        instrument_id = None
+
     return Preferences(
         theme_id=theme_id,
         log_verbosity=log_verbosity,
@@ -160,6 +168,7 @@ def load_preferences(path: Path | None = None) -> Preferences:
         update_channel=update_channel,
         arranger_mode=arranger_mode,
         lenient_midi_import=lenient_midi_import,
+        instrument_id=instrument_id,
     )
 
 
@@ -193,6 +202,10 @@ def save_preferences(preferences: Preferences, path: Path | None = None) -> None
         data["arranger_mode"] = preferences.arranger_mode
     if isinstance(preferences.lenient_midi_import, bool):
         data["lenient_midi_import"] = preferences.lenient_midi_import
+    if isinstance(preferences.instrument_id, str):
+        normalized_instrument_id = preferences.instrument_id.strip()
+        if normalized_instrument_id:
+            data["instrument_id"] = normalized_instrument_id
 
     try:
         location.parent.mkdir(parents=True, exist_ok=True)

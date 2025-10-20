@@ -310,6 +310,39 @@ def test_volume_button_mouse_click_toggles(gui_app) -> None:
 
 
 @pytest.mark.gui
+def test_manual_transpose_preserves_volume_snapshot(gui_app) -> None:
+    gui_app._ensure_preview_tab_initialized("arranged")
+    gui_app.update_idletasks()
+
+    side = "arranged"
+    playback = gui_app._preview_playback[side]
+    playback.state.is_loaded = True
+    playback.state.is_rendering = False
+    playback.state.volume = 0.42
+
+    gui_app._preview_volume_vars[side].set(42.0)
+    gui_app._preview_volume_memory[side] = 42.0
+    gui_app._preview_settings_seeded.add(side)
+    gui_app._preview_applied_settings[side] = {
+        "tempo": 120.0,
+        "metronome": False,
+        "loop_enabled": False,
+        "loop_start": 0.0,
+        "loop_end": 0.0,
+        "volume": 42.0,
+    }
+
+    gui_app._sync_preview_playback_controls(side)
+
+    assert gui_app._preview_applied_settings[side]["volume"] == pytest.approx(42.0)
+
+    gui_app._sync_viewmodel_settings()
+
+    snapshot = gui_app._viewmodel.state.preview_settings[side]
+    assert snapshot.volume == pytest.approx(0.42)
+
+
+@pytest.mark.gui
 def test_volume_slider_click_pauses_and_resumes(gui_app) -> None:
     gui_app._ensure_preview_tab_initialized("arranged")
     gui_app.update_idletasks()
@@ -385,6 +418,42 @@ def test_volume_button_mutes_after_slider_interaction(gui_app) -> None:
     assert slider.get() == pytest.approx(starting_volume, abs=1.5)
     assert playback.state.volume == pytest.approx(starting_volume / 100.0, abs=1e-6)
     assert button.instate(["!pressed"])
+
+
+@pytest.mark.gui
+def test_volume_slider_update_persists_through_preview_sync(gui_app) -> None:
+    gui_app._ensure_preview_tab_initialized("arranged")
+    gui_app.update_idletasks()
+
+    playback = gui_app._preview_playback["arranged"]
+    playback.state.is_loaded = True
+    playback.state.is_rendering = False
+
+    target_volume = 58.0
+    gui_app._apply_volume_change("arranged", target_volume, remember_last=True)
+    gui_app.update_idletasks()
+
+    assert gui_app._preview_applied_settings["arranged"]["volume"] == pytest.approx(
+        target_volume
+    )
+    seeded = getattr(gui_app, "_preview_settings_seeded", set())
+    assert "arranged" in seeded
+
+    gui_app._sync_viewmodel_settings()
+
+    snapshot = gui_app._viewmodel.state.preview_settings["arranged"]
+    assert snapshot.volume == pytest.approx(target_volume / 100.0)
+
+    playback.set_volume(1.0)
+    playback.state.volume = 1.0
+    gui_app._sync_preview_playback_controls("arranged")
+
+    gui_app._apply_preview_snapshot("arranged", snapshot)
+
+    assert gui_app._preview_applied_settings["arranged"]["volume"] == pytest.approx(
+        target_volume
+    )
+    assert playback.state.volume == pytest.approx(target_volume / 100.0)
 
 
 def _image_name(widget) -> str:
