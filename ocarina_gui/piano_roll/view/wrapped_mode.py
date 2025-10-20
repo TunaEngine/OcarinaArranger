@@ -41,6 +41,8 @@ class WrappedModeMixin:
         events,
         pulses_per_quarter: int,
         ticks_per_measure: int,
+        *,
+        total_ticks: int | None = None,
     ) -> None:
         geometry = self._current_geometry()
         viewport_width = self._get_viewport_width(prefer_hint=False)
@@ -56,6 +58,7 @@ class WrappedModeMixin:
             right_pad=self.RIGHT_PAD,
             viewport_width=viewport_width,
             ticks_per_measure=ticks_per_measure,
+            total_ticks=total_ticks,
         )
 
         self._wrap_layout = result.layout

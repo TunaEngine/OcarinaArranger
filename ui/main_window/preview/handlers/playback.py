@@ -46,7 +46,7 @@ class PreviewPlaybackHandlersMixin:
         if playback is None:
             return
         playback.stop()
-        target = playback.state.duration_tick
+        target = playback.state.track_end_tick or playback.state.duration_tick
         loop = getattr(playback.state, "loop", None)
         if loop and getattr(loop, "enabled", False):
             target = getattr(loop, "end_tick", target)

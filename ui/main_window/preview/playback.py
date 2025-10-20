@@ -1,49 +1,22 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 import tkinter as tk
-from typing import Callable, Optional
+from typing import Optional
 
 from app.config import PlaybackTiming, get_playback_timing
 from ocarina_gui.color_utils import hex_to_rgb
 from ocarina_gui.fingering import FingeringView
 from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.staff import StaffView
+from shared.tempo import align_duration_to_measure
 from shared.ttk import ttk
 from viewmodels.preview_playback_viewmodel import PreviewPlaybackViewModel
 
+from .threading_utils import dispatch_to_ui
 
 logger = logging.getLogger(__name__)
-
-
-def _dispatch_to_ui(
-    root: tk.Misc, callback: Callable[..., object], *args: object, **kwargs: object
-) -> None:
-    """Invoke *callback* on the Tk UI thread."""
-
-    if threading.current_thread() is threading.main_thread():
-        try:
-            callback(*args, **kwargs)
-        except Exception:  # pragma: no cover - defensive UI guard
-            logger.exception("UI callback raised on main thread")
-        return
-
-    def _invoke() -> None:
-        try:
-            callback(*args, **kwargs)
-        except Exception:  # pragma: no cover - defensive UI guard
-            logger.exception("UI callback raised from scheduled task")
-
-    try:
-        root.after(0, _invoke)
-    except Exception:  # pragma: no cover - fallback if Tk is tearing down
-        logger.exception("Failed to schedule UI callback; running immediately")
-        try:
-            callback(*args, **kwargs)
-        except Exception:
-            logger.exception("Fallback UI callback raised")
 
 
 class PreviewPlaybackControlMixin:
@@ -68,10 +41,10 @@ class PreviewPlaybackControlMixin:
             return
 
         def _notify() -> None:
-            _dispatch_to_ui(self, self._on_preview_render_state_changed, side)
+            dispatch_to_ui(self, self._on_preview_render_state_changed, side)
 
         playback.set_render_observer(_notify)
-        _dispatch_to_ui(self, self._on_preview_render_state_changed, side)
+        dispatch_to_ui(self, self._on_preview_render_state_changed, side)
 
     def _cancel_playback_loop(self) -> None:
         job = self._playback_job
@@ -432,25 +405,41 @@ class PreviewPlaybackControlMixin:
                 tempo_to_apply = float(preview_data.tempo_bpm)
                 playback.state.tempo_bpm = tempo_to_apply
         applied_snapshot = dict(self._preview_applied_settings.get(side, {}))
-        applied_snapshot.update(
-            {
-                "tempo": tempo_to_apply,
-                "metronome": playback.state.metronome_enabled,
-                "loop_enabled": playback.state.loop.enabled,
-                "loop_start": start_beats,
-                "loop_end": end_beats,
-                "volume": target_volume,
-            }
-        )
+        applied_snapshot.update({
+            "tempo": tempo_to_apply,
+            "metronome": playback.state.metronome_enabled,
+            "loop_enabled": playback.state.loop.enabled,
+            "loop_start": start_beats,
+            "loop_end": end_beats,
+            "volume": target_volume,
+        })
         self._preview_applied_settings[side] = applied_snapshot
         self._update_preview_apply_cancel_state(side)
         self._update_loop_marker_visuals(side)
 
     def _loop_bounds_in_beats(self, playback: PreviewPlaybackViewModel) -> tuple[float, float]:
-        pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
-        start = playback.state.loop.start_tick / pulses_per_quarter
-        end = playback.state.loop.end_tick / pulses_per_quarter
-        return (start, end)
+        state = playback.state
+        pulses_per_quarter = max(1, state.pulses_per_quarter)
+        loop = state.loop
+        if not loop.enabled:
+            resolver = getattr(self, "_resolve_track_end_tick", None)
+            if callable(resolver):
+                end_tick = resolver(playback)
+            else:
+                end_tick = state.track_end_tick
+                if end_tick <= 0:
+                    end_tick = align_duration_to_measure(
+                        state.duration_tick,
+                        state.pulses_per_quarter,
+                        state.beats_per_measure,
+                        state.beat_unit,
+                    )
+            start_tick = 0
+        else:
+            max_end = state.track_end_tick or state.duration_tick
+            start_tick = max(0, min(loop.start_tick, max_end))
+            end_tick = max(start_tick, min(loop.end_tick, max_end))
+        return (start_tick / pulses_per_quarter, end_tick / pulses_per_quarter)
 
     def _on_preview_render_state_changed(self, side: str) -> None:
         def _refresh() -> None:

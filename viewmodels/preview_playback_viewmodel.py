@@ -19,6 +19,7 @@ from .preview_playback_types import (
 from shared.tempo import (
     TempoChange,
     TempoMap,
+    align_duration_to_measure,
     first_tempo,
     normalized_tempo_changes,
 )
@@ -99,15 +100,20 @@ class PreviewPlaybackViewModel:
             if self._events
             else 0
         )
+        pulses = max(1, int(pulses_per_quarter))
+        beats = max(1, int(beats_per_measure))
+        unit = max(1, int(beat_unit))
+        track_end = align_duration_to_measure(duration, pulses, beats, unit)
 
         self.state.is_loaded = True
         self.state.is_playing = False
         self.state.position_tick = 0
         self.state.duration_tick = duration
+        self.state.track_end_tick = track_end
         self.state.pulses_per_quarter = pulses_per_quarter
         self.state.beats_per_measure = max(1, beats_per_measure)
         self.state.beat_unit = max(1, beat_unit)
-        self.state.loop = LoopRegion(enabled=False, start_tick=0, end_tick=duration)
+        self.state.loop = LoopRegion(enabled=False, start_tick=0, end_tick=track_end)
         self.state.last_error = None
         self.state.metronome_enabled = False
         self._fractional_ticks = 0.0
@@ -121,7 +127,13 @@ class PreviewPlaybackViewModel:
         self.state.tempo_bpm = self._normalize_tempo(desired_tempo)
 
         # Ensure the audio renderer discards any previously configured loop.
-        self._audio.set_loop(self.state.loop)
+        self._audio.set_loop(
+            LoopRegion(
+                enabled=False,
+                start_tick=0,
+                end_tick=self.state.track_end_tick,
+            )
+        )
 
         if events_changed:
             if self._render_tracker.mark_pending(len(self._events)):
@@ -335,17 +347,25 @@ class PreviewPlaybackViewModel:
 
         clamped_start = self._clamp_tick(requested_start)
         clamped_end = self._clamp_tick(requested_end)
+        track_end = self.state.track_end_tick or self.state.duration_tick
         if clamped_end <= clamped_start:
             playback_loop = LoopRegion(
                 enabled=False,
                 start_tick=0,
-                end_tick=self.state.duration_tick,
+                end_tick=track_end,
             )
         else:
             playback_loop = LoopRegion(
                 enabled=requested_loop.enabled,
                 start_tick=clamped_start,
                 end_tick=clamped_end,
+            )
+
+        if not playback_loop.enabled:
+            playback_loop = LoopRegion(
+                enabled=False,
+                start_tick=0,
+                end_tick=track_end,
             )
 
         self.state.loop = requested_loop
@@ -492,22 +512,22 @@ class PreviewPlaybackViewModel:
     def _clamp_tick(self, tick: int) -> int:
         if tick <= 0:
             return 0
-        if tick >= self.state.duration_tick:
-            return self.state.duration_tick
+        if tick >= self.state.track_end_tick:
+            return self.state.track_end_tick
         return tick
 
     def _normalized_loop(self) -> tuple[int, int]:
         if not self.state.loop.enabled:
-            return 0, self.state.duration_tick
-        start = max(0, min(self.state.loop.start_tick, self.state.duration_tick))
-        end = max(start, min(self.state.loop.end_tick, self.state.duration_tick))
+            return 0, self.state.track_end_tick
+        start = max(0, min(self.state.loop.start_tick, self.state.track_end_tick))
+        end = max(start, min(self.state.loop.end_tick, self.state.track_end_tick))
         return start, end
 
     def _active_loop_end(self) -> int:
         if self.state.loop.enabled:
             _, end = self._normalized_loop()
             return end
-        return self.state.duration_tick
+        return self.state.track_end_tick
 
     def _compute_events_signature(
         self,

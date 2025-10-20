@@ -28,6 +28,7 @@ class PreviewPlaybackState:
     is_playing: bool = False
     position_tick: int = 0
     duration_tick: int = 0
+    track_end_tick: int = 0
     pulses_per_quarter: int = 480
     tempo_bpm: float = 120.0
     beats_per_measure: int = 4

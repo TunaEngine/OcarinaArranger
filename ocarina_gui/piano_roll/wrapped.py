@@ -132,17 +132,19 @@ def render_wrapped_view(
     right_pad: int,
     viewport_width: int,
     ticks_per_measure: int,
+    total_ticks: int | None = None,
 ) -> WrappedRenderResult:
     """Render events using the wrapped piano roll layout."""
 
     canvas.delete("all")
     labels.delete("all")
 
-    total_ticks = (
+    inferred_total = (
         max((onset + duration) for (onset, duration, _midi, _program) in events)
         if events
         else 0
     )
+    effective_total = max(inferred_total, int(total_ticks or 0))
 
     min_width = geometry.left_pad + geometry.right_pad + 600
     width = max(min_width, viewport_width)
@@ -152,7 +154,7 @@ def render_wrapped_view(
     note_rows = geometry.max_midi - geometry.min_midi + 1
     line_height = note_rows * geometry.px_per_note + 28
     system_spacing = int(max(geometry.px_per_note * 1.5, 24))
-    line_count = 1 if total_ticks == 0 else int(math.ceil(total_ticks / ticks_per_line))
+    line_count = 1 if effective_total == 0 else int(math.ceil(effective_total / ticks_per_line))
     total_height = int(line_count * line_height + max(0, line_count - 1) * system_spacing)
 
     canvas.config(scrollregion=(0, 0, width, total_height))
@@ -166,10 +168,10 @@ def render_wrapped_view(
 
     for line_index in range(line_count):
         line_start = line_index * ticks_per_line
-        if total_ticks and line_index == line_count - 1:
-            line_end = float(total_ticks)
+        if effective_total and line_index == line_count - 1:
+            line_end = float(effective_total)
         else:
-            line_end = float(min(total_ticks, line_start + ticks_per_line))
+            line_end = float(min(effective_total, line_start + ticks_per_line))
 
         y_offset = line_index * (line_height + system_spacing)
         y_top = float(y_offset)
@@ -372,7 +374,7 @@ def render_wrapped_view(
 
     return WrappedRenderResult(
         layout=layout,
-        total_ticks=total_ticks,
+        total_ticks=effective_total,
         content_height=total_height,
         scroll_width=width,
         label_highlight_id=label_highlight,

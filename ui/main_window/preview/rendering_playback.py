@@ -221,6 +221,7 @@ class PreviewPlaybackSupportMixin:
         playback.state.is_loaded = False
         playback.state.position_tick = 0
         playback.state.duration_tick = 0
+        playback.state.track_end_tick = 0
         playback.state.loop = LoopRegion(enabled=False, start_tick=0, end_tick=0)
         playback.state.last_error = None
         playback.state.is_rendering = False
@@ -277,6 +278,7 @@ class PreviewPlaybackSupportMixin:
             self._apply_preview_snapshot(side, snapshot)
         else:
             self._refresh_tempo_summary(side, tempo_value=tempo_to_apply)
+            self._sync_preview_playback_controls(side)
 
     def _current_playback_midi(self, side: str) -> Optional[int]:
         events = self._preview_events.get(side, ())

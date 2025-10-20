@@ -54,6 +54,7 @@ class PianoRollRenderer:
         geometry: RenderGeometry,
         *,
         ticks_per_measure: int,
+        total_ticks: int | None = None,
     ) -> RenderOutcome:
         palette = self._palette
         normalized = tuple(events)
@@ -79,11 +80,12 @@ class PianoRollRenderer:
             )
 
         last_tick = max(onset + duration for (onset, duration, _midi, _program) in normalized)
+        effective_total_ticks = max(last_tick, int(total_ticks or 0))
         height = (geometry.max_midi - geometry.min_midi + 1) * geometry.px_per_note + 28
-        total_time_px = int(round(last_tick * geometry.px_per_tick))
+        total_time_px = int(round(effective_total_ticks * geometry.px_per_tick))
         width = geometry.left_pad + total_time_px + geometry.right_pad
 
-        self._total_ticks = last_tick
+        self._total_ticks = effective_total_ticks
         self._content_height = height
         self._scroll_width = max(1, width)
         self._normalized_events = normalized

@@ -73,6 +73,7 @@ class PreviewUtilitiesMixin:
             if hasattr(self, "lenient_midi_import")
             else True,
         )
+        existing_settings = getattr(self._viewmodel.state, "preview_settings", {})
         preview_settings: dict[str, PreviewPlaybackSnapshot] = {}
         applied_by_side = getattr(self, "_preview_applied_settings", {})
         seeded_sides = getattr(self, "_preview_settings_seeded", set())
@@ -121,7 +122,7 @@ class PreviewUtilitiesMixin:
             except (TypeError, ValueError):
                 stored_volume = baseline_volume
             stored_volume = max(0.0, min(100.0, stored_volume))
-            preview_settings[str(side)] = PreviewPlaybackSnapshot(
+            computed_snapshot = PreviewPlaybackSnapshot(
                 tempo_bpm=tempo,
                 metronome_enabled=met_enabled,
                 loop_enabled=loop_enabled,
@@ -129,6 +130,15 @@ class PreviewUtilitiesMixin:
                 loop_end_beat=loop_end if loop_end > loop_start else loop_start,
                 volume=stored_volume / 100.0,
             )
+            existing_snapshot = existing_settings.get(str(side))
+            if (
+                isinstance(existing_snapshot, PreviewPlaybackSnapshot)
+                and existing_snapshot.loop_enabled
+                and not computed_snapshot.loop_enabled
+            ):
+                preview_settings[str(side)] = existing_snapshot
+            else:
+                preview_settings[str(side)] = computed_snapshot
         self._viewmodel.update_preview_settings(preview_settings)
 
     def _current_convert_settings_snapshot(self) -> dict[str, object]:

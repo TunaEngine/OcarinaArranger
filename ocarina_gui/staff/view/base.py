@@ -185,6 +185,8 @@ class StaffViewBase(ttk.Frame):
         pulses_per_quarter: int,
         beats: int = 4,
         beat_type: int = 4,
+        *,
+        total_ticks: int | None = None,
     ) -> None:
         self.canvas.delete("all")
         self._cached = (events, pulses_per_quarter, beats, beat_type)
@@ -195,12 +197,12 @@ class StaffViewBase(ttk.Frame):
 
         normalized_events = tuple(self._normalize_events(events))
         sorted_events = tuple(sorted(normalized_events, key=lambda item: item[0]))
-        total_ticks = (
+        inferred_total = (
             max((event.onset + event.duration) for event in sorted_events)
             if sorted_events
             else 0
         )
-        self._total_ticks = total_ticks
+        self._total_ticks = max(inferred_total, int(total_ticks or 0))
         self._events = sorted_events
         self._event_onsets = tuple(event.onset for event in sorted_events)
 

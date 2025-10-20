@@ -103,6 +103,7 @@ class HeadlessPianoRoll:
     px_per_note: float = 6.0
     max_midi: int = 84
     _tempo_markers: Tuple[tuple[int, str], ...] = ()
+    total_ticks: int = 0
 
     def set_range(self, minimum: int, maximum: int) -> None:  # pragma: no cover - stored for completeness
         self.range = (minimum, maximum)
@@ -114,10 +115,12 @@ class HeadlessPianoRoll:
         *,
         beats: int = 4,
         beat_unit: int = 4,
+        total_ticks: int | None = None,
     ) -> None:
         self._cached = (events, pulses_per_quarter, beats, beat_unit)
         if self._fingering_cb:
             self._fingering_cb(None)
+        self.total_ticks = int(total_ticks or 0)
 
     def set_fingering_cb(self, callback: Callable[[Optional[int]], None]) -> None:
         self._fingering_cb = callback
@@ -196,6 +199,7 @@ class HeadlessStaffView:
     _wrap_pending_rerender: bool = False
     _tempo_markers: Tuple[tuple[int, str], ...] = ()
     _last_y_top: float = 42.0
+    total_ticks: int = 0
 
     def __post_init__(self) -> None:
         self._hbar_grid_defaults = {"row": 1, "column": 0, "columnspan": 3, "sticky": "ew"}
@@ -222,8 +226,11 @@ class HeadlessStaffView:
         pulses_per_quarter: int,
         beats: int,
         beat_type: int,
+        *,
+        total_ticks: int | None = None,
     ) -> None:
         self._cached = (events, pulses_per_quarter, beats, beat_type)
+        self.total_ticks = int(total_ticks or 0)
 
     def set_cursor(self, tick: int, allow_autoscroll: bool = True) -> None:
         self.cursor_tick = max(0, int(tick))

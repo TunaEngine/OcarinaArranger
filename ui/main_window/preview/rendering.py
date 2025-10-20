@@ -8,7 +8,7 @@ from ocarina_gui.piano_roll import PianoRoll
 from ocarina_gui.preview import PreviewData
 from ocarina_gui.staff import StaffView
 from ocarina_tools import NoteEvent
-from shared.tempo import first_tempo
+from shared.tempo import align_duration_to_measure, first_tempo
 from .rendering_playback import PreviewPlaybackSupportMixin
 
 logger = logging.getLogger(__name__)
@@ -117,14 +117,36 @@ class PreviewRenderingMixin(PreviewPlaybackSupportMixin):
 
         roll.set_range(minimum, maximum)
         staff.LEFT_PAD = getattr(roll, "label_width", 70) + getattr(roll, "LEFT_PAD", 10)
-        staff.render(events, data.pulses_per_quarter, data.beats, data.beat_type)
+        duration_tick = (
+            max((event.onset + event.duration) for event in events)
+            if events
+            else 0
+        )
+        pulses_per_quarter = int(getattr(data, "pulses_per_quarter", 480) or 480)
+        beats_per_measure = int(getattr(data, "beats", 4) or 4)
+        beat_unit = int(getattr(data, "beat_type", 4) or 4)
+        track_end_tick = align_duration_to_measure(
+            duration_tick,
+            pulses_per_quarter,
+            beats_per_measure,
+            beat_unit,
+        )
+
+        staff.render(
+            events,
+            pulses_per_quarter,
+            beats_per_measure,
+            beat_unit,
+            total_ticks=track_end_tick,
+        )
         roll.sync_x_with(staff.canvas)
         staff.sync_x_with(roll.canvas)
         roll.render(
             events,
-            data.pulses_per_quarter,
-            beats=int(getattr(data, "beats", 4) or 4),
-            beat_unit=int(getattr(data, "beat_type", 4) or 4),
+            pulses_per_quarter,
+            beats=beats_per_measure,
+            beat_unit=beat_unit,
+            total_ticks=track_end_tick,
         )
         roll.set_cursor(0)
         if hasattr(staff, "set_cursor"):

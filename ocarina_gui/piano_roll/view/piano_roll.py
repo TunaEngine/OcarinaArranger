@@ -204,6 +204,7 @@ class PianoRoll(
         *,
         beats: int = 4,
         beat_unit: int = 4,
+        total_ticks: int | None = None,
     ) -> None:
         normalized_events = tuple(sorted(normalize_events(events), key=lambda item: item[0]))
         self._cached = (normalized_events, pulses_per_quarter, beats, beat_unit)
@@ -225,6 +226,7 @@ class PianoRoll(
                 normalized_events,
                 pulses_per_quarter,
                 self._ticks_per_measure,
+                total_ticks=total_ticks,
             )
             return
 
@@ -233,6 +235,7 @@ class PianoRoll(
             pulses_per_quarter,
             self._current_geometry(),
             ticks_per_measure=self._ticks_per_measure,
+            total_ticks=total_ticks,
         )
         self._total_ticks = outcome.total_ticks
         self._content_height = outcome.content_height

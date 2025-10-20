@@ -304,9 +304,40 @@ class TempoMap:
         return self._segments[index]
 
 
+def align_duration_to_measure(
+    duration_tick: int,
+    pulses_per_quarter: int,
+    beats_per_measure: int,
+    beat_unit: int,
+) -> int:
+    """Round ``duration_tick`` up to the next complete measure.
+
+    The preview UI expects loop defaults to align with measure boundaries even
+    when the final notes end early.  To support that behavior we extend the
+    track duration to the next full measure using the score's time signature.
+    """
+
+    pulses = max(1, int(pulses_per_quarter))
+    beats = max(1, int(beats_per_measure))
+    unit = max(1, int(beat_unit))
+    duration = max(0, int(duration_tick))
+
+    measure_numerator = pulses * beats * 4
+    measure_ticks = (measure_numerator + unit - 1) // unit
+    if measure_ticks <= 0:
+        return duration
+    if duration == 0:
+        return 0
+    remainder = duration % measure_ticks
+    if remainder == 0:
+        return duration
+    return duration + (measure_ticks - remainder)
+
+
 __all__ = [
     "TempoChange",
     "TempoMap",
+    "align_duration_to_measure",
     "first_tempo",
     "normalized_tempo_changes",
     "scaled_tempo_changes",

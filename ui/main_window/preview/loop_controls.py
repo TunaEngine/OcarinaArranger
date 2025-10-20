@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tkinter as tk
 
+from shared.tempo import align_duration_to_measure
 from shared.ttk import ttk
 from typing import Optional
 
@@ -17,21 +18,56 @@ class PreviewLoopControlsMixin:
         if roll is None or playback is None:
             return
         pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
-        loop_start_beats = playback.state.loop.start_tick / pulses_per_quarter
-        loop_end_beats = playback.state.loop.end_tick / pulses_per_quarter
+        track_end_tick = playback.state.track_end_tick
+        if track_end_tick <= 0:
+            track_end_tick = align_duration_to_measure(
+                playback.state.duration_tick,
+                playback.state.pulses_per_quarter,
+                playback.state.beats_per_measure,
+                playback.state.beat_unit,
+            )
+        duration_beats = track_end_tick / pulses_per_quarter
+
+        loop_state = playback.state.loop
+        loop_state_enabled = bool(
+            loop_state.enabled and loop_state.end_tick > loop_state.start_tick
+        )
+        default_start_beats = (
+            loop_state.start_tick / pulses_per_quarter if loop_state_enabled else 0.0
+        )
+        default_end_beats = (
+            loop_state.end_tick / pulses_per_quarter
+            if loop_state_enabled
+            else duration_beats
+        )
+
+        loop_enabled_var = self._preview_loop_enabled_vars.get(side)
+        if loop_enabled_var is not None:
+            try:
+                loop_enabled = self._coerce_tk_bool(
+                    loop_enabled_var.get(), default=loop_state_enabled
+                )
+            except (tk.TclError, TypeError, ValueError):
+                loop_enabled = loop_state_enabled
+        else:
+            loop_enabled = loop_state_enabled
+
+        loop_start_beats = default_start_beats
+        loop_end_beats = default_end_beats
         invalid = False
-        start_var = self._preview_loop_start_vars.get(side)
-        if start_var is not None:
-            try:
-                loop_start_beats = float(start_var.get())
-            except (tk.TclError, ValueError):
-                invalid = True
-        end_var = self._preview_loop_end_vars.get(side)
-        if end_var is not None:
-            try:
-                loop_end_beats = float(end_var.get())
-            except (tk.TclError, ValueError):
-                invalid = True
+        if loop_enabled:
+            start_var = self._preview_loop_start_vars.get(side)
+            if start_var is not None:
+                try:
+                    loop_start_beats = float(start_var.get())
+                except (tk.TclError, ValueError):
+                    invalid = True
+            end_var = self._preview_loop_end_vars.get(side)
+            if end_var is not None:
+                try:
+                    loop_end_beats = float(end_var.get())
+                except (tk.TclError, ValueError):
+                    invalid = True
         if invalid:
             roll.set_loop_region(0, 0, False)
             if staff and hasattr(staff, "set_loop_region"):
@@ -42,7 +78,7 @@ class PreviewLoopControlsMixin:
             return
         start_tick = int(round(loop_start_beats * pulses_per_quarter))
         end_tick = int(round(loop_end_beats * pulses_per_quarter))
-        visible = loop_end_beats > loop_start_beats
+        visible = loop_enabled and loop_end_beats > loop_start_beats
         roll.set_loop_region(start_tick, end_tick, visible)
         if staff and hasattr(staff, "set_loop_region"):
             try:

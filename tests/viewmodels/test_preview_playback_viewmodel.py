@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from shared.tempo import TempoChange
+from shared.tempo import TempoChange, align_duration_to_measure
 
 from viewmodels.preview_playback_viewmodel import (
     LoopRegion,
@@ -10,101 +10,7 @@ from viewmodels.preview_playback_viewmodel import (
     PreviewPlaybackViewModel,
 )
 
-
-class StubAudioRenderer:
-    def __init__(self) -> None:
-        self.prepared: tuple[tuple[tuple[int, int, int, int], ...], int] | None = None
-        self.started: list[tuple[int, float]] = []
-        self.paused = 0
-        self.stopped = 0
-        self.sought: list[int] = []
-        self.tempo_updates: list[float] = []
-        self.loop_updates: list[LoopRegion] = []
-        self.metronome_updates: list[tuple[bool, int, int]] = []
-        self.volume_updates: list[float] = []
-        self.start_should_fail = False
-        self.render_listener = None
-        self._generation = 0
-        self.prepare_calls = 0
-        self.auto_render = True
-        self.volume_requires_render = False
-        self.tempo_changes: tuple = ()
-
-    def prepare(self, events, pulses_per_quarter: int, tempo_changes=None) -> None:  # type: ignore[override]
-        self.prepare_calls += 1
-        self.prepared = (tuple(events), pulses_per_quarter)
-        self.tempo_changes = tuple(tempo_changes or ())
-        self._notify_render()
-
-    def start(self, position_tick: int, tempo_bpm: float) -> bool:
-        if self.start_should_fail:
-            return False
-        self.started.append((position_tick, tempo_bpm))
-        return True
-
-    def pause(self) -> None:
-        self.paused += 1
-
-    def stop(self) -> None:
-        self.stopped += 1
-
-    def seek(self, tick: int) -> None:
-        self.sought.append(tick)
-
-    def set_tempo(self, tempo_bpm: float) -> None:
-        self.tempo_updates.append(tempo_bpm)
-        self._notify_render()
-
-    def set_loop(self, loop: LoopRegion) -> None:
-        self.loop_updates.append(loop)
-
-    def set_metronome(self, enabled: bool, beats_per_measure: int, beat_unit: int) -> None:
-        self.metronome_updates.append((enabled, beats_per_measure, beat_unit))
-        self._notify_render()
-
-    def set_render_listener(self, listener) -> None:  # type: ignore[override]
-        self.render_listener = listener
-
-    def set_volume(self, volume: float) -> bool:
-        self.volume_updates.append(volume)
-        if self.volume_requires_render:
-            self._notify_render()
-            return True
-        return False
-
-    def trigger_render(self, progress: tuple[float, ...] = (0.0, 1.0), success: bool = True) -> None:
-        if self.render_listener is None:
-            return
-        self._generation += 1
-        self.render_listener.render_started(self._generation)
-        for value in progress:
-            self.render_listener.render_progress(self._generation, value)
-        self.render_listener.render_complete(self._generation, success)
-
-    def _notify_render(self) -> None:
-        if self.render_listener is None or not self.auto_render:
-            return
-        self.trigger_render()
-
-
-def _build_viewmodel() -> tuple[PreviewPlaybackViewModel, StubAudioRenderer]:
-    renderer = StubAudioRenderer()
-    viewmodel = PreviewPlaybackViewModel(audio_renderer=renderer)
-    return viewmodel, renderer
-
-
-def _make_events(*specs: tuple[int, ...]) -> list[tuple[int, int, int, int]]:
-    events: list[tuple[int, int, int, int]] = []
-    for spec in specs:
-        if len(spec) == 4:
-            onset, duration, midi, program = spec
-        elif len(spec) == 3:
-            onset, duration, midi = spec
-            program = 79
-        else:
-            raise ValueError("Event specs must have 3 or 4 elements")
-        events.append((int(onset), int(duration), int(midi), int(program)))
-    return events
+from ._preview_playback_helpers import StubAudioRenderer, _build_viewmodel, _make_events
 
 
 def test_load_prepares_audio_and_resets_state() -> None:
@@ -116,6 +22,8 @@ def test_load_prepares_audio_and_resets_state() -> None:
     assert renderer.prepared == (tuple(events), 120)
     assert renderer.prepare_calls == 1
     assert viewmodel.state.duration_tick == 330
+    expected_track_end = align_duration_to_measure(330, 120, 4, 4)
+    assert viewmodel.state.track_end_tick == expected_track_end
     assert viewmodel.state.position_tick == 0
     assert not viewmodel.state.is_playing
 
@@ -252,22 +160,6 @@ def test_set_volume_updates_renderer_and_state() -> None:
     assert viewmodel.state.volume == pytest.approx(0.0)
 
 
-def test_loop_region_wraps_when_enabled() -> None:
-    viewmodel, renderer = _build_viewmodel()
-    events = _make_events((0, 480, 60))
-    viewmodel.load(events, pulses_per_quarter=120, beats_per_measure=4, beat_unit=4)
-    viewmodel.set_loop(LoopRegion(enabled=True, start_tick=120, end_tick=240))
-    assert renderer.loop_updates[-1].enabled
-
-    viewmodel.seek_to(220)
-    viewmodel.toggle_playback()
-    # 0.5 seconds correspond to 120 ticks at 120bpm with ppq=120
-    viewmodel.advance(0.5)
-
-    assert 120 <= viewmodel.state.position_tick <= 240
-    assert viewmodel.state.is_playing
-
-
 def test_load_skips_re_render_when_events_unchanged() -> None:
     viewmodel, renderer = _build_viewmodel()
     events = _make_events((0, 120, 60))
@@ -280,23 +172,6 @@ def test_load_skips_re_render_when_events_unchanged() -> None:
     assert renderer.prepare_calls == 1
     assert renderer.metronome_updates[-1] == (False, 3, 8)
     assert viewmodel.state.render_progress == 1.0
-
-
-def test_load_resets_audio_loop_region() -> None:
-    viewmodel, renderer = _build_viewmodel()
-    events = _make_events((0, 360, 60))
-
-    viewmodel.load(events, pulses_per_quarter=120, beats_per_measure=4, beat_unit=4)
-    viewmodel.set_loop(LoopRegion(enabled=True, start_tick=120, end_tick=240))
-    renderer.loop_updates.clear()
-
-    viewmodel.load(events, pulses_per_quarter=120, beats_per_measure=3, beat_unit=8)
-
-    assert renderer.loop_updates
-    reset_region = renderer.loop_updates[-1]
-    assert not reset_region.enabled
-    assert reset_region.start_tick == 0
-    assert reset_region.end_tick == viewmodel.state.duration_tick
 
 
 def test_load_reuse_seeks_without_stopping_when_events_match() -> None:
@@ -349,8 +224,8 @@ def test_seek_clamps_and_notifies_audio_renderer() -> None:
     viewmodel.load(events, pulses_per_quarter=120, beats_per_measure=4, beat_unit=4)
 
     viewmodel.seek_to(999)
-    assert viewmodel.state.position_tick == viewmodel.state.duration_tick
-    assert renderer.sought[-1] == viewmodel.state.duration_tick
+    assert viewmodel.state.position_tick == viewmodel.state.track_end_tick
+    assert renderer.sought[-1] == viewmodel.state.track_end_tick
 
 
 def test_set_tempo_updates_audio_renderer() -> None:

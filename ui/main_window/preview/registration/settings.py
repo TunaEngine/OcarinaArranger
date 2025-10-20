@@ -3,11 +3,33 @@ from __future__ import annotations
 import tkinter as tk
 
 from services.project_service import PreviewPlaybackSnapshot
+from shared.tempo import align_duration_to_measure
 from viewmodels.preview_playback_viewmodel import LoopRegion
+
+from .settings_helpers import (
+    apply_preview_settings,
+    apply_preview_snapshot,
+    record_snapshot_track_end,
+    resolve_track_end_tick,
+    snapshot_track_end_store,
+)
 
 
 class PreviewSettingsMixin:
     """Apply, cancel, and synchronize preview playback settings."""
+
+    # ------------------------------------------------------------------
+    # Snapshot bookkeeping helpers
+    # ------------------------------------------------------------------
+    def _snapshot_track_end_store(self) -> dict[str, int]:
+        return snapshot_track_end_store(self)
+
+    def _record_snapshot_track_end(self, side: str, track_end_tick: int) -> None:
+        record_snapshot_track_end(self, side, track_end_tick)
+
+    @staticmethod
+    def _resolve_track_end_tick(playback: "PreviewPlaybackViewModel") -> int:
+        return resolve_track_end_tick(playback)
 
     def _set_preview_controls_enabled(self, side: str, enabled: bool) -> None:
         state_flags = ["!disabled"] if enabled else ["disabled"]
@@ -62,127 +84,7 @@ class PreviewSettingsMixin:
             self._cancel_loop_range_selection(side)
 
     def _apply_preview_settings(self, side: str) -> None:
-        playback = self._preview_playback.get(side)
-        if playback is None:
-            return
-        tempo_var = self._preview_tempo_vars.get(side)
-        met_var = self._preview_metronome_vars.get(side)
-        loop_enabled_var = self._preview_loop_enabled_vars.get(side)
-        loop_start_var = self._preview_loop_start_vars.get(side)
-        loop_end_var = self._preview_loop_end_vars.get(side)
-        volume_var = self._preview_volume_vars.get(side)
-        if (
-            tempo_var is None
-            or met_var is None
-            or loop_enabled_var is None
-            or loop_start_var is None
-            or loop_end_var is None
-        ):
-            return
-        try:
-            tempo = float(tempo_var.get())
-        except (tk.TclError, ValueError):
-            return
-        try:
-            met_enabled = self._coerce_tk_bool(met_var.get())
-        except (tk.TclError, TypeError, ValueError):
-            met_enabled = self._coerce_tk_bool(
-                playback.state.metronome_enabled,
-                default=bool(playback.state.metronome_enabled),
-            )
-        try:
-            loop_enabled = self._coerce_tk_bool(loop_enabled_var.get())
-        except (tk.TclError, TypeError, ValueError):
-            loop_enabled = self._coerce_tk_bool(
-                playback.state.loop.enabled,
-                default=bool(playback.state.loop.enabled),
-            )
-        try:
-            loop_start = float(loop_start_var.get())
-            loop_end = float(loop_end_var.get())
-        except (tk.TclError, ValueError):
-            self._update_preview_apply_cancel_state(side, valid=False)
-            return
-        applied = self._preview_applied_settings.get(side, {})
-        try:
-            applied_start = float(applied.get("loop_start", loop_start))
-        except (TypeError, ValueError):
-            applied_start = loop_start
-        try:
-            applied_end = float(applied.get("loop_end", loop_end))
-        except (TypeError, ValueError):
-            applied_end = loop_end
-        has_range = loop_end > loop_start
-        range_changed = (
-            abs(loop_start - applied_start) > 1e-6
-            or abs(loop_end - applied_end) > 1e-6
-        )
-        if has_range and range_changed and not loop_enabled:
-            loop_enabled = True
-        if loop_end < loop_start:
-            self._update_preview_apply_cancel_state(side, valid=False)
-            return
-
-        default_volume_percent: float | None
-        applied_volume = applied.get("volume")
-        if isinstance(applied_volume, (int, float)):
-            default_volume_percent = float(applied_volume)
-        else:
-            state_volume = getattr(getattr(playback, "state", None), "volume", None)
-            if isinstance(state_volume, (int, float)):
-                default_volume_percent = float(state_volume) * 100.0
-            else:
-                default_volume_percent = 100.0
-
-        if volume_var is not None:
-            try:
-                volume_percent = float(volume_var.get())
-            except (tk.TclError, ValueError):
-                volume_percent = default_volume_percent
-        else:
-            volume_percent = default_volume_percent
-
-        volume_percent = max(0.0, min(100.0, volume_percent))
-
-        playback.set_tempo(tempo)
-        playback.set_metronome(met_enabled)
-        pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
-        loop_start_tick = int(round(loop_start * pulses_per_quarter))
-        loop_end_tick = int(round(loop_end * pulses_per_quarter))
-        visible_loop = bool(loop_enabled and has_range)
-        region = (
-            LoopRegion(enabled=False, start_tick=0, end_tick=playback.state.duration_tick)
-            if not visible_loop
-            else LoopRegion(enabled=True, start_tick=loop_start_tick, end_tick=loop_end_tick)
-        )
-        playback.set_loop(region)
-        if hasattr(playback, "set_volume"):
-            playback.set_volume(volume_percent / 100.0)
-
-        applied_snapshot = {
-            "tempo": float(tempo),
-            "metronome": bool(met_enabled),
-            "loop_enabled": bool(visible_loop),
-            "loop_start": float(loop_start),
-            "loop_end": float(loop_end),
-            "volume": float(volume_percent),
-        }
-        self._preview_applied_settings[side] = applied_snapshot
-        if hasattr(self, "_preview_settings_seeded"):
-            self._preview_settings_seeded.add(side)
-
-        settings = dict(getattr(self._viewmodel.state, "preview_settings", {}))
-        settings[side] = PreviewPlaybackSnapshot(
-            tempo_bpm=float(tempo),
-            metronome_enabled=bool(met_enabled),
-            loop_enabled=bool(visible_loop),
-            loop_start_beat=float(loop_start),
-            loop_end_beat=float(loop_end),
-            volume=volume_percent / 100.0,
-        )
-        self._viewmodel.update_preview_settings(settings)
-        self._sync_preview_playback_controls(side)
-        self._update_preview_render_progress(side)
+        apply_preview_settings(self, side)
 
     def _cancel_preview_settings(self, side: str) -> None:
         applied = self._preview_applied_settings.get(side)
@@ -237,96 +139,7 @@ class PreviewSettingsMixin:
     def _apply_preview_snapshot(
         self, side: str, snapshot: PreviewPlaybackSnapshot
     ) -> None:
-        tempo = float(snapshot.tempo_bpm)
-        loop_start = max(0.0, float(snapshot.loop_start_beat))
-        loop_end = max(loop_start, float(snapshot.loop_end_beat))
-        loop_enabled = bool(snapshot.loop_enabled) and loop_end > loop_start
-        applied = {
-            "tempo": tempo,
-            "metronome": bool(snapshot.metronome_enabled),
-            "loop_enabled": loop_enabled,
-            "loop_start": loop_start,
-            "loop_end": loop_end,
-            "volume": float(snapshot.volume) * 100.0,
-        }
-        self._preview_applied_settings[side] = applied
-        if hasattr(self, "_preview_settings_seeded"):
-            self._preview_settings_seeded.add(side)
-
-        tempo_var = self._preview_tempo_vars.get(side)
-        if tempo_var is not None:
-            self._suspend_tempo_update.add(side)
-            try:
-                tempo_var.set(tempo)
-                if hasattr(self, "_refresh_tempo_summary"):
-                    try:
-                        self._refresh_tempo_summary(side, tempo_value=tempo)
-                    except Exception:
-                        pass
-            except (tk.TclError, ValueError):
-                pass
-            finally:
-                self._suspend_tempo_update.discard(side)
-
-        met_var = self._preview_metronome_vars.get(side)
-        if met_var is not None:
-            self._suspend_metronome_update.add(side)
-            try:
-                met_var.set(bool(snapshot.metronome_enabled))
-            except tk.TclError:
-                pass
-            finally:
-                self._suspend_metronome_update.discard(side)
-
-        loop_enabled_var = self._preview_loop_enabled_vars.get(side)
-        loop_start_var = self._preview_loop_start_vars.get(side)
-        loop_end_var = self._preview_loop_end_vars.get(side)
-        if (
-            loop_enabled_var is not None
-            and loop_start_var is not None
-            and loop_end_var is not None
-        ):
-            self._suspend_loop_update.add(side)
-            try:
-                loop_enabled_var.set(loop_enabled)
-                loop_start_var.set(loop_start)
-                loop_end_var.set(loop_end)
-            except (tk.TclError, ValueError):
-                pass
-            finally:
-                self._suspend_loop_update.discard(side)
-
-        playback = self._preview_playback.get(side)
-        if playback is not None:
-            playback.set_tempo(tempo)
-            playback.set_metronome(bool(snapshot.metronome_enabled))
-            playback.set_volume(float(snapshot.volume))
-            if playback.state.is_loaded:
-                pulses_per_quarter = max(1, playback.state.pulses_per_quarter)
-                start_tick = int(round(loop_start * pulses_per_quarter))
-                end_tick = int(round(loop_end * pulses_per_quarter))
-                if not loop_enabled:
-                    region = LoopRegion(
-                        enabled=False,
-                        start_tick=0,
-                        end_tick=playback.state.duration_tick,
-                    )
-                else:
-                    region = LoopRegion(
-                        enabled=True,
-                        start_tick=start_tick,
-                        end_tick=end_tick,
-                    )
-                playback.set_loop(region)
-                force_flags = getattr(self, "_force_autoscroll_once", None)
-                if isinstance(force_flags, dict):
-                    force_flags[side] = True
-                self._update_playback_visuals(side)
-
-        self._set_volume_controls_value(side, applied["volume"])
-        self._update_mute_button_state(side)
-        self._update_preview_apply_cancel_state(side)
-        self._update_loop_marker_visuals(side)
+        apply_preview_snapshot(self, side, snapshot)
 
     def _update_preview_apply_cancel_state(
         self,
