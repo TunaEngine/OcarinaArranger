@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from ocarina_gui.constants import APP_TITLE
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from ocarina_gui.settings import TransformSettings
 from services.project_service import LoadedProject, PreviewPlaybackSnapshot
@@ -71,6 +72,7 @@ def test_open_project_restores_manual_transpose(gui_app, tmp_path, monkeypatch) 
     assert gui_app._preview_loop_start_vars["arranged"].get() == pytest.approx(1.0)
     assert gui_app._preview_loop_end_vars["arranged"].get() == pytest.approx(3.5)
     assert getattr(gui_app, "_preview_selected_side", None) == "arranged"
+    assert getattr(gui_app, "_current_window_title", "") == f"{APP_TITLE} – song.ocarina"
 
 
 @pytest.mark.gui

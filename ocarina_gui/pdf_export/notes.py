@@ -33,13 +33,12 @@ class PatternData:
 def collect_arranged_notes(
     events: Sequence[NoteEvent],
     instrument: InstrumentSpec,
-    prefer_flats: bool,
 ) -> List[ArrangedNote]:
     """Translate note events into arranged fingering metadata."""
 
     notes: List[ArrangedNote] = []
     for index, (_onset, _duration, midi, _program) in enumerate(events, start=1):
-        note_name = pitch_midi_to_name(midi, flats=prefer_flats)
+        note_name = pitch_midi_to_name(midi, flats=False)
         pattern_text, pattern_state = _resolve_pattern(instrument, note_name, midi)
         notes.append(
             ArrangedNote(

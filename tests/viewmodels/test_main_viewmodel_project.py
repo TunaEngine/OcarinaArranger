@@ -129,6 +129,7 @@ def test_save_project_invokes_service(tmp_path: Path, conversion_result: Convers
     assert saved_preview.loop_end_beat == pytest.approx(2.5)
     assert project_service.last_destination == tmp_path / "project.ocarina"
     assert viewmodel.state.status_message == "Project saved."
+    assert viewmodel.state.project_path == str(tmp_path / "project.ocarina")
     assert snapshot.settings.grace_settings == grace_settings.normalized()
     assert snapshot.grace_settings == grace_settings.normalized()
 
@@ -157,6 +158,7 @@ def test_load_project_updates_state(tmp_path: Path, conversion_result: Conversio
     assert state.pitch_list == ["C4", "D4"]
     assert viewmodel.pitch_entries() == ["C4", "D4"]
     assert viewmodel.state.status_message == "Project loaded."
+    assert state.project_path == str(loaded.archive_path)
     assert "arranged" in state.preview_settings
     restored_preview = state.preview_settings["arranged"]
     assert restored_preview.tempo_bpm == pytest.approx(88.0)
@@ -173,3 +175,18 @@ def test_load_project_failure(tmp_path: Path) -> None:
 
     assert result.is_err()
     assert "boom" in result.error
+
+
+def test_browse_for_input_clears_project_path(tmp_path: Path) -> None:
+    source = tmp_path / "existing.musicxml"
+    source.write_text("<score/>", encoding="utf-8")
+    dialogs = FakeDialogs(open_path=str(source))
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=StubScoreService())
+    viewmodel.state.input_path = "previous.musicxml"
+    viewmodel.state.project_path = str(tmp_path / "previous.ocarina")
+
+    changed = viewmodel.browse_for_input()
+
+    assert changed is True
+    assert viewmodel.state.input_path == str(source)
+    assert viewmodel.state.project_path == ""

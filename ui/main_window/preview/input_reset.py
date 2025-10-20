@@ -48,6 +48,9 @@ class PreviewInputResetMixin:
         except Exception:
             logger.debug("Unable to clear stored preview settings", exc_info=True)
         path = self.input_path.get().strip()
+        refresh_title = getattr(self, "_refresh_window_title", None)
+        if callable(refresh_title):
+            refresh_title()
         if hasattr(self, "_update_reimport_button_state"):
             self._update_reimport_button_state()
         if not path or not os.path.exists(path):

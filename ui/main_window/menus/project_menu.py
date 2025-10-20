@@ -33,6 +33,8 @@ class ProjectMenuMixin:
         self.status.set(self._viewmodel.state.status_message)
         loaded = result.unwrap()
         self._record_recent_project(str(loaded.archive_path))
+        if hasattr(self, "_refresh_window_title"):
+            self._refresh_window_title()
 
     def _save_project_command(self) -> None:
         self._sync_viewmodel_settings()
@@ -46,6 +48,8 @@ class ProjectMenuMixin:
         saved_path = result.unwrap()
         self.status.set(self._viewmodel.state.status_message)
         self._record_recent_project(saved_path)
+        if hasattr(self, "_refresh_window_title"):
+            self._refresh_window_title()
 
     def _load_project_from_path(self, path: str) -> None:
         result = self._viewmodel.load_project_from(path)
@@ -59,6 +63,8 @@ class ProjectMenuMixin:
         self._auto_render_preview(self._preview_frame_for_side("arranged"))
         self.status.set(self._viewmodel.state.status_message)
         self._record_recent_project(path)
+        if hasattr(self, "_refresh_window_title"):
+            self._refresh_window_title()
 
     def _refresh_recent_projects_menu(self) -> None:
         menu = getattr(self, "_recent_projects_menu", None)

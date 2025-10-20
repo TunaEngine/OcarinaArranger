@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import tkinter as tk
 from importlib import resources
+from pathlib import Path
 from typing import Callable, Dict, List
 
 from shared.ttk import ttk
@@ -114,7 +115,6 @@ class ThemeInitialisationMixin:
                     "app_icon.ico",
                 )
 
-            self.title(APP_TITLE)
             screen_width = max(1, self.winfo_screenwidth())
             screen_height = max(1, self.winfo_screenheight())
             usable_width = max(960, screen_width - 80)
@@ -129,6 +129,7 @@ class ThemeInitialisationMixin:
         self._build_theme_actions()
         if not self._headless:
             self._build_menus()
+        self._refresh_window_title()
         self._apply_auto_scroll_mode(self._auto_scroll_mode_value)
         LOGGER.info(
             "Main window initialised (headless=%s, log_path=%s, log_verbosity=%s)",
@@ -136,6 +137,42 @@ class ThemeInitialisationMixin:
             self._log_path,
             self._log_verbosity.get(),
         )
+
+    def _refresh_window_title(self) -> None:
+        def _basename(raw: str | None) -> str:
+            text = (raw or "").strip()
+            if not text:
+                return ""
+            name = Path(text).name
+            return name or text
+
+        title = APP_TITLE
+        viewmodel = getattr(self, "_viewmodel", None)
+        project_name = ""
+        input_name = ""
+        if viewmodel is not None:
+            state = getattr(viewmodel, "state", None)
+            if state is not None:
+                project_name = _basename(getattr(state, "project_path", ""))
+                input_name = _basename(getattr(state, "input_path", ""))
+        if not project_name and not input_name and hasattr(self, "input_path"):
+            try:
+                input_name = _basename(self.input_path.get())
+            except Exception:
+                input_name = ""
+
+        suffix = project_name or input_name
+        if suffix:
+            title = f"{APP_TITLE} – {suffix}"
+
+        self._current_window_title = title
+        if getattr(self, "_headless", False):
+            return
+
+        try:
+            self.title(title)
+        except tk.TclError:
+            LOGGER.debug("Unable to update window title", exc_info=True)
 
     def _load_window_photoimage(self, resource_name: str) -> tk.PhotoImage | None:
         resource = get_main_window_resource(resource_name)

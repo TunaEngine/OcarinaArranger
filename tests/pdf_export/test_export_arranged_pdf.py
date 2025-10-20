@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import textwrap
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -31,6 +33,38 @@ def _install_test_instrument(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
     monkeypatch.setattr("ocarina_gui.fingering._LIBRARY", FingeringLibrary([instrument]))
+
+
+def _make_sharp_score() -> tuple[ET.ElementTree, ET.Element]:
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1">
+              <part-name>Solo</part-name>
+            </score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>1</divisions>
+              </attributes>
+              <note>
+                <pitch>
+                  <step>C</step>
+                  <alter>1</alter>
+                  <octave>4</octave>
+                </pitch>
+                <duration>1</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    tree = ET.ElementTree(ET.fromstring(xml))
+    return tree, tree.getroot()
 
 
 def test_export_arranged_pdf_writes_expected_content(
@@ -69,6 +103,31 @@ def test_export_arranged_pdf_writes_expected_content(
     assert b"Arranged staff view" in data
     assert b"Used fingerings visuals" in data
     assert b"C4" in data
+
+
+def test_export_arranged_pdf_uses_sharps_even_when_prefer_flats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree, root = _make_sharp_score()
+    _install_test_instrument(monkeypatch)
+
+    pdf_path = tmp_path / "sharp.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A4",
+        "portrait",
+        4,
+        prefer_flats=True,
+        include_piano_roll=True,
+        include_staff=True,
+        include_text=True,
+        include_fingerings=True,
+    )
+
+    data = pdf_path.read_bytes()
+    assert b"C#4" in data
+    assert b"Db4" not in data
 
 
 def test_export_arranged_pdf_includes_tempo_markers(

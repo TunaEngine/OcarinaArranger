@@ -64,9 +64,7 @@ from .main_viewmodel_part_selection import (
 from .main_viewmodel_gp_presets import GPSettingsPresetMixin
 from .main_viewmodel_persistence import apply_loaded_project, build_project_snapshot
 
-
 logger = logging.getLogger(__name__)
-
 
 _UNSET = object()
 
@@ -331,11 +329,11 @@ class MainViewModel(GPSettingsPresetMixin):
             return False
         self.update_settings(input_path=path)
         with self._state_lock:
+            self.state.project_path = ""
             self.state.pitch_list = []
             self._pitch_entries = []
-        logger.info("Input file selected", extra={"path": path})
-        with self._state_lock:
             self.state.status_message = "Ready."
+        logger.info("Input file selected", extra={"path": path})
         return True
 
     def render_previews(
@@ -434,7 +432,9 @@ class MainViewModel(GPSettingsPresetMixin):
             self.state.status_message = "Project save failed."
             logger.exception("Project save failed", extra={"destination": str(destination)})
             return Result.err(str(exc))
-        self.state.status_message = "Project saved."
+        with self._state_lock:
+            self.state.status_message = "Project saved."
+            self.state.project_path = str(saved)
         logger.info("Project saved", extra={"destination": str(saved)})
         return Result.ok(str(saved))
 

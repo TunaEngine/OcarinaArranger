@@ -73,3 +73,4 @@ def apply_loaded_project(view_model: "MainViewModel", loaded: LoadedProject) -> 
         view_model.state.pitch_list = list(loaded.conversion.used_pitches)
     view_model.state.status_message = loaded.status_message or "Project loaded."
     view_model.state.preview_settings = dict(loaded.preview_settings)
+    view_model.state.project_path = str(loaded.archive_path)

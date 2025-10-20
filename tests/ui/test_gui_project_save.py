@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from shared.result import Result
+from ocarina_gui.constants import APP_TITLE
 
 
 @pytest.mark.gui
@@ -30,7 +29,9 @@ def test_save_project_command_syncs_manual_transpose(gui_app, tmp_path, monkeypa
         captured["transpose_offset"] = gui_app._viewmodel.state.transpose_offset
         preview_settings = gui_app._viewmodel.state.preview_settings
         captured["preview_settings"] = preview_settings
-        return Result.ok(str(tmp_path / "project.ocarina"))
+        destination = tmp_path / "project.ocarina"
+        gui_app._viewmodel.state.project_path = str(destination)
+        return Result.ok(str(destination))
 
     monkeypatch.setattr(gui_app._viewmodel, "save_project", fake_save_project)
     monkeypatch.setattr("ocarina_gui.preferences.save_preferences", lambda *_args, **_kwargs: None)
@@ -43,3 +44,5 @@ def test_save_project_command_syncs_manual_transpose(gui_app, tmp_path, monkeypa
     arranged_snapshot = preview_settings["arranged"]
     assert arranged_snapshot.loop_enabled is True
     assert arranged_snapshot.loop_end_beat == pytest.approx(4.0)
+    assert gui_app._viewmodel.state.project_path.endswith("project.ocarina")
+    assert getattr(gui_app, "_current_window_title", "") == f"{APP_TITLE} – project.ocarina"

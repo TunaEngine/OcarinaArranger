@@ -29,7 +29,6 @@ def build_piano_roll_pages(
     layout: PdfLayout,
     events: Sequence[NoteEvent],
     pulses_per_quarter: int,
-    prefer_flats: bool,
     *,
     tempo_changes: Sequence[TempoChange] | None = None,
     tempo_base: float | None = None,
@@ -73,8 +72,8 @@ def build_piano_roll_pages(
         min_midi = max(0, min_midi - 1)
         max_midi = min(127, max_midi + 1)
 
-    low_name = pitch_midi_to_name(min_midi, flats=prefer_flats)
-    high_name = pitch_midi_to_name(max_midi, flats=prefer_flats)
+    low_name = pitch_midi_to_name(min_midi, flats=False)
+    high_name = pitch_midi_to_name(max_midi, flats=False)
 
     page_events: DefaultDict[int, list[NoteEvent]] = defaultdict(list)
     max_tick = 0
@@ -111,7 +110,6 @@ def build_piano_roll_pages(
             low_name,
             high_name,
             pulses_per_quarter,
-            prefer_flats,
             header_lines,
             header_height,
             header_gap,
@@ -139,7 +137,6 @@ def _draw_piano_roll_page(
     low_name: str,
     high_name: str,
     pulses_per_quarter: int,
-    prefer_flats: bool,
     header_lines: Sequence[str],
     header_height: float,
     header_gap: float,
@@ -193,7 +190,7 @@ def _draw_piano_roll_page(
         row_y = grid_top + idx * row_height
         fill = 0.93 if midi % 12 in (1, 3, 6, 8, 10) else 0.97
         page.draw_rect(grid_left, row_y, grid_width, row_height, fill_gray=fill, stroke_gray=None)
-        label = pitch_midi_to_name(midi, flats=prefer_flats)
+        label = pitch_midi_to_name(midi, flats=False)
         page.draw_rect(
             left,
             row_y,
@@ -263,7 +260,7 @@ def _draw_piano_roll_page(
             stroke_gray=0.1,
             line_width=0.8,
         )
-        name_text = pitch_midi_to_name(midi, flats=prefer_flats)
+        name_text = pitch_midi_to_name(midi, flats=False)
         label_x = grid_left + local_onset * scale_x + 2.0
         primary_size = max(6.0, min(layout.font_size - 2.0, note_height * 0.55))
         name_baseline = min(note_y + note_height - 1.0, note_y + note_height * 0.6)

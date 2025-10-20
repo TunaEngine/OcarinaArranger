@@ -33,6 +33,7 @@ DEFAULT_ARRANGER_STRATEGY = ARRANGER_STRATEGY_CURRENT
 @dataclass(slots=True)
 class MainViewModelState:
     input_path: str = ""
+    project_path: str = ""
     prefer_mode: str = "auto"
     prefer_flats: bool = True
     collapse_chords: bool = True

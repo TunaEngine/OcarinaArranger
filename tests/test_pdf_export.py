@@ -70,7 +70,7 @@ def test_piano_roll_pdf_includes_measure_numbers() -> None:
         NoteEvent(3840, 240, 64, 0),
     ]
 
-    pages = build_piano_roll_pages(layout, events, pulses_per_quarter=480, prefer_flats=False)
+    pages = build_piano_roll_pages(layout, events, pulses_per_quarter=480)
 
     assert pages, "expected at least one piano roll page"
 

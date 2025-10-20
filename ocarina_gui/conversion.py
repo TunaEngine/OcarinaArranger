@@ -130,7 +130,7 @@ def convert_score(
         size,
         orientation,
         pdf_options.columns,
-        settings.prefer_flats,
+        False,
         include_piano_roll=pdf_options.include_piano_roll,
         include_staff=pdf_options.include_staff,
         include_text=pdf_options.include_text,

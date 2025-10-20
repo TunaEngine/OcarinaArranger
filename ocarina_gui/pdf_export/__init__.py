@@ -55,7 +55,7 @@ def export_arranged_pdf(
     grouped_patterns: list[PatternData] = []
     missing_notes: list[str] = []
     if include_text or include_fingerings:
-        notes = collect_arranged_notes(events, instrument, prefer_flats)
+        notes = collect_arranged_notes(events, instrument)
         if include_fingerings:
             grouped_patterns, missing_notes = group_patterns(notes)
 
@@ -66,7 +66,6 @@ def export_arranged_pdf(
             layout,
             events,
             pulses_per_quarter,
-            prefer_flats,
             tempo_changes=tempo_changes,
             tempo_base=tempo_base,
         )
