@@ -13,7 +13,6 @@ from ocarina_gui.preferences import (
     Preferences,
     save_preferences,
 )
-
 from viewmodels.main_viewmodel import (
     ARRANGER_STRATEGIES,
     ARRANGER_STRATEGY_CURRENT,
@@ -29,6 +28,7 @@ from viewmodels.arranger_models import (
 from .arranger_results import ArrangerResultsMixin
 from .convert_advanced_controls import ArrangerAdvancedControlsMixin
 from .convert_gp_controls import ArrangerGPControlsMixin
+from .convert_grace_controls import ArrangerGraceControlsMixin
 from .convert_starred_controls import ArrangerStarredControlsMixin
 from .convert_summary_controls import ArrangerSummaryControlsMixin
 
@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConvertControlsMixin(
+    ArrangerGraceControlsMixin,
     ArrangerResultsMixin,
     ArrangerStarredControlsMixin,
     ArrangerSummaryControlsMixin,
@@ -210,6 +211,7 @@ class ConvertControlsMixin(
             "apply_program_preference": self.arranger_gp_apply_preference,
         }
         self._suspend_arranger_gp_trace = False
+        self._initialize_grace_controls(state)
         self._initialise_arranger_results(state)
         self.status = tk.StringVar(master=self, value=state.status_message)
         self._reimport_button: ttk.Button | None = None
@@ -232,6 +234,7 @@ class ConvertControlsMixin(
             self._register_convert_setting_var(var)
         for var in self._arranger_gp_vars.values():
             self._register_convert_setting_var(var)
+        self._register_grace_setting_vars()
         self.arranger_mode.trace_add("write", self._on_arranger_mode_changed)
         self.arranger_strategy.trace_add("write", self._on_arranger_strategy_changed)
         self.arranger_dp_slack.trace_add(
@@ -249,6 +252,7 @@ class ConvertControlsMixin(
                 "write",
                 lambda *_args, gp_key=key: self._on_arranger_gp_changed(gp_key),
             )
+        self._register_grace_traces()
         self.arranger_show_advanced.trace_add(
             "write", self._on_arranger_show_advanced_changed
         )
@@ -259,6 +263,15 @@ class ConvertControlsMixin(
             self._on_library_instrument_changed(
                 self._selected_instrument_id, update_range=False
             )
+
+    @staticmethod
+    def _format_decimal(value: object, precision: int = 3) -> str:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            numeric = 0.0
+        text = f"{numeric:.{precision}f}".rstrip("0").rstrip(".")
+        return text or "0"
 
     def _on_arranger_mode_changed(self, *_args: object) -> None:
         if self._suppress_arranger_mode_trace:

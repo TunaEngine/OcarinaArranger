@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Tuple
+
+from ocarina_tools import GraceSettings as ImporterGraceSettings
 
 from .soft_key import InstrumentRange
 
@@ -22,6 +24,69 @@ class FeatureFlags:
 
 
 DEFAULT_FEATURE_FLAGS = FeatureFlags()
+
+
+@dataclass(frozen=True)
+class GraceSettings:
+    """Domain-level settings for realizing and scoring grace notes."""
+
+    policy: str = "tempo-weighted"
+    fractions: Tuple[float, ...] = (0.125, 0.08333333333333333, 0.0625)
+    max_chain: int = 3
+    anchor_min_fraction: float = 0.25
+    fold_out_of_range: bool = True
+    drop_out_of_range: bool = True
+    slow_tempo_bpm: float = 60.0
+    fast_tempo_bpm: float = 132.0
+    grace_bonus: float = 0.25
+
+    def __post_init__(self) -> None:
+        policy = (self.policy or "tempo-weighted").strip().lower()
+        object.__setattr__(self, "policy", policy or "tempo-weighted")
+
+        normalized = []
+        for value in self.fractions:
+            try:
+                normalized.append(max(0.0, float(value)))
+            except (TypeError, ValueError):
+                continue
+        if not normalized:
+            normalized = [0.125]
+        object.__setattr__(self, "fractions", tuple(normalized))
+
+        if self.max_chain < 0:
+            object.__setattr__(self, "max_chain", 0)
+
+        anchor_fraction = max(0.0, float(self.anchor_min_fraction))
+        object.__setattr__(self, "anchor_min_fraction", min(anchor_fraction, 1.0))
+
+        slow = max(1.0, float(self.slow_tempo_bpm))
+        fast = max(slow, float(self.fast_tempo_bpm))
+        object.__setattr__(self, "slow_tempo_bpm", slow)
+        object.__setattr__(self, "fast_tempo_bpm", fast)
+
+        bonus = max(0.0, float(self.grace_bonus))
+        object.__setattr__(self, "grace_bonus", min(1.0, bonus))
+
+    def importer_settings(self) -> ImporterGraceSettings:
+        """Return importer-compatible settings for MusicXML parsing."""
+
+        return ImporterGraceSettings(
+            policy=self.policy,
+            fractions=self.fractions,
+            max_chain=self.max_chain,
+            fold_out_of_range=self.fold_out_of_range,
+            drop_out_of_range=self.drop_out_of_range,
+            slow_tempo_bpm=self.slow_tempo_bpm,
+            fast_tempo_bpm=self.fast_tempo_bpm,
+        )
+
+    def anchor_min_ticks(self, pulses_per_quarter: int) -> int:
+        base = max(1, int(pulses_per_quarter))
+        return max(1, int(round(base * self.anchor_min_fraction)))
+
+
+DEFAULT_GRACE_SETTINGS = GraceSettings()
 
 
 _INSTRUMENT_RANGES: Dict[str, InstrumentRange] = {}
@@ -66,6 +131,8 @@ def clear_instrument_registry() -> None:
 __all__ = [
     "FeatureFlags",
     "DEFAULT_FEATURE_FLAGS",
+    "GraceSettings",
+    "DEFAULT_GRACE_SETTINGS",
     "register_instrument_range",
     "get_instrument_range",
     "clear_instrument_registry",

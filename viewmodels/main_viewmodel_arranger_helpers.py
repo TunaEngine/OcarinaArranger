@@ -7,6 +7,7 @@ from dataclasses import replace
 from collections.abc import Callable
 
 from ocarina_gui.preview import PreviewData
+from ocarina_gui.settings import GraceTransformSettings
 
 from services.arranger_preview import ArrangerComputation, compute_arranger_preview
 
@@ -34,6 +35,9 @@ def apply_arranger_results_from_preview(
         transpose_offset = viewmodel.state.transpose_offset
         range_min = viewmodel.state.range_min
         range_max = viewmodel.state.range_max
+        grace_settings = viewmodel.state.grace_settings
+        if not isinstance(grace_settings, GraceTransformSettings):
+            grace_settings = GraceTransformSettings()
 
     computation = compute_arranger_preview(
         preview,
@@ -47,6 +51,7 @@ def apply_arranger_results_from_preview(
         transpose_offset=transpose_offset,
         selected_instrument_range=(range_min, range_max),
         progress_callback=progress_callback,
+        grace_settings=grace_settings.to_domain(),
     )
 
     winner_id = next(

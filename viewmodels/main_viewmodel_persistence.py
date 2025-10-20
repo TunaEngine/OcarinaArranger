@@ -30,6 +30,7 @@ def build_project_snapshot(view_model: "MainViewModel") -> ProjectSnapshot:
         arranger_dp_slack_enabled=state.arranger_dp_slack_enabled,
         arranger_budgets=state.arranger_budgets,
         arranger_gp_settings=state.arranger_gp_settings,
+        grace_settings=state.grace_settings,
     )
 
 
@@ -48,6 +49,7 @@ def apply_loaded_project(view_model: "MainViewModel", loaded: LoadedProject) -> 
         "transpose_offset": settings.transpose_offset,
         "instrument_id": settings.instrument_id,
         "selected_part_ids": settings.selected_part_ids,
+        "grace_settings": settings.grace_settings,
     }
     if loaded.arranger_mode is not None:
         update_kwargs["arranger_mode"] = loaded.arranger_mode

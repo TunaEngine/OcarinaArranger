@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from domain.arrangement.config import register_instrument_range
+from domain.arrangement.config import GraceSettings, register_instrument_range
 from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.gp import GPSessionConfig, arrange_v3_gp
 from domain.arrangement.gp.fitness import FitnessVector
@@ -96,6 +96,39 @@ def test_melody_shift_weight_can_unlock_higher_transpose(monkeypatch) -> None:
     )
     assert tuned_candidate.program[0].semitones == 12
     assert tuned_key < default_key
+
+
+def test_score_instrument_threads_grace_settings(monkeypatch) -> None:
+    instrument = InstrumentRange(min_midi=69, max_midi=89, comfort_center=79)
+    register_instrument_range("alto_c_grace_forward", instrument)
+    phrase = make_span([60, 62, 64, 65])
+
+    programs = (tuple(),)
+    expected_grace = GraceSettings(policy="tempo-weighted", fractions=(0.5, 0.25))
+
+    from domain.arrangement.gp import strategy as strategy_module
+
+    original_evaluate = strategy_module._evaluate_program_candidate
+    captured: dict[str, GraceSettings | None] = {}
+
+    def _capture_evaluate(program, **kwargs):
+        captured["grace"] = kwargs.get("grace_settings")
+        return original_evaluate(program, **kwargs)
+
+    monkeypatch.setattr(strategy_module, "_evaluate_program_candidate", _capture_evaluate)
+
+    candidate, _, _ = _score_instrument(
+        instrument_id="alto_c_grace_forward",
+        instrument=instrument,
+        phrase=phrase,
+        programs=programs,
+        fitness_config=None,
+        beats_per_measure=4,
+        grace_settings=expected_grace,
+    )
+
+    assert candidate.instrument_id == "alto_c_grace_forward"
+    assert captured["grace"] is expected_grace
 
 
 def test_rhythm_simplify_weight_penalises_simplification_programs() -> None:

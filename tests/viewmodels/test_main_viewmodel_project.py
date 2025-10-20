@@ -6,7 +6,7 @@ import pytest
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from services.project_service import LoadedProject, PreviewPlaybackSnapshot
 from shared.result import Result
 from tests.viewmodels._fakes import FakeDialogs, StubProjectService, StubScoreService
@@ -19,6 +19,17 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
     input_path = working_dir / "original.musicxml"
     input_path.parent.mkdir(parents=True, exist_ok=True)
     input_path.write_text("<score/>", encoding="utf-8")
+    grace_settings = GraceTransformSettings(
+        policy="steal",
+        fractions=(0.2, 0.1, 0.05),
+        max_chain=4,
+        anchor_min_fraction=0.6,
+        fold_out_of_range=False,
+        drop_out_of_range=True,
+        slow_tempo_bpm=72.0,
+        fast_tempo_bpm=160.0,
+        grace_bonus=0.4,
+    ).normalized()
     return LoadedProject(
         archive_path=archive,
         working_directory=working_dir,
@@ -33,6 +44,7 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
             transpose_offset=1,
             instrument_id="alto",
             selected_part_ids=("P2",),
+            grace_settings=grace_settings,
         ),
         pdf_options=PdfExportOptions.with_defaults(page_size="A6", orientation="portrait"),
         pitch_list=["C4", "D4"],
@@ -48,6 +60,7 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
                 loop_end_beat=4.0,
             )
         },
+        grace_settings=grace_settings,
     )
 
 
@@ -73,7 +86,18 @@ def test_save_project_invokes_service(tmp_path: Path, conversion_result: Convers
     project_service = StubProjectService()
     service = StubScoreService(conversion=conversion_result)
     viewmodel = MainViewModel(dialogs=dialogs, score_service=service, project_service=project_service)
-    viewmodel.update_settings(input_path=str(input_path))
+    grace_settings = GraceTransformSettings(
+        policy="steal",
+        fractions=(0.2, 0.1, 0.05),
+        max_chain=2,
+        anchor_min_fraction=0.4,
+        fold_out_of_range=False,
+        drop_out_of_range=False,
+        slow_tempo_bpm=72.0,
+        fast_tempo_bpm=180.0,
+        grace_bonus=0.6,
+    )
+    viewmodel.update_settings(input_path=str(input_path), grace_settings=grace_settings)
     convert_result = viewmodel.convert()
     assert convert_result is not None and convert_result.is_ok()
     viewmodel.update_preview_settings(
@@ -105,6 +129,8 @@ def test_save_project_invokes_service(tmp_path: Path, conversion_result: Convers
     assert saved_preview.loop_end_beat == pytest.approx(2.5)
     assert project_service.last_destination == tmp_path / "project.ocarina"
     assert viewmodel.state.status_message == "Project saved."
+    assert snapshot.settings.grace_settings == grace_settings.normalized()
+    assert snapshot.grace_settings == grace_settings.normalized()
 
 
 def test_load_project_updates_state(tmp_path: Path, conversion_result: ConversionResult) -> None:
@@ -135,6 +161,7 @@ def test_load_project_updates_state(tmp_path: Path, conversion_result: Conversio
     restored_preview = state.preview_settings["arranged"]
     assert restored_preview.tempo_bpm == pytest.approx(88.0)
     assert restored_preview.metronome_enabled is True
+    assert state.grace_settings == loaded.settings.grace_settings
 
 
 def test_load_project_failure(tmp_path: Path) -> None:

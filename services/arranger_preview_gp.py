@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Mapping, Sequence
 
 from domain.arrangement.api import summarize_difficulty
+from domain.arrangement.config import GraceSettings
+from domain.arrangement.difficulty import difficulty_score
 from domain.arrangement.gp import GPSessionConfig, GPInstrumentCandidate, GlobalTranspose
 from domain.arrangement.gp.penalties import ScoringPenalties
 from domain.arrangement.gp.fitness import FidelityConfig, FitnessConfig, FitnessObjective
@@ -17,7 +19,7 @@ from viewmodels.arranger_models import (
     ArrangerTelemetryHint,
 )
 
-from .arranger_preview_utils import _difficulty_score, _normalize_difficulty
+from .arranger_preview_utils import _normalize_difficulty
 
 
 def _gp_session_config(settings) -> GPSessionConfig:
@@ -112,11 +114,14 @@ def _gp_result_summary(
     *,
     threshold: float,
     transposition_offset: int = 0,
+    grace_settings: GraceSettings,
 ) -> ArrangerResultSummary:
     easy, medium, hard, very_hard, tessitura, _ = _normalize_difficulty(candidate.difficulty)
-    starting_summary = summarize_difficulty(original_span, candidate.instrument)
-    start_score = _difficulty_score(starting_summary)
-    final_score = _difficulty_score(candidate.difficulty)
+    starting_summary = summarize_difficulty(
+        original_span, candidate.instrument, grace_settings=grace_settings
+    )
+    start_score = difficulty_score(starting_summary, grace_settings=grace_settings)
+    final_score = difficulty_score(candidate.difficulty, grace_settings=grace_settings)
     return ArrangerResultSummary(
         instrument_id=candidate.instrument_id,
         instrument_name=name_map.get(candidate.instrument_id, candidate.instrument_id),

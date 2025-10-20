@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from ocarina_tools import NoteEvent, get_note_events, get_time_signature
+from ocarina_tools import GraceSettings, NoteEvent, get_note_events, get_time_signature
 from shared.ottava import OttavaShift
 
 from helpers import make_linear_score
+
+
+ASSETS = Path(__file__).parent / "integration" / "assets"
 
 
 def test_get_note_events_returns_sorted_sequence():
@@ -100,6 +104,129 @@ def test_get_note_events_merges_tied_notes():
         NoteEvent(960, 480, 64, 79, (480,)),
     ]
     assert events[0].tie_offsets == (480,)
+
+
+def test_get_note_events_realizes_grace_chain():
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1">
+              <part-name>Solo</part-name>
+            </score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>4</divisions>
+              </attributes>
+              <note>
+                <grace slash="yes"/>
+                <pitch>
+                  <step>E</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>0</duration>
+                <voice>1</voice>
+              </note>
+              <note>
+                <grace/>
+                <pitch>
+                  <step>F</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>0</duration>
+                <voice>1</voice>
+              </note>
+              <note>
+                <pitch>
+                  <step>G</step>
+                  <octave>4</octave>
+                </pitch>
+                <duration>8</duration>
+                <voice>1</voice>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    root = ET.fromstring(xml)
+
+    settings = GraceSettings(policy="steal", fractions=(0.125, 0.08333333333333333))
+    events, _ = get_note_events(root, grace_settings=settings)
+
+    assert len(events) == 3
+    grace_one, grace_two, principal = events
+
+    assert grace_one.is_grace
+    assert grace_one.grace_type == "acciaccatura"
+    assert grace_one.midi == 64
+
+    assert grace_two.is_grace
+    assert grace_two.grace_type == "appoggiatura"
+    assert grace_two.midi == 65
+    assert grace_two.onset == grace_one.onset + grace_one.duration
+
+    assert principal.onset == grace_two.onset + grace_two.duration
+    assert principal.duration == max(1, 960 - grace_one.duration - grace_two.duration)
+    assert not principal.is_grace
+
+
+def test_get_note_events_scales_grace_duration_with_tempo_weighted_policy():
+    root = ET.parse(ASSETS / "04_subhole_speed_expected.musicxml").getroot()
+
+    events, _ = get_note_events(root)
+
+    assert len(events) == 2
+    grace, anchor = events
+    assert grace.is_grace
+    assert grace.duration == 70
+    assert anchor.onset == grace.onset + grace.duration
+    assert anchor.duration == 960 - grace.duration
+    assert anchor.duration == 890
+
+
+def test_get_note_events_honours_non_tempo_weighted_policy():
+    root = ET.parse(ASSETS / "04_subhole_speed_expected.musicxml").getroot()
+
+    events, _ = get_note_events(root, grace_settings=GraceSettings(policy="steal"))
+
+    assert len(events) == 2
+    grace, anchor = events
+    assert grace.duration == 120
+    assert anchor.onset == 120
+    assert anchor.duration == 840
+
+
+def test_get_note_events_allocates_grace_chain_by_fraction():
+    xml = textwrap.dedent(
+        """
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1"><part-name>Solo</part-name></score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>4</divisions></attributes>
+              <direction placement="above"><sound tempo="180" /></direction>
+              <note><grace slash="yes"/><pitch><step>D</step><octave>4</octave></pitch><duration>0</duration><voice>1</voice></note>
+              <note><grace/><pitch><step>E</step><octave>4</octave></pitch><duration>0</duration><voice>1</voice></note>
+              <note><grace/><pitch><step>F</step><octave>4</octave></pitch><duration>0</duration><voice>1</voice></note>
+              <note><pitch><step>G</step><octave>4</octave></pitch><duration>8</duration><voice>1</voice></note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+    ).strip()
+    root = ET.fromstring(xml)
+
+    events, _ = get_note_events(root)
+
+    assert [event.midi for event in events] == [62, 64, 65, 67]
+    assert [event.duration for event in events[:3]] == [60, 40, 30]
+    assert events[3].onset == sum(event.duration for event in events[:3])
+    assert events[3].duration == 830
 
 
 def test_get_note_events_normalizes_octave_shift_direction():

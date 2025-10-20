@@ -12,7 +12,7 @@ import zipfile
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 from .project_models import LoadedProject, PreviewPlaybackSnapshot, ProjectSnapshot
@@ -131,6 +131,7 @@ class ProjectService:
             arranger_dp_slack_enabled=arranger_dp_slack_enabled,
             arranger_budgets=arranger_budgets,
             arranger_gp_settings=arranger_gp_settings,
+            grace_settings=settings.grace_settings,
         )
 
     def _build_manifest(self, snapshot: ProjectSnapshot) -> Dict[str, Any]:
@@ -138,6 +139,11 @@ class ProjectService:
         settings_payload["selected_part_ids"] = list(
             snapshot.settings.selected_part_ids
         )
+        grace_payload = asdict(snapshot.settings.grace_settings.normalized())
+        fractions = grace_payload.get("fractions")
+        if isinstance(fractions, tuple):
+            grace_payload["fractions"] = list(fractions)
+        settings_payload["grace_settings"] = grace_payload
 
         manifest: Dict[str, Any] = {
             "version": _VERSION,
@@ -256,6 +262,7 @@ class ProjectService:
             yield f"pdf/{Path(path).name}", Path(path)
 
     def _load_settings(self, data: Dict[str, Any]) -> TransformSettings:
+        grace_settings = self._load_grace_settings(data.get("grace_settings"))
         return TransformSettings(
             prefer_mode=str(data.get("prefer_mode", "auto")),
             range_min=str(data.get("range_min", "")),
@@ -266,6 +273,7 @@ class ProjectService:
             transpose_offset=int(data.get("transpose_offset", 0)),
             instrument_id=str(data.get("instrument_id", "")),
             selected_part_ids=self._load_selected_part_ids(data.get("selected_part_ids")),
+            grace_settings=grace_settings,
         )
 
     def _load_pdf_options(self, data: Dict[str, Any] | None) -> PdfExportOptions | None:
@@ -327,6 +335,71 @@ class ProjectService:
             seen.add(text)
             normalized.append(text)
         return tuple(normalized)
+
+    def _load_grace_settings(self, data: Any) -> GraceTransformSettings:
+        if isinstance(data, GraceTransformSettings):
+            return data.normalized()
+        if not isinstance(data, Mapping):
+            return GraceTransformSettings()
+
+        policy = str(data.get("policy", "tempo-weighted"))
+
+        fractions_raw = data.get("fractions", ())
+        fractions: list[float] = []
+        if isinstance(fractions_raw, (list, tuple)):
+            for value in fractions_raw:
+                try:
+                    fractions.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+        else:
+            fractions = list(GraceTransformSettings().fractions)
+
+        def _float(key: str, fallback: float) -> float:
+            value = data.get(key, fallback)
+            if value is None:
+                return fallback
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _int(key: str, fallback: int) -> int:
+            value = data.get(key, fallback)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _bool(key: str, fallback: bool) -> bool:
+            value = data.get(key, fallback)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                try:
+                    return bool(int(value))
+                except (TypeError, ValueError):
+                    return fallback
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"1", "true", "t", "yes", "on"}:
+                    return True
+                if normalized in {"0", "false", "f", "no", "off", ""}:
+                    return False
+            return fallback
+
+        settings = GraceTransformSettings(
+            policy=policy,
+            fractions=tuple(fractions),
+            max_chain=_int("max_chain", 3),
+            anchor_min_fraction=_float("anchor_min_fraction", 0.25),
+            fold_out_of_range=_bool("fold_out_of_range", True),
+            drop_out_of_range=_bool("drop_out_of_range", True),
+            slow_tempo_bpm=_float("slow_tempo_bpm", 60.0),
+            fast_tempo_bpm=_float("fast_tempo_bpm", 132.0),
+            grace_bonus=_float("grace_bonus", 0.25),
+        )
+        return settings.normalized()
 
     def _load_arranger_mode(self, data: Any) -> str | None:
         if not isinstance(data, dict):

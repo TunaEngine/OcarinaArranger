@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 
 from shared.ottava import OttavaShift
 
+from .config import GraceSettings, DEFAULT_GRACE_SETTINGS
 from .difficulty import difficulty_score, summarize_difficulty
 from .explanations import ExplanationEvent
 from .phrase import PhraseNote, PhraseSpan
@@ -163,6 +164,7 @@ def enforce_instrument_range(
     *,
     beats_per_measure: int,
     prefer_octave_top_voice: bool = False,
+    grace_settings: GraceSettings | None = None,
 ) -> tuple[PhraseSpan, ExplanationEvent | None, float | None]:
     """Clamp ``span`` to ``instrument`` range and emit an explanation event."""
 
@@ -177,10 +179,11 @@ def enforce_instrument_range(
     if not changed:
         return span, None, None
 
-    before_summary = summarize_difficulty(span, instrument)
-    before_difficulty = difficulty_score(before_summary)
-    after_summary = summarize_difficulty(clamped_span, instrument)
-    after_difficulty = difficulty_score(after_summary)
+    active_settings = grace_settings or DEFAULT_GRACE_SETTINGS
+    before_summary = summarize_difficulty(span, instrument, grace_settings=active_settings)
+    before_difficulty = difficulty_score(before_summary, grace_settings=active_settings)
+    after_summary = summarize_difficulty(clamped_span, instrument, grace_settings=active_settings)
+    after_difficulty = difficulty_score(after_summary, grace_settings=active_settings)
     event = ExplanationEvent.from_step(
         action="range-clamp",
         reason="Clamped notes to instrument range",

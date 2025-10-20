@@ -33,11 +33,12 @@ def log_pipeline_start(
     tempo_bpm: float | None,
     subhole_settings: object | None,
     breath_settings: object | None,
+    grace_settings: object | None,
 ) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
     logger.debug(
-        "arrange_span pipeline:start instrument=%s span=%s flags=%s salvage=%s tempo=%s subhole=%s breath=%s",
+        "arrange_span pipeline:start instrument=%s span=%s flags=%s salvage=%s tempo=%s subhole=%s breath=%s grace=%s",
         describe_instrument(instrument),
         describe_span(span),
         flags,
@@ -45,6 +46,7 @@ def log_pipeline_start(
         tempo_bpm,
         subhole_settings,
         breath_settings,
+        grace_settings,
     )
 
 

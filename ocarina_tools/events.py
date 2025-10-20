@@ -9,6 +9,20 @@ import xml.etree.ElementTree as ET
 
 from .musicxml import first_divisions, get_pitch_data, make_qname_getter
 from .instruments import OCARINA_GM_PROGRAM, part_programs
+from .grace_settings import (
+    GraceSettings,
+    _PendingGrace,
+    _allocate_grace_durations,
+    _classify_grace,
+    _fold_grace_midi,
+)
+from .ottava_utils import (
+    _active_shifts,
+    _extract_note_ottavas,
+    _handle_direction_octaves,
+    _pop_ottava,
+    _total_shift,
+)
 from shared.tempo import TempoChange
 from shared.ottava import OttavaShift
 
@@ -23,6 +37,8 @@ class NoteEvent:
     program: int
     tied_durations: Tuple[int, ...] = field(default_factory=tuple)
     ottava_shifts: Tuple[OttavaShift, ...] = field(default_factory=tuple)
+    is_grace: bool = False
+    grace_type: str | None = None
     _tuple: Tuple[int, int, int, int] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -35,6 +51,10 @@ class NoteEvent:
             "_tuple",
             (int(self.onset), int(self.duration), int(self.midi), int(self.program)),
         )
+        object.__setattr__(self, "is_grace", bool(self.is_grace))
+        if self.grace_type is not None:
+            normalized = str(self.grace_type).strip()
+            object.__setattr__(self, "grace_type", normalized or None)
 
     def __iter__(self):  # pragma: no cover - trivial delegation
         return iter(self._tuple)
@@ -49,12 +69,14 @@ class NoteEvent:
         """Return a new event with ``delta`` added to its onset."""
 
         return NoteEvent(
-            self.onset + delta,
-            self.duration,
-            self.midi,
-            self.program,
-            self.tied_durations,
-            self.ottava_shifts,
+            onset=self.onset + delta,
+            duration=self.duration,
+            midi=self.midi,
+            program=self.program,
+            tied_durations=self.tied_durations,
+            ottava_shifts=self.ottava_shifts,
+            is_grace=self.is_grace,
+            grace_type=self.grace_type,
         )
 
     @property
@@ -69,103 +91,16 @@ class NoteEvent:
         return tuple(offsets)
 
 
-def _parse_size(value: str | None) -> int:
-    if value is None:
-        return 8
-    try:
-        return max(1, int(float(value.strip())))
-    except (TypeError, ValueError, AttributeError):
-        return 8
-
-
-def _resolve_direction_voices(direction: ET.Element, q, voice_pos: dict[str, int]) -> list[str]:
-    voice_el = direction.find(q('voice'))
-    if voice_el is not None and voice_el.text and voice_el.text.strip():
-        return [voice_el.text.strip()]
-    if voice_pos:
-        return list(voice_pos.keys())
-    return ['1']
-
-
-def _pop_ottava(stack: list[tuple[OttavaShift, str | None]], number: str | None) -> None:
-    if not stack:
-        return
-    if number is None:
-        stack.pop()
-        return
-    for idx in range(len(stack) - 1, -1, -1):
-        _, current = stack[idx]
-        if current == number:
-            stack.pop(idx)
-            return
-    stack.pop()
-
-
-def _active_shifts(stack: list[tuple[OttavaShift, str | None]]) -> Tuple[OttavaShift, ...]:
-    return tuple(shift for shift, _ in stack)
-
-
-def _total_shift(stack: list[tuple[OttavaShift, str | None]]) -> int:
-    return sum(shift.semitones for shift, _ in stack)
-
-
-def _handle_direction_octaves(
-    direction: ET.Element,
-    q,
-    voice_ottavas: defaultdict[str, list[tuple[OttavaShift, str | None]]],
-    voice_pos: dict[str, int],
-) -> None:
-    direction_type = direction.find(q('direction-type'))
-    if direction_type is None:
-        return
-    voices = _resolve_direction_voices(direction, q, voice_pos)
-    for shift_el in direction_type.findall(q('octave-shift')):
-        shift_type = (shift_el.get('type') or '').strip().lower()
-        number = (shift_el.get('number') or '').strip() or None
-        if shift_type in {'up', 'down'}:
-            size = _parse_size(shift_el.get('size'))
-            shift = OttavaShift(
-                source='octave-shift',
-                direction='up' if shift_type == 'up' else 'down',
-                size=size,
-                number=number,
-            )
-            for voice in voices:
-                voice_ottavas[voice].append((shift, number))
-        elif shift_type == 'stop':
-            for voice in voices:
-                _pop_ottava(voice_ottavas[voice], number)
-
-
-def _extract_note_ottavas(note: ET.Element, q) -> tuple[list[OttavaShift], list[str | None]]:
-    starts: list[OttavaShift] = []
-    stops: list[str | None] = []
-    for notation in note.findall(q('notations')):
-        for technical in notation.findall(q('technical')):
-            for ottava_el in technical.findall(q('ottava')):
-                ott_type = (ottava_el.get('type') or '').strip().lower()
-                number = (ottava_el.get('number') or '').strip() or None
-                if ott_type in {'up', 'down'}:
-                    size = _parse_size(ottava_el.get('size'))
-                    starts.append(
-                        OttavaShift(
-                            source='ottava',
-                            direction='up' if ott_type == 'up' else 'down',
-                            size=size,
-                            number=number,
-                        )
-                    )
-                elif ott_type == 'stop':
-                    stops.append(number)
-    return starts, stops
-
-
-def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
+def get_note_events(
+    root: ET.Element, *, grace_settings: GraceSettings | None = None
+) -> tuple[list[NoteEvent], int]:
     divisions = first_divisions(root)
     ppq = 480
     scale = ppq / max(1, divisions)
     q = make_qname_getter(root)
     programs = part_programs(root)
+    settings = grace_settings or GraceSettings()
+    tempo_bpm = detect_tempo_bpm(root)
     events: List[NoteEvent] = []
     for index, part in enumerate(root.findall(q('part'))):
         part_id = (part.get('id') or f'P{index + 1}').strip()
@@ -174,6 +109,8 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
         program = programs.get(part_id, OCARINA_GM_PROGRAM)
         voice_pos: dict[str, int] = {}
         voice_ottavas: defaultdict[str, list[tuple[OttavaShift, str | None]]] = defaultdict(list)
+        grace_buffers: defaultdict[str, list[_PendingGrace]] = defaultdict(list)
+        voice_anchor_onset: dict[str, int] = {}
         tie_states: dict[tuple[str, int], tuple[int, List[int], int, Tuple[OttavaShift, ...]]] = {}
         for measure in part.findall(q('measure')):
             measure_start = max(voice_pos.values(), default=0)
@@ -194,89 +131,168 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
                 starts, stops = _extract_note_ottavas(note, q)
                 for shift in starts:
                     voice_ottavas[voice].append((shift, shift.number))
+                active_stack = voice_ottavas[voice]
+                active_shifts = _active_shifts(active_stack)
+                base_onset_ticks = int(round(pos * scale))
+                onset_ticks = base_onset_ticks
+                if is_chord and voice in voice_anchor_onset:
+                    onset_ticks = voice_anchor_onset[voice]
+
+                grace_el = note.find(q('grace'))
                 is_rest = note.find(q('rest')) is not None
-                if not is_rest:
-                    pitch_data = get_pitch_data(note, q)
-                    if pitch_data is not None:
-                        onset_ticks = int(round(pos * scale))
-                        dur_ticks = max(1, int(round(dur_div * scale)))
-                        tie_types = set()
-                        for tie in note.findall(q('tie')):
-                            tie_type = (tie.get('type') or '').strip().lower()
-                            if tie_type:
-                                tie_types.add(tie_type)
-                        for notation in note.findall(q('notations')):
-                            for tied in notation.findall(q('tied')):
-                                tie_type = (tied.get('type') or '').strip().lower()
-                                if tie_type:
-                                    tie_types.add(tie_type)
 
-                        active_stack = voice_ottavas[voice]
-                        active_shifts = _active_shifts(active_stack)
-                        midi = pitch_data.midi + _total_shift(active_stack)
-                        tie_key = (voice, midi)
-                        existing = tie_states.get(tie_key)
+                if is_rest:
+                    grace_buffers.pop(voice, None)
+                    voice_anchor_onset.pop(voice, None)
+                    for number in stops:
+                        _pop_ottava(voice_ottavas[voice], number)
+                    if not is_chord:
+                        voice_pos[voice] = pos + dur_div
+                    continue
 
-                        if 'stop' in tie_types and existing:
-                            start_tick, segments, stored_program, stored_shifts = existing
-                            segments.append(dur_ticks)
-                            if 'start' in tie_types:
-                                tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
-                            else:
-                                events.append(
-                                    NoteEvent(
-                                        start_tick,
-                                        sum(segments),
-                                        midi,
-                                        stored_program,
-                                        tuple(segments),
-                                        stored_shifts,
-                                    )
-                                )
-                                tie_states.pop(tie_key, None)
-                        elif 'start' in tie_types:
-                            if existing:
-                                start_tick, segments, stored_program, stored_shifts = existing
-                                segments.append(dur_ticks)
-                                tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
-                            else:
-                                tie_states[tie_key] = (onset_ticks, [dur_ticks], program, active_shifts)
-                        elif 'stop' in tie_types:
-                            events.append(
-                                NoteEvent(
-                                    onset_ticks,
-                                    dur_ticks,
-                                    midi,
-                                    program,
-                                    (dur_ticks,),
-                                    active_shifts,
-                                )
+                pitch_data = get_pitch_data(note, q)
+                if pitch_data is None:
+                    grace_buffers.pop(voice, None)
+                    voice_anchor_onset.pop(voice, None)
+                    for number in stops:
+                        _pop_ottava(voice_ottavas[voice], number)
+                    if not is_chord:
+                        voice_pos[voice] = pos + dur_div
+                    continue
+
+                midi = pitch_data.midi + _total_shift(active_stack)
+
+                if grace_el is not None:
+                    grace_buffers[voice].append(
+                        _PendingGrace(
+                            midi=midi,
+                            ottava_shifts=active_shifts,
+                            grace_type=_classify_grace(grace_el),
+                        )
+                    )
+                    for number in stops:
+                        _pop_ottava(voice_ottavas[voice], number)
+                    continue
+
+                dur_ticks = max(1, int(round(dur_div * scale)))
+                pending = grace_buffers.get(voice, [])
+                trimmed: list[_PendingGrace] = []
+                if pending and settings.max_chain != 0:
+                    limit = settings.max_chain if settings.max_chain > 0 else len(pending)
+                    trimmed = list(pending[-limit:])
+                durations = _allocate_grace_durations(dur_ticks, len(trimmed), tempo_bpm, settings)
+                if durations and len(durations) < len(trimmed):
+                    trimmed = trimmed[-len(durations):]
+                else:
+                    trimmed = trimmed[: len(durations)]
+                if voice in grace_buffers:
+                    grace_buffers[voice].clear()
+
+                stolen_total = 0
+                current_onset = onset_ticks
+                for pending_grace, grace_duration in zip(trimmed, durations):
+                    resolved_midi = _fold_grace_midi(pending_grace.midi, midi, settings)
+                    if resolved_midi is None:
+                        continue
+                    events.append(
+                        NoteEvent(
+                            onset=current_onset,
+                            duration=grace_duration,
+                            midi=resolved_midi,
+                            program=program,
+                            tied_durations=(grace_duration,),
+                            ottava_shifts=pending_grace.ottava_shifts,
+                            is_grace=True,
+                            grace_type=pending_grace.grace_type,
+                        )
+                    )
+                    current_onset += grace_duration
+                    stolen_total += grace_duration
+
+                effective_onset = onset_ticks + stolen_total
+                effective_duration = max(1, dur_ticks - stolen_total)
+                voice_anchor_onset[voice] = effective_onset
+
+                tie_types = set()
+                for tie in note.findall(q('tie')):
+                    tie_type = (tie.get('type') or '').strip().lower()
+                    if tie_type:
+                        tie_types.add(tie_type)
+                for notation in note.findall(q('notations')):
+                    for tied in notation.findall(q('tied')):
+                        tie_type = (tied.get('type') or '').strip().lower()
+                        if tie_type:
+                            tie_types.add(tie_type)
+
+                tie_key = (voice, midi)
+                existing = tie_states.get(tie_key)
+
+                if 'stop' in tie_types and existing:
+                    start_tick, segments, stored_program, stored_shifts = existing
+                    segments.append(effective_duration)
+                    if 'start' in tie_types:
+                        tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
+                    else:
+                        events.append(
+                            NoteEvent(
+                                onset=start_tick,
+                                duration=sum(segments),
+                                midi=midi,
+                                program=stored_program,
+                                tied_durations=tuple(segments),
+                                ottava_shifts=stored_shifts,
                             )
-                        elif existing:
-                            start_tick, segments, stored_program, stored_shifts = existing
-                            segments.append(dur_ticks)
-                            events.append(
-                                NoteEvent(
-                                    start_tick,
-                                    sum(segments),
-                                    midi,
-                                    stored_program,
-                                    tuple(segments),
-                                    stored_shifts,
-                                )
-                            )
-                            tie_states.pop(tie_key, None)
-                        else:
-                            events.append(
-                                NoteEvent(
-                                    onset_ticks,
-                                    dur_ticks,
-                                    midi,
-                                    program,
-                                    (dur_ticks,),
-                                    active_shifts,
-                                )
-                            )
+                        )
+                        tie_states.pop(tie_key, None)
+                elif 'start' in tie_types:
+                    if existing:
+                        start_tick, segments, stored_program, stored_shifts = existing
+                        segments.append(effective_duration)
+                        tie_states[tie_key] = (start_tick, segments, stored_program, stored_shifts)
+                    else:
+                        tie_states[tie_key] = (
+                            effective_onset,
+                            [effective_duration],
+                            program,
+                            active_shifts,
+                        )
+                elif 'stop' in tie_types:
+                    events.append(
+                        NoteEvent(
+                            onset=effective_onset,
+                            duration=effective_duration,
+                            midi=midi,
+                            program=program,
+                            tied_durations=(effective_duration,),
+                            ottava_shifts=active_shifts,
+                        )
+                    )
+                elif existing:
+                    start_tick, segments, stored_program, stored_shifts = existing
+                    segments.append(effective_duration)
+                    events.append(
+                        NoteEvent(
+                            onset=start_tick,
+                            duration=sum(segments),
+                            midi=midi,
+                            program=stored_program,
+                            tied_durations=tuple(segments),
+                            ottava_shifts=stored_shifts,
+                        )
+                    )
+                    tie_states.pop(tie_key, None)
+                else:
+                    events.append(
+                        NoteEvent(
+                            onset=effective_onset,
+                            duration=effective_duration,
+                            midi=midi,
+                            program=program,
+                            tied_durations=(effective_duration,),
+                            ottava_shifts=active_shifts,
+                        )
+                    )
+
                 for number in stops:
                     _pop_ottava(voice_ottavas[voice], number)
                 if not is_chord:
@@ -284,12 +300,12 @@ def get_note_events(root: ET.Element) -> tuple[list[NoteEvent], int]:
         for (voice, midi), (start_tick, segments, stored_program, stored_shifts) in tie_states.items():
             events.append(
                 NoteEvent(
-                    start_tick,
-                    sum(segments),
-                    midi,
-                    stored_program,
-                    tuple(segments),
-                    stored_shifts,
+                    onset=start_tick,
+                    duration=sum(segments),
+                    midi=midi,
+                    program=stored_program,
+                    tied_durations=tuple(segments),
+                    ottava_shifts=stored_shifts,
                 )
             )
     return events, ppq
@@ -468,5 +484,6 @@ __all__ = [
     'get_time_signature',
     'detect_tempo_bpm',
     'get_tempo_changes',
+    'GraceSettings',
     'TempoChange',
 ]

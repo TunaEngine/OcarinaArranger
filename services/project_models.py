@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 
@@ -29,6 +29,7 @@ class ProjectSnapshot:
     arranger_dp_slack_enabled: bool | None = None
     arranger_budgets: ArrangerBudgetSettings | None = None
     arranger_gp_settings: ArrangerGPSettings | None = None
+    grace_settings: GraceTransformSettings = GraceTransformSettings()
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class LoadedProject:
     arranger_dp_slack_enabled: bool | None = None
     arranger_budgets: ArrangerBudgetSettings | None = None
     arranger_gp_settings: ArrangerGPSettings | None = None
+    grace_settings: GraceTransformSettings = GraceTransformSettings()
 
 
 @dataclass(frozen=True)

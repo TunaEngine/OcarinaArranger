@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import textwrap
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -15,6 +16,7 @@ from domain.arrangement.constraints import (
 )
 from domain.arrangement.config import (
     FeatureFlags,
+    GraceSettings as DomainGraceSettings,
     clear_instrument_registry,
     register_instrument_range,
 )
@@ -22,7 +24,7 @@ from domain.arrangement.importers import phrase_from_note_events
 from domain.arrangement.melody import MelodyIsolationAction
 from domain.arrangement.salvage import SalvageBudgets, default_salvage_cascade
 from domain.arrangement.soft_key import InstrumentRange
-from ocarina_tools import get_note_events
+from ocarina_tools import GraceSettings as ImporterGraceSettings, get_note_events
 
 ASSETS = Path(__file__).parent / "assets"
 
@@ -37,6 +39,17 @@ def _clear_registry() -> None:
 def _load_phrase(filename: str):
     root = ET.parse(ASSETS / filename).getroot()
     events, pulses_per_quarter = get_note_events(root)
+    return phrase_from_note_events(events, pulses_per_quarter)
+
+
+def _phrase_from_xml(
+    xml: str,
+    *,
+    importer_settings: ImporterGraceSettings | None = None,
+):
+    root = ET.fromstring(textwrap.dedent(xml).strip())
+    settings = importer_settings or ImporterGraceSettings()
+    events, pulses_per_quarter = get_note_events(root, grace_settings=settings)
     return phrase_from_note_events(events, pulses_per_quarter)
 
 

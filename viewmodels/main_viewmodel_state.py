@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Tuple
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
+from ocarina_gui.settings import GraceTransformSettings
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from services.project_service import PreviewPlaybackSnapshot
 from ocarina_tools.parts import MusicXmlPartInfo
@@ -57,6 +58,9 @@ class MainViewModelState:
     )
     arranger_gp_settings: ArrangerGPSettings = field(
         default_factory=ArrangerGPSettings
+    )
+    grace_settings: GraceTransformSettings = field(
+        default_factory=GraceTransformSettings
     )
     arranger_result_summary: ArrangerResultSummary | None = None
     arranger_explanations: Tuple[ArrangerExplanationRow, ...] = field(

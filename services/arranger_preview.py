@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from domain.arrangement.api import arrange
-from domain.arrangement.config import FeatureFlags
+from domain.arrangement.config import DEFAULT_GRACE_SETTINGS, FeatureFlags, GraceSettings
 from domain.arrangement.constraints import BreathSettings
 from domain.arrangement.gp import arrange_v3_gp
 from domain.arrangement.soft_key import InstrumentRange
@@ -140,6 +140,7 @@ def compute_arranger_preview(
     transpose_offset: int = 0,
     selected_instrument_range: tuple[str | None, str | None] | None = None,
     progress_callback: ProgressCallback | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> ArrangerComputation:
     """Return arranger summaries derived from ``preview`` for UI consumption."""
 
@@ -252,6 +253,8 @@ def compute_arranger_preview(
 
     name_map = _instrument_name_map(choices)
 
+    active_grace = grace_settings or DEFAULT_GRACE_SETTINGS
+
     if mode == "best_effort":
         budget_settings = (budgets or ArrangerBudgetSettings()).normalized()
         flags = FeatureFlags(dp_slack=bool(dp_slack_enabled))
@@ -271,6 +274,7 @@ def compute_arranger_preview(
                 salvage_cascade=salvage_cascade,
                 tempo_bpm=float(preview.tempo_bpm) if preview.tempo_bpm else None,
                 breath_settings=breath_settings,
+                grace_settings=active_grace,
                 progress_callback=progress_callback,
             )
         except Exception:
@@ -305,6 +309,7 @@ def compute_arranger_preview(
             name_map,
             threshold=DEFAULT_DIFFICULTY_THRESHOLD,
             transposition_offset=total_transposition,
+            grace_settings=active_grace,
         )
 
         program = (
@@ -370,6 +375,7 @@ def compute_arranger_preview(
             manual_transposition=manual_transpose,
             transposition=seed_transposition,
             preferred_register_shift=auto_register_shift,
+            grace_settings=active_grace,
             progress_callback=gp_progress,
         )
     except Exception:
@@ -411,6 +417,7 @@ def compute_arranger_preview(
         name_map,
         threshold=DEFAULT_DIFFICULTY_THRESHOLD,
         transposition_offset=total_transposition,
+        grace_settings=active_grace,
     )
 
     chosen_strategy = getattr(gp_result, "strategy", strategy_normalized)

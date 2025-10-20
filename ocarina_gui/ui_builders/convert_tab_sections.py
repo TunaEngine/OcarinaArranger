@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Dict
 
-import tkinter as tk
-
 from shared.ttk import ttk
 from ui.widgets import attach_tooltip
 
 from .convert_gp_panel import build_gp_panel
+from .convert_grace_section import build_grace_section
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
     from ..app import App
@@ -132,6 +131,10 @@ def build_instrument_section(app: "App", parent: ttk.Frame, pad: int) -> ttk.Lab
     summary_container.grid(row=0, column=0, sticky="nsew")
     app._register_arranger_summary_container(summary_container)
 
+    grace_section = build_grace_section(app, instrument_section, pad)
+    grace_section.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(pad, 0))
+    instrument_section.rowconfigure(5, weight=1)
+
     return instrument_section
 
 
@@ -147,39 +150,13 @@ def build_arranger_mode_section(
     )
     mode_section.grid(row=1, column=0, sticky="nsew", pady=(pad, 0))
     mode_section.columnconfigure(0, weight=1)
-    mode_section.columnconfigure(1, weight=0)
-    mode_section.rowconfigure(0, weight=1)
+    mode_section.rowconfigure(2, weight=1)
 
-    scroll_canvas = tk.Canvas(mode_section, highlightthickness=0)
-    scroll_canvas.grid(row=0, column=0, sticky="nsew")
-
-    scrollbar = ttk.Scrollbar(
-        mode_section, orient="vertical", command=scroll_canvas.yview
-    )
-    scrollbar.grid(row=0, column=1, sticky="ns")
-    scroll_canvas.configure(yscrollcommand=scrollbar.set)
-
-    content = ttk.Frame(scroll_canvas)
-    content_id = scroll_canvas.create_window((0, 0), window=content, anchor="nw")
-
-    def _update_scrollregion(_event: tk.Event) -> None:
-        scroll_canvas.configure(scrollregion=scroll_canvas.bbox("all"))
-
-    content.bind("<Configure>", _update_scrollregion)
-
-    def _sync_content_width(event: tk.Event) -> None:
-        scroll_canvas.itemconfigure(content_id, width=event.width)
-
-    scroll_canvas.bind("<Configure>", _sync_content_width)
-
-    content.columnconfigure(0, weight=1)
-    content.rowconfigure(2, weight=1)
-
-    ttk.Label(content, text="Select which arranger experience to use.").grid(
+    ttk.Label(mode_section, text="Select which arranger experience to use.").grid(
         row=0, column=0, sticky="w"
     )
 
-    mode_selector = ttk.Frame(content)
+    mode_selector = ttk.Frame(mode_section)
     mode_selector.grid(row=1, column=0, sticky="w", pady=(4, pad))
     modes = (
         ("classic", "Classic v1"),
@@ -196,7 +173,7 @@ def build_arranger_mode_section(
             style="Segmented.TRadiobutton",
         ).pack(side="left", padx=padding_x)
 
-    mode_stack = ttk.Frame(content)
+    mode_stack = ttk.Frame(mode_section)
     mode_stack.grid(row=2, column=0, sticky="nsew", pady=(pad, 0))
     mode_stack.columnconfigure(0, weight=1)
     mode_stack.rowconfigure(0, weight=1)

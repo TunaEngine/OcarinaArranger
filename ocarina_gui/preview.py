@@ -40,7 +40,11 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
     if settings.selected_part_ids:
         filter_parts(root_filtered, settings.selected_part_ids)
 
-    events_original, pulses_per_quarter = get_note_events(root_filtered)
+    importer_grace = settings.grace_settings.to_importer()
+
+    events_original, pulses_per_quarter = get_note_events(
+        root_filtered, grace_settings=importer_grace
+    )
     beats, beat_type = get_time_signature(root_filtered)
     tempo_bpm = detect_tempo_bpm(root_filtered)
     tempo_changes = get_tempo_changes(root_filtered, default_bpm=tempo_bpm)
@@ -65,7 +69,9 @@ def build_preview_data(input_path: str, settings: TransformSettings) -> PreviewD
     if settings.favor_lower:
         favor_lower_register(root_arranged, range_min=settings.range_min)
 
-    events_arranged, _ = get_note_events(root_arranged)
+    events_arranged, _ = get_note_events(
+        root_arranged, grace_settings=importer_grace
+    )
     events_arranged = _trim_leading_silence(events_arranged)
 
     original_range = _calculate_range(events_original, default_range=(48, 84))

@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Callable, Iterable, Mapping, Sequence
 
 from domain.arrangement.api import summarize_difficulty
-from domain.arrangement.config import register_instrument_range
+from domain.arrangement.config import GraceSettings, register_instrument_range
+from domain.arrangement.difficulty import difficulty_score
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.salvage import SalvageBudgets
 from domain.arrangement.soft_key import InstrumentRange, InstrumentWindwayRange
@@ -56,11 +57,12 @@ def _result_summary(
     *,
     threshold: float,
     transposition_offset: int = 0,
+    grace_settings: GraceSettings,
 ) -> ArrangerResultSummary:
     easy, medium, hard, very_hard, tessitura, _ = _normalize_difficulty(arrangement.difficulty)
-    starting_summary = summarize_difficulty(span, arrangement.instrument)
-    start_score = _difficulty_score(starting_summary)
-    final_score = _difficulty_score(arrangement.difficulty)
+    starting_summary = summarize_difficulty(span, arrangement.instrument, grace_settings=grace_settings)
+    start_score = difficulty_score(starting_summary, grace_settings=grace_settings)
+    final_score = difficulty_score(arrangement.difficulty, grace_settings=grace_settings)
     salvage = arrangement.result.salvage
     return ArrangerResultSummary(
         instrument_id=arrangement.instrument_id,

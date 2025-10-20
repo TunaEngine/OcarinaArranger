@@ -11,7 +11,7 @@ from typing import Optional
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from viewmodels.arranger_models import ArrangerGPSettings, gp_settings_warning
 from ocarina_gui.scrolling import move_canvas_to_pixel_fraction
 from services.project_service import PreviewPlaybackSnapshot
@@ -63,6 +63,11 @@ class PreviewUtilitiesMixin:
                 self._collect_arranger_gp_settings()
                 if hasattr(self, "_collect_arranger_gp_settings")
                 else ArrangerGPSettings()
+            ),
+            grace_settings=(
+                self._collect_grace_settings()
+                if hasattr(self, "_collect_grace_settings")
+                else GraceTransformSettings()
             ),
         )
         preview_settings: dict[str, PreviewPlaybackSnapshot] = {}
@@ -155,6 +160,7 @@ class PreviewUtilitiesMixin:
                 return None
 
         gp_defaults = ArrangerGPSettings()
+        grace_defaults = GraceTransformSettings().normalized()
 
         def _gp_snapshot() -> dict[str, object]:
             if not hasattr(self, "arranger_gp_generations"):
@@ -290,6 +296,26 @@ class PreviewUtilitiesMixin:
                 warning_var.set(gp_settings_warning(settings))
             return snapshot
 
+        def _grace_snapshot() -> dict[str, object]:
+            if not hasattr(self, "_collect_grace_settings"):
+                settings = grace_defaults
+            else:
+                try:
+                    settings = self._collect_grace_settings().normalized()
+                except Exception:
+                    settings = grace_defaults
+            return {
+                "policy": settings.policy,
+                "fractions": list(settings.fractions),
+                "max_chain": settings.max_chain,
+                "anchor_min_fraction": settings.anchor_min_fraction,
+                "fold_out_of_range": settings.fold_out_of_range,
+                "drop_out_of_range": settings.drop_out_of_range,
+                "slow_tempo_bpm": settings.slow_tempo_bpm,
+                "fast_tempo_bpm": settings.fast_tempo_bpm,
+                "grace_bonus": settings.grace_bonus,
+            }
+
         return {
             "prefer_mode": self.prefer_mode.get(),
             "prefer_flats": bool(self.prefer_flats.get()),
@@ -316,6 +342,7 @@ class PreviewUtilitiesMixin:
                 else (1, 1, 1, 3)
             ),
             "arranger_gp_settings": _gp_snapshot(),
+            "grace_settings": _grace_snapshot(),
         }
 
     def _record_preview_import(self) -> None:

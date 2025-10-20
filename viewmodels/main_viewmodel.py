@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.preview import PreviewData
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
 from adapters.file_dialog import FileDialogAdapter
 from ocarina_tools.parts import MusicXmlPartInfo
@@ -55,6 +55,7 @@ from .main_viewmodel_arranger_helpers import (
 from .main_viewmodel_arranger_settings import (
     normalize_arranger_budgets,
     normalize_arranger_gp_settings,
+    normalize_grace_settings,
 )
 from .main_viewmodel_part_selection import (
     normalize_available_parts,
@@ -119,6 +120,7 @@ class MainViewModel(GPSettingsPresetMixin):
             | dict[str, object]
             | tuple[int, int, object]
         ] = None,
+        grace_settings: Optional[GraceTransformSettings | Mapping[str, Any]] = None,
     ) -> None:
         with self._state_lock:
             if input_path is not None:
@@ -198,6 +200,12 @@ class MainViewModel(GPSettingsPresetMixin):
                     arranger_gp_settings,
                     self.state.arranger_gp_settings,
                 )
+            if grace_settings is not None:
+                base_grace = getattr(self.state, "grace_settings", None)
+                self.state.grace_settings = normalize_grace_settings(
+                    grace_settings,
+                    base_grace,
+                )
 
     def update_arranger_summary(
         self,
@@ -248,6 +256,7 @@ class MainViewModel(GPSettingsPresetMixin):
                 transpose_offset=self.state.transpose_offset,
                 instrument_id=self.state.instrument_id,
                 selected_part_ids=self.state.selected_part_ids,
+                grace_settings=self.state.grace_settings,
             )
 
     # ------------------------------------------------------------------
@@ -478,7 +487,6 @@ class MainViewModel(GPSettingsPresetMixin):
 
     def preview_settings(self) -> dict[str, PreviewPlaybackSnapshot]:
         return dict(self.state.preview_settings)
-
     # ------------------------------------------------------------------
     # Arranger helpers
     # ------------------------------------------------------------------

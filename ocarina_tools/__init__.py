@@ -4,6 +4,7 @@ from .pitch import midi_to_name, midi_to_pitch, parse_note_name, pitch_to_midi
 from .adaptation import collect_used_pitches, favor_lower_register, transform_to_ocarina
 from .exporters import export_midi, export_midi_poly, export_musicxml, export_mxl
 from .events import (
+    GraceSettings,
     NoteEvent,
     TempoChange,
     detect_tempo_bpm,
@@ -31,6 +32,7 @@ __all__ = [
     "export_mxl",
     "export_midi", 
     "export_midi_poly", 
+    "GraceSettings",
     "NoteEvent",
     "get_note_events",
     "get_time_signature",

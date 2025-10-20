@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Tuple
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.melody import isolate_melody as _isolate_melody
@@ -40,6 +41,7 @@ def _evaluate_program_candidate(
     fitness_config: FitnessConfig | None,
     candidate_span: PhraseSpan | None = None,
     allow_range_clamp: bool = True,
+    grace_settings: GraceSettings | None = None,
 ) -> tuple[GPInstrumentCandidate, ExplanationEvent | None]:
     if candidate_span is None:
         candidate_span = phrase if not program else _apply_program(program, phrase)
@@ -83,7 +85,9 @@ def _evaluate_program_candidate(
                     uniform_shift=uniform_shift,
                 )
 
-    difficulty = summarize_difficulty(candidate_span, instrument)
+    difficulty = summarize_difficulty(
+        candidate_span, instrument, grace_settings=grace_settings
+    )
     fitness = compute_fitness(
         original=phrase,
         candidate=candidate_span,

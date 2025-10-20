@@ -21,7 +21,7 @@ def test_build_preview_data_loads_score_once(monkeypatch) -> None:
     monkeypatch.setattr(
         preview,
         "get_note_events",
-        lambda _root: ([NoteEvent(0, 1, 60, 79)], 480),
+        lambda _root, **_kwargs: ([NoteEvent(0, 1, 60, 79)], 480),
     )
     monkeypatch.setattr(preview, "get_time_signature", lambda _root: (4, 4))
     monkeypatch.setattr(preview, "transform_to_ocarina", lambda *args, **kwargs: None)
@@ -49,7 +49,7 @@ def test_build_preview_data_loads_score_once(monkeypatch) -> None:
 def test_build_preview_data_trims_arranged_leading_silence(monkeypatch) -> None:
     call_count = 0
 
-    def fake_get_note_events(_root: ET.Element):
+    def fake_get_note_events(_root: ET.Element, **_kwargs):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -102,7 +102,7 @@ def test_build_preview_respects_selected_parts(monkeypatch) -> None:
         root = _make_score_root()
         return ET.ElementTree(root), root
 
-    def fake_get_note_events(root: ET.Element):
+    def fake_get_note_events(root: ET.Element, **_kwargs):
         midi_lookup = {"P1": 60, "P2": 72}
         events = []
         for index, part in enumerate(root.findall("part")):

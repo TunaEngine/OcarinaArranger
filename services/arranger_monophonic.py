@@ -46,7 +46,8 @@ def ensure_monophonic(events: Sequence[NoteEvent]) -> tuple[NoteEvent, ...]:
 
 
 def _event_priority(event: NoteEvent) -> tuple[int, int]:
-    return int(event.midi), int(event.duration)
+    base_priority = 0 if event.is_grace else 1
+    return base_priority, int(event.midi), int(event.duration)
 
 
 def _trim_event(event: NoteEvent, duration: int) -> NoteEvent | None:
@@ -60,6 +61,8 @@ def _trim_event(event: NoteEvent, duration: int) -> NoteEvent | None:
         program=event.program,
         tied_durations=(duration,),
         ottava_shifts=event.ottava_shifts,
+        is_grace=event.is_grace,
+        grace_type=event.grace_type,
     )
 
 

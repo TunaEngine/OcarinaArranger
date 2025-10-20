@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ocarina_gui.preview import PreviewData
+from ocarina_gui.settings import GraceTransformSettings
 from ui.main_window.initialisation.convert_summary_controls import (
     ArrangerSummaryControlsMixin,
 )
@@ -20,6 +21,54 @@ def _activate_best_effort(gui_app) -> None:
     if hasattr(gui_app, "_update_arranger_mode_layout"):
         gui_app._update_arranger_mode_layout()
     gui_app.update_idletasks()
+
+
+def test_reset_grace_settings_restores_defaults(gui_app) -> None:
+    _activate_best_effort(gui_app)
+
+    gui_app.grace_policy.set("fixed")
+    gui_app.grace_fraction_primary.set(0.3)
+    gui_app.grace_fraction_secondary.set(0.2)
+    gui_app.grace_fraction_tertiary.set(0.1)
+    gui_app.grace_max_chain.set(5)
+    gui_app.grace_anchor_min_fraction.set("0.1")
+    gui_app.grace_fold_out_of_range.set(False)
+    gui_app.grace_drop_out_of_range.set(False)
+    gui_app.grace_slow_tempo.set("90")
+    gui_app.grace_fast_tempo.set("150")
+    gui_app.grace_bonus.set("0.5")
+    gui_app.update_idletasks()
+
+    gui_app.reset_grace_settings()
+    gui_app.update_idletasks()
+
+    defaults = GraceTransformSettings().normalized()
+    expected_anchor = gui_app._format_decimal(defaults.anchor_min_fraction)
+    expected_slow = gui_app._format_decimal(defaults.slow_tempo_bpm, precision=1)
+    expected_fast = gui_app._format_decimal(defaults.fast_tempo_bpm, precision=1)
+    expected_bonus = gui_app._format_decimal(defaults.grace_bonus)
+    assert gui_app.grace_policy.get() == defaults.policy
+    assert gui_app.grace_fraction_primary.get() == defaults.fractions[0]
+    assert gui_app.grace_fraction_secondary.get() == defaults.fractions[1]
+    assert gui_app.grace_fraction_tertiary.get() == defaults.fractions[2]
+    assert gui_app.grace_max_chain.get() == defaults.max_chain
+    assert gui_app.grace_anchor_min_fraction.get() == expected_anchor
+    assert gui_app.grace_fold_out_of_range.get() == defaults.fold_out_of_range
+    assert gui_app.grace_drop_out_of_range.get() == defaults.drop_out_of_range
+    assert gui_app.grace_slow_tempo.get() == expected_slow
+    assert gui_app.grace_fast_tempo.get() == expected_fast
+    assert gui_app.grace_bonus.get() == expected_bonus
+    displays = getattr(gui_app, "_grace_fraction_displays", {})
+    primary_display = displays.get("fraction_0")
+    secondary_display = displays.get("fraction_1")
+    tertiary_display = displays.get("fraction_2")
+    assert primary_display is not None
+    assert secondary_display is not None
+    assert tertiary_display is not None
+    assert primary_display.get() == gui_app._format_decimal(defaults.fractions[0])
+    assert secondary_display.get() == gui_app._format_decimal(defaults.fractions[1])
+    assert tertiary_display.get() == gui_app._format_decimal(defaults.fractions[2])
+    assert gui_app._viewmodel.state.grace_settings == defaults
 
 
 def test_best_effort_strategy_controls_visible(gui_app) -> None:

@@ -9,13 +9,17 @@ from types import MappingProxyType
 from ocarina_tools import midi_to_name
 
 from .api_logging import log_pipeline_complete, log_pipeline_stage, log_pipeline_start
-from .config import FeatureFlags
+from .config import DEFAULT_GRACE_SETTINGS, FeatureFlags, GraceSettings
 from .constraints import BreathSettings, SubholeConstraintSettings
 from .difficulty import difficulty_score, summarize_difficulty
 from .explanations import ExplanationEvent, octave_shifted_notes, span_label_for_notes
 from .folding import FoldingResult, FoldingSettings, fold_octaves_with_slack
 from .phrase import PhraseSpan
-from .preprocessing import apply_breath_planning, apply_subhole_constraints
+from .preprocessing import (
+    apply_breath_planning,
+    apply_grace_realization,
+    apply_subhole_constraints,
+)
 from .range_guard import enforce_instrument_range
 from .salvage import SalvageCascade, SalvageResult
 from .soft_key import InstrumentRange
@@ -31,11 +35,14 @@ def run_candidate_pipeline(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> "ArrangementResult":
     """Run preprocessing, salvage, and range enforcement for a candidate span."""
 
     current_span = span
     folding_result: FoldingResult | None = None
+    active_grace = grace_settings or DEFAULT_GRACE_SETTINGS
+
     log_pipeline_start(
         logger,
         instrument=instrument,
@@ -45,6 +52,7 @@ def run_candidate_pipeline(
         tempo_bpm=tempo_bpm,
         subhole_settings=subhole_settings,
         breath_settings=breath_settings,
+        grace_settings=active_grace,
     )
     if flags.dp_slack:
         folding_result = fold_octaves_with_slack(
@@ -99,11 +107,31 @@ def run_candidate_pipeline(
                     events=len(events),
                 )
 
+    realized_span, grace_events = apply_grace_realization(
+        current_span,
+        instrument,
+        tempo_bpm=tempo_bpm,
+        settings=active_grace,
+    )
+    if grace_events:
+        preprocessing_events.extend(grace_events)
+        current_span = realized_span
+        log_pipeline_stage(
+            logger,
+            stage="grace",
+            span=current_span,
+            events=len(grace_events),
+        )
+
     salvage_result: SalvageResult | None = None
     if salvage_cascade is not None:
         def _difficulty(candidate: PhraseSpan) -> float:
-            summary = summarize_difficulty(candidate, instrument)
-            return difficulty_score(summary)
+            summary = summarize_difficulty(
+                candidate,
+                instrument,
+                grace_settings=active_grace,
+            )
+            return difficulty_score(summary, grace_settings=active_grace)
 
         salvage_result = salvage_cascade.run(current_span, _difficulty)
         salvage_result = _enrich_salvage_explanations(
@@ -124,6 +152,7 @@ def run_candidate_pipeline(
         current_span,
         instrument,
         beats_per_measure=salvage_cascade.beats_per_measure if salvage_cascade else 4,
+        grace_settings=active_grace,
     )
     if range_event is not None:
         current_span = clamped_span

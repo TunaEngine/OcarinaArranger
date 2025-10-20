@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
+from .config import DEFAULT_GRACE_SETTINGS, GraceSettings
 from .phrase import PhraseSpan
 from .soft_key import InstrumentRange
 
@@ -24,6 +25,8 @@ class DifficultySummary:
     tessitura_distance: float
     leap_exposure: float = 0.0
     fast_windway_switch_exposure: float = 0.0
+    total_duration: float = 0.0
+    grace_duration: float = 0.0
 
     @property
     def hard_and_very_hard(self) -> float:
@@ -57,10 +60,16 @@ def _windways_for(note_midi: int, instrument: InstrumentRange) -> Iterable[int]:
     return windway_map.get(int(note_midi), ())
 
 
-def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> DifficultySummary:
+def summarize_difficulty(
+    span: PhraseSpan,
+    instrument: InstrumentRange,
+    grace_settings: GraceSettings | None = None,
+) -> DifficultySummary:
+    active_settings = grace_settings or DEFAULT_GRACE_SETTINGS
     totals = {"easy": 0.0, "medium": 0.0, "hard": 0.0, "very_hard": 0.0}
     weighted_distance = 0.0
     total_duration = 0.0
+    grace_duration = 0.0
     center = instrument.comfort_center or (instrument.min_midi + instrument.max_midi) / 2.0
     leap_weight = 0.0
     fast_switch_weight = 0.0
@@ -70,10 +79,12 @@ def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> Diffi
 
     for note in span.notes:
         duration = float(note.duration)
+        total_duration += duration
+        if "grace" in note.tags:
+            grace_duration += duration
         category = _classify_note_difficulty(note.midi, instrument)
         totals[category] += duration
         weighted_distance += duration * abs(note.midi - center)
-        total_duration += duration
 
     for first, second in pairs:
         weight = (first.duration + second.duration) / 2.0
@@ -109,17 +120,27 @@ def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> Diffi
         tessitura_distance=round(tessitura_distance, 6),
         leap_exposure=round(leap_exposure, 6),
         fast_windway_switch_exposure=round(fast_switch_exposure, 6),
+        total_duration=round(total_duration, 6),
+        grace_duration=round(grace_duration, 6),
     )
 
 
-def difficulty_score(summary: DifficultySummary) -> float:
+def difficulty_score(
+    summary: DifficultySummary,
+    grace_settings: GraceSettings | None = None,
+) -> float:
+    active_settings = grace_settings or DEFAULT_GRACE_SETTINGS
     total = summary.easy + summary.medium + summary.hard + summary.very_hard
     if total <= 0:
         return 0.0
     base = (summary.hard + summary.very_hard) / total
     leap_penalty = min(1.0, summary.leap_exposure) * _LEAP_WEIGHT
     fast_switch_penalty = min(1.0, summary.fast_windway_switch_exposure) * _FAST_SWITCH_WEIGHT
-    return min(1.0, base + leap_penalty + fast_switch_penalty)
+    grace_bonus = 0.0
+    if summary.total_duration > 0 and summary.grace_duration > 0:
+        grace_ratio = min(1.0, summary.grace_duration / summary.total_duration)
+        grace_bonus = grace_ratio * active_settings.grace_bonus
+    return min(1.0, max(0.0, base + leap_penalty + fast_switch_penalty - grace_bonus))
 
 
 __all__ = ["DifficultySummary", "difficulty_score", "summarize_difficulty"]

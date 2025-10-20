@@ -82,6 +82,7 @@ def test_selected_parts_flow_filters_previews_and_exports(tmp_path: Path) -> Non
         status_message="Ready.",
         conversion=result,
         preview_settings={},
+        grace_settings=settings.grace_settings,
     )
     archive_path = tmp_path / "selected.ocarina"
     saved = project.save(snapshot, archive_path)

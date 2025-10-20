@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tkinter as tk
 from typing import TYPE_CHECKING
 
 from shared.ttk import ttk
@@ -32,8 +33,30 @@ def build_convert_tab(app: "App", notebook: ttk.Notebook) -> None:
     container.columnconfigure(1, weight=1)
     container.rowconfigure(0, weight=1)
 
-    left_column = ttk.Frame(container)
-    left_column.grid(row=0, column=0, sticky="nsew", padx=(0, pad))
+    left_pane = ttk.Frame(container)
+    left_pane.grid(row=0, column=0, sticky="nsew", padx=(0, pad))
+    left_pane.columnconfigure(0, weight=1)
+    left_pane.rowconfigure(0, weight=1)
+
+    left_canvas = tk.Canvas(left_pane, highlightthickness=0)
+    left_canvas.grid(row=0, column=0, sticky="nsew")
+    left_scrollbar = ttk.Scrollbar(left_pane, orient="vertical", command=left_canvas.yview)
+    left_scrollbar.grid(row=0, column=1, sticky="ns")
+    left_canvas.configure(yscrollcommand=left_scrollbar.set)
+
+    left_column = ttk.Frame(left_canvas)
+    left_window = left_canvas.create_window((0, 0), window=left_column, anchor="nw")
+
+    def _update_left_scrollregion(_event: tk.Event) -> None:
+        left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+
+    left_column.bind("<Configure>", _update_left_scrollregion)
+
+    def _sync_left_content_width(event: tk.Event) -> None:
+        left_canvas.itemconfigure(left_window, width=event.width)
+
+    left_canvas.bind("<Configure>", _sync_left_content_width)
+
     left_column.columnconfigure(0, weight=1)
     left_column.rowconfigure(0, weight=0)
     left_column.rowconfigure(1, weight=1)

@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Callable, Iterable, Sequence, Tuple, TYPE_CHECKING
 
-from domain.arrangement.config import get_instrument_range
+from domain.arrangement.config import (
+    DEFAULT_GRACE_SETTINGS,
+    GraceSettings,
+    get_instrument_range,
+)
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.melody import isolate_melody as _isolate_melody
 from domain.arrangement.phrase import PhraseSpan
@@ -58,6 +62,7 @@ def _score_instrument(
     manual_transposition: int = 0,
     preferred_register_shift: int | None = None,
     penalties: ScoringPenalties | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> tuple[
     GPInstrumentCandidate,
     tuple[int, float, float, float, float, float, float, float, float, float, float],
@@ -112,6 +117,7 @@ def _score_instrument(
             fitness_config=fitness_config,
             candidate_span=candidate_span,
             allow_range_clamp=allow_range_clamp,
+            grace_settings=grace_settings,
         )
         if not program:
             identity_candidate = candidate
@@ -184,6 +190,7 @@ def arrange_v3_gp(
     manual_transposition: int | None = None,
     preferred_register_shift: int | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> GPArrangementStrategyResult:
     """Run a GP session for ``instrument_id`` and rank starred instruments.
 
@@ -193,6 +200,7 @@ def arrange_v3_gp(
     """
 
     manual_offset = manual_transposition or 0
+    active_grace = grace_settings or DEFAULT_GRACE_SETTINGS
 
     base_instrument = get_instrument_range(instrument_id)
     if logger.isEnabledFor(logging.DEBUG):
@@ -255,6 +263,7 @@ def arrange_v3_gp(
         beats_per_measure=beats_per_measure,
         fitness_config=config.fitness_config,
         allow_range_clamp=allow_range_clamp,
+        grace_settings=active_grace,
     )
 
     if logger.isEnabledFor(logging.DEBUG):
@@ -310,6 +319,7 @@ def arrange_v3_gp(
             manual_transposition=manual_offset,
             preferred_register_shift=preferred_register_shift,
             penalties=penalties,
+            grace_settings=active_grace,
         )
         candidates.append(candidate)
         candidate_keys[candidate.instrument_id] = sort_key

@@ -9,7 +9,7 @@ import pytest
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import TransformSettings
+from ocarina_gui.settings import GraceTransformSettings, TransformSettings
 from services.project_service import (
     LoadedProject,
     ProjectPersistenceError,
@@ -47,6 +47,17 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     input_path = tmp_path / "input.musicxml"
     input_path.write_text("<score/>", encoding="utf-8")
     conversion = _create_conversion_artifacts(tmp_path)
+    grace_settings = GraceTransformSettings(
+        policy="steal",
+        fractions=(0.2, 0.1, 0.05),
+        max_chain=2,
+        anchor_min_fraction=0.4,
+        fold_out_of_range=False,
+        drop_out_of_range=False,
+        slow_tempo_bpm=72.0,
+        fast_tempo_bpm=180.0,
+        grace_bonus=0.6,
+    )
     settings = TransformSettings(
         prefer_mode="auto",
         range_min="C4",
@@ -57,6 +68,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         transpose_offset=2,
         instrument_id="alto",
         selected_part_ids=("P1",),
+        grace_settings=grace_settings,
     )
     pdf_options = PdfExportOptions.with_defaults(page_size="A4", orientation="landscape")
     arranger_budgets = ArrangerBudgetSettings(
@@ -113,6 +125,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         arranger_dp_slack_enabled=False,
         arranger_budgets=arranger_budgets,
         arranger_gp_settings=arranger_gp_settings,
+        grace_settings=settings.grace_settings,
     )
 
     service = ProjectService()
@@ -153,6 +166,17 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         arranger_manifest["gp_settings"]["apply_program_preference"]
         == "session_winner"
     )
+
+    grace_manifest = manifest["settings"]["grace_settings"]
+    assert grace_manifest["policy"] == "steal"
+    assert grace_manifest["max_chain"] == 2
+    assert grace_manifest["fold_out_of_range"] is False
+    assert grace_manifest["drop_out_of_range"] is False
+    assert grace_manifest["fractions"] == pytest.approx([0.2, 0.1, 0.05])
+    assert grace_manifest["anchor_min_fraction"] == pytest.approx(0.4)
+    assert grace_manifest["slow_tempo_bpm"] == pytest.approx(72.0)
+    assert grace_manifest["fast_tempo_bpm"] == pytest.approx(180.0)
+    assert grace_manifest["grace_bonus"] == pytest.approx(0.6)
 
     preview_manifest = manifest["preview_settings"]["arranged"]
     assert preview_manifest["tempo_bpm"] == pytest.approx(96.0)
@@ -199,26 +223,29 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert loaded.arranger_dp_slack_enabled is False
     assert loaded.arranger_budgets == arranger_budgets.normalized()
     assert loaded.arranger_gp_settings == arranger_gp_settings.normalized()
+    assert loaded.grace_settings == settings.grace_settings.normalized()
 
 
 def test_project_service_requires_existing_input(tmp_path: Path) -> None:
+    settings = TransformSettings(
+        prefer_mode="auto",
+        range_min="C4",
+        range_max="C6",
+        prefer_flats=True,
+        collapse_chords=True,
+        favor_lower=False,
+        selected_part_ids=(),
+    )
     snapshot = ProjectSnapshot(
         input_path=tmp_path / "missing.musicxml",
-        settings=TransformSettings(
-            prefer_mode="auto",
-            range_min="C4",
-            range_max="C6",
-            prefer_flats=True,
-            collapse_chords=True,
-            favor_lower=False,
-            selected_part_ids=(),
-        ),
+        settings=settings,
         pdf_options=None,
         pitch_list=[],
         pitch_entries=[],
         status_message="",
         conversion=None,
         preview_settings={},
+        grace_settings=settings.grace_settings,
     )
 
     service = ProjectService()
@@ -229,19 +256,20 @@ def test_project_service_requires_existing_input(tmp_path: Path) -> None:
 def test_project_manifest_includes_manual_transpose_options(tmp_path: Path) -> None:
     input_path = tmp_path / "input.musicxml"
     input_path.write_text("<score/>", encoding="utf-8")
+    manual_settings = TransformSettings(
+        prefer_mode="auto",
+        range_min="C4",
+        range_max="C6",
+        prefer_flats=True,
+        collapse_chords=True,
+        favor_lower=False,
+        transpose_offset=-5,
+        instrument_id="alto",
+        selected_part_ids=(),
+    )
     snapshot = ProjectSnapshot(
         input_path=input_path,
-        settings=TransformSettings(
-            prefer_mode="auto",
-            range_min="C4",
-            range_max="C6",
-            prefer_flats=True,
-            collapse_chords=True,
-            favor_lower=False,
-            transpose_offset=-5,
-            instrument_id="alto",
-            selected_part_ids=(),
-        ),
+        settings=manual_settings,
         pdf_options=None,
         pitch_list=[],
         pitch_entries=[],
@@ -250,6 +278,7 @@ def test_project_manifest_includes_manual_transpose_options(tmp_path: Path) -> N
         preview_settings={
             "arranged": PreviewPlaybackSnapshot(loop_start_beat=0.0, loop_end_beat=4.0)
         },
+        grace_settings=manual_settings.grace_settings,
     )
 
     service = ProjectService()

@@ -483,6 +483,6 @@ def build_gp_panel(app, mode_stack: ttk.Frame, pad: int) -> ttk.Frame:
         ),
         style="Hint.TLabel",
         wraplength=360,
-    ).grid(row=6, column=0, sticky="w", pady=(pad, 0))
+    ).grid(row=7, column=0, sticky="w", pady=(pad, 0))
 
     return gp_panel

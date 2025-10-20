@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from domain.arrangement.config import DEFAULT_GRACE_SETTINGS
 from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.gp import GlobalTranspose
@@ -103,6 +104,8 @@ def test_compute_arranger_preview_runs_gp_algorithm(monkeypatch: pytest.MonkeyPa
     progress_cb = kwargs.pop("progress_callback", None)
     if progress_cb is not None:
         assert callable(progress_cb)
+    grace_settings = kwargs.pop("grace_settings", None)
+    assert grace_settings == DEFAULT_GRACE_SETTINGS
     assert kwargs == {
         "instrument_id": "alto_c_12",
         "starred_ids": (),

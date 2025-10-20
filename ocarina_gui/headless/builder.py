@@ -196,8 +196,15 @@ def build_headless_ui(app: "App") -> None:
         app._starred_checkbox_widgets[instrument_id] = check
 
     results_section = HeadlessFrame()
-    results_section.grid()
     app._arranger_results_section = results_section
+    classic_frame = HeadlessFrame()
+    best_effort_frame = HeadlessFrame()
+    gp_frame = HeadlessFrame()
+    app._arranger_mode_frames = {
+        "classic": {"left": classic_frame},
+        "best_effort": {"left": best_effort_frame},
+        "gp": {"left": gp_frame},
+    }
     notebook = HeadlessNotebook(parent=results_section)
     notebook.grid()
     app._register_arranger_results_notebook(notebook)
@@ -226,6 +233,30 @@ def build_headless_ui(app: "App") -> None:
     gp_advanced = HeadlessFrame()
     app._register_arranger_advanced_frame(best_effort_advanced, mode="best_effort")
     app._register_arranger_advanced_frame(gp_advanced, mode="gp")
+
+    def _update_arranger_mode_layout() -> None:
+        try:
+            mode = (app.arranger_mode.get() or "classic").strip().lower()
+        except Exception:
+            mode = "classic"
+        if mode == "best_effort":
+            classic_frame.grid_remove()
+            gp_frame.grid_remove()
+            best_effort_frame.grid()
+            results_section.grid()
+        elif mode == "gp":
+            classic_frame.grid_remove()
+            best_effort_frame.grid_remove()
+            gp_frame.grid()
+            results_section.grid()
+        else:
+            best_effort_frame.grid_remove()
+            gp_frame.grid_remove()
+            classic_frame.grid()
+            results_section.grid_remove()
+
+    app._update_arranger_mode_layout = _update_arranger_mode_layout
+    _update_arranger_mode_layout()
 
 
 if TYPE_CHECKING:  # pragma: no cover

@@ -88,6 +88,25 @@ Join our Discord community on [Discord](https://discord.gg/xVs5W6WR).
 2. If you don't like the output, change to "Use ranked candidate" first and re-arrange.
 3. If it still doesn't look good, expand "Show advanced arranger controls" and change "Range clamp penalty" to 5, re-arrange. This may cause the notes to be out of instrument range. Use manual transposition to move the song up/down as needed.
 
+## Grace note configuration
+
+The **Show advanced arranger controls** panel now exposes a dedicated **Grace notes** section
+that controls how ornamental notes are realized during import and how aggressively they are
+preserved during arranging:
+
+* **Policy** – choose between tempo-weighted theft (default) or the fixed "steal" behaviour.
+* **Fractions** – set up to three proportional weights that apportion time from the anchor note
+  to each grace in a chain.
+* **Max chain** – cap how many graces are allowed to survive before the anchor.
+* **Anchor minimum** – ensure the principal note keeps at least the selected fraction of a beat
+  after theft.
+* **Fold/Drop toggles** – decide whether out-of-range graces are folded into range or dropped.
+* **Tempo thresholds** – configure the slow/fast BPM limits used for pruning at extreme speeds.
+* **Grace bonus** – control the difficulty reduction awarded when graces remain in the output.
+
+The viewmodel, project manifests and importer all honour these settings, so the configured grace
+behaviour survives project saves and reloads without additional tweaks.
+
 ## Debug logs
 
 When troubleshooting preview playback the app now records verbose diagnostics to

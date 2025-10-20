@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ocarina_gui.settings import GraceTransformSettings
+
 from .arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 
@@ -119,4 +121,91 @@ def normalize_arranger_gp_settings(
     else:
         gp_settings = ArrangerGPSettings()
     return gp_settings.normalized()
+
+
+def normalize_grace_settings(
+    grace_settings: GraceTransformSettings | Mapping[str, Any] | None,
+    base: GraceTransformSettings | None,
+) -> GraceTransformSettings:
+    """Coerce grace settings into a normalized ``GraceTransformSettings``."""
+
+    if isinstance(grace_settings, GraceTransformSettings):
+        candidate = grace_settings
+    elif isinstance(grace_settings, Mapping):
+
+        def _get_float(key: str, fallback: float) -> float:
+            value = grace_settings.get(key, fallback)
+            if value is None:
+                return fallback
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _get_int(key: str, fallback: int) -> int:
+            value = grace_settings.get(key, fallback)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _get_bool(key: str, fallback: bool) -> bool:
+            value = grace_settings.get(key, fallback)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                try:
+                    return bool(int(value))
+                except (TypeError, ValueError):
+                    return fallback
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"1", "true", "t", "yes", "on"}:
+                    return True
+                if normalized in {"0", "false", "f", "no", "off", ""}:
+                    return False
+            return fallback
+
+        policy_value = grace_settings.get("policy", base.policy if base else "tempo-weighted")
+        if isinstance(policy_value, str):
+            policy = policy_value.strip()
+        else:
+            policy = str(policy_value)
+
+        fractions_value = grace_settings.get("fractions")
+        if isinstance(fractions_value, (list, tuple)):
+            fractions_list: list[float] = []
+            for raw_value in fractions_value:
+                try:
+                    fractions_list.append(float(raw_value))
+                except (TypeError, ValueError):
+                    continue
+            fractions = tuple(fractions_list)
+        else:
+            fractions = base.fractions if base else GraceTransformSettings().fractions
+
+        candidate = GraceTransformSettings(
+            policy=policy,
+            fractions=fractions,
+            max_chain=_get_int("max_chain", base.max_chain if base else 3),
+            anchor_min_fraction=_get_float(
+                "anchor_min_fraction", base.anchor_min_fraction if base else 0.25
+            ),
+            fold_out_of_range=_get_bool(
+                "fold_out_of_range", base.fold_out_of_range if base else True
+            ),
+            drop_out_of_range=_get_bool(
+                "drop_out_of_range", base.drop_out_of_range if base else True
+            ),
+            slow_tempo_bpm=_get_float(
+                "slow_tempo_bpm", base.slow_tempo_bpm if base else 60.0
+            ),
+            fast_tempo_bpm=_get_float(
+                "fast_tempo_bpm", base.fast_tempo_bpm if base else 132.0
+            ),
+            grace_bonus=_get_float("grace_bonus", base.grace_bonus if base else 0.25),
+        )
+    else:
+        candidate = base or GraceTransformSettings()
+    return candidate.normalized()
 

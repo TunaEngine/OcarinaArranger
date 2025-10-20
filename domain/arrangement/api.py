@@ -8,7 +8,9 @@ from typing import Callable, Iterable, Sequence, Tuple
 
 from .config import (
     DEFAULT_FEATURE_FLAGS,
+    DEFAULT_GRACE_SETTINGS,
     FeatureFlags,
+    GraceSettings,
     get_instrument_range,
 )
 from .constraints import BreathSettings, SubholeConstraintSettings
@@ -160,6 +162,7 @@ def arrange_span(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    grace_settings: GraceSettings | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> ArrangementResult:
     """Arrange ``span`` for ``instrument`` respecting feature flags."""
@@ -175,6 +178,7 @@ def arrange_span(
     )
     candidates = _candidate_transpositions(base_span, instrument)
     log_transpositions(logger, candidates=candidates)
+    grace_config = grace_settings or DEFAULT_GRACE_SETTINGS
     best: tuple[tuple[int | float, ...], ArrangementResult] | None = None
     report = progress_callback or _noop_progress
     total_candidates = max(len(candidates), 1)
@@ -199,6 +203,7 @@ def arrange_span(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            grace_settings=grace_config,
         )
         arranged = replace(
             arranged,
@@ -206,7 +211,11 @@ def arrange_span(
             preprocessing=melody_result.events + arranged.preprocessing,
             melody_actions=melody_result.actions,
         )
-        summary = summarize_difficulty(arranged.span, instrument)
+        summary = summarize_difficulty(
+            arranged.span,
+            instrument,
+            grace_settings=grace_config,
+        )
         salvage = arranged.salvage
         salvage_failure = 0
         salvage_steps = 0
@@ -220,7 +229,7 @@ def arrange_span(
             if "range-clamp" in salvage.applied_steps:
                 range_clamp_penalty = 1
         if salvage is not None and salvage.applied_steps and salvage.success:
-            penalized_score = difficulty_score(summary) + abs(transposition)
+            penalized_score = difficulty_score(summary, grace_settings=grace_config) + abs(transposition)
             ranking = (
                 salvage_failure,
                 range_clamp_penalty,
@@ -237,7 +246,7 @@ def arrange_span(
                 salvage_failure,
                 range_clamp_penalty,
                 salvage_steps,
-                difficulty_score(summary),
+                difficulty_score(summary, grace_settings=grace_config),
                 summary.hard_and_very_hard,
                 summary.medium,
                 summary.tessitura_distance,
@@ -283,6 +292,7 @@ def _arrange_for_instrument(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    grace_settings: GraceSettings | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> InstrumentArrangement:
     instrument = get_instrument_range(instrument_id)
@@ -295,9 +305,11 @@ def _arrange_for_instrument(
         tempo_bpm=tempo_bpm,
         subhole_settings=subhole_settings,
         breath_settings=breath_settings,
+        grace_settings=grace_settings,
         progress_callback=progress_callback,
     )
-    summary = summarize_difficulty(result.span, instrument)
+    active_grace = grace_settings or DEFAULT_GRACE_SETTINGS
+    summary = summarize_difficulty(result.span, instrument, grace_settings=active_grace)
     log_instrument_result(
         logger,
         instrument_id=instrument_id,
@@ -325,6 +337,7 @@ def arrange(
     tempo_bpm: float | None = None,
     subhole_settings: SubholeConstraintSettings | None = None,
     breath_settings: BreathSettings | None = None,
+    grace_settings: GraceSettings | None = None,
     progress_callback: ProgressCallback | None = None,
 ) -> ArrangementStrategyResult:
     """Arrange ``span`` using the requested instrument selection strategy."""
@@ -334,6 +347,7 @@ def arrange(
         raise ValueError(f"Unsupported strategy: {strategy}")
 
     active_flags = flags or DEFAULT_FEATURE_FLAGS
+    grace_config = grace_settings or DEFAULT_GRACE_SETTINGS
     report = _prepare_progress(progress_callback)
     label = instrument_id or "instrument"
     report(0.0, f"Arranging {label}")
@@ -355,6 +369,7 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            grace_settings=grace_config,
             progress_callback=_scaled_progress(
                 report,
                 0.0,
@@ -382,6 +397,7 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            grace_settings=grace_config,
             progress_callback=progress_callback,
         )
 
@@ -408,6 +424,7 @@ def arrange(
             tempo_bpm=tempo_bpm,
             subhole_settings=subhole_settings,
             breath_settings=breath_settings,
+            grace_settings=grace_config,
             progress_callback=_scaled_progress(report, start, end, prefix=prefix),
         )
         comparisons.append(comparison)
