@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Iterable
 
 from .phrase import PhraseSpan
 from .soft_key import InstrumentRange
 
 _LEAP_INTERVAL_THRESHOLD = 5
 _LEAP_WEIGHT = 0.75
+_FAST_SWITCH_WEIGHT = 0.6
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,7 @@ class DifficultySummary:
     very_hard: float
     tessitura_distance: float
     leap_exposure: float = 0.0
+    fast_windway_switch_exposure: float = 0.0
 
     @property
     def hard_and_very_hard(self) -> float:
@@ -45,14 +48,25 @@ def _classify_note_difficulty(midi: int, instrument: InstrumentRange) -> str:
     return "hard"
 
 
+def _windways_for(note_midi: int, instrument: InstrumentRange) -> Iterable[int]:
+    windway_map = getattr(instrument, "windway_map", None)
+    if not windway_map:
+        return ()
+    if hasattr(instrument, "windways_for"):
+        return getattr(instrument, "windways_for")(note_midi)
+    return windway_map.get(int(note_midi), ())
+
+
 def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> DifficultySummary:
     totals = {"easy": 0.0, "medium": 0.0, "hard": 0.0, "very_hard": 0.0}
     weighted_distance = 0.0
     total_duration = 0.0
     center = instrument.comfort_center or (instrument.min_midi + instrument.max_midi) / 2.0
     leap_weight = 0.0
+    fast_switch_weight = 0.0
 
     pairs = list(zip(span.notes, span.notes[1:]))
+    sixteenth_duration = max(1, span.pulses_per_quarter // 4)
 
     for note in span.notes:
         duration = float(note.duration)
@@ -67,12 +81,25 @@ def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> Diffi
         if interval > _LEAP_INTERVAL_THRESHOLD:
             leap_weight += weight
 
+        first_windways = set(_windways_for(first.midi, instrument))
+        second_windways = set(_windways_for(second.midi, instrument))
+        if not first_windways or not second_windways:
+            continue
+        if not first_windways.isdisjoint(second_windways):
+            continue
+        transition_duration = min(first.duration, second.duration)
+        if transition_duration <= sixteenth_duration:
+            fast_switch_weight += transition_duration
+
     tessitura_distance = 0.0
     if total_duration > 0:
         tessitura_distance = weighted_distance / total_duration
     leap_exposure = 0.0
     if total_duration > 0:
         leap_exposure = min(1.0, leap_weight / total_duration)
+    fast_switch_exposure = 0.0
+    if total_duration > 0 and fast_switch_weight > 0:
+        fast_switch_exposure = min(1.0, fast_switch_weight / total_duration)
 
     return DifficultySummary(
         easy=round(totals["easy"], 6),
@@ -81,6 +108,7 @@ def summarize_difficulty(span: PhraseSpan, instrument: InstrumentRange) -> Diffi
         very_hard=round(totals["very_hard"], 6),
         tessitura_distance=round(tessitura_distance, 6),
         leap_exposure=round(leap_exposure, 6),
+        fast_windway_switch_exposure=round(fast_switch_exposure, 6),
     )
 
 
@@ -90,7 +118,8 @@ def difficulty_score(summary: DifficultySummary) -> float:
         return 0.0
     base = (summary.hard + summary.very_hard) / total
     leap_penalty = min(1.0, summary.leap_exposure) * _LEAP_WEIGHT
-    return min(1.0, base + leap_penalty)
+    fast_switch_penalty = min(1.0, summary.fast_windway_switch_exposure) * _FAST_SWITCH_WEIGHT
+    return min(1.0, base + leap_penalty + fast_switch_penalty)
 
 
 __all__ = ["DifficultySummary", "difficulty_score", "summarize_difficulty"]

@@ -8,7 +8,7 @@ from domain.arrangement.api import summarize_difficulty
 from domain.arrangement.config import register_instrument_range
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.salvage import SalvageBudgets
-from domain.arrangement.soft_key import InstrumentRange
+from domain.arrangement.soft_key import InstrumentRange, InstrumentWindwayRange
 from ocarina_tools.events import NoteEvent
 
 from ocarina_tools.pitch import parse_note_name
@@ -221,7 +221,42 @@ def _instrument_range_from_spec(
             pref_max = override_max
 
     center = (pref_min + pref_max) / 2.0 if pref_min is not None and pref_max is not None else None
-    return InstrumentRange(min_midi=min_midi, max_midi=max_midi, comfort_center=center)
+
+    windway_ids: tuple[str, ...] = tuple(getattr(windway, "identifier", "") for windway in getattr(spec, "windways", ()))
+    hole_count = len(getattr(spec, "holes", ()))
+    windway_count = len(windway_ids)
+    windway_map: dict[int, set[int]] = {}
+    if windway_count:
+        for note_name, pattern in getattr(spec, "note_map", {}).items():
+            midi = _parse(note_name)
+            if midi is None:
+                continue
+            sequence = list(pattern)
+            total_required = hole_count + windway_count
+            if len(sequence) < total_required:
+                sequence.extend([0] * (total_required - len(sequence)))
+            indices = []
+            for offset in range(windway_count):
+                value = sequence[hole_count + offset]
+                try:
+                    active = int(value) > 0
+                except (TypeError, ValueError):
+                    active = False
+                if active:
+                    indices.append(offset)
+            if not indices:
+                continue
+            bucket = windway_map.setdefault(midi, set())
+            bucket.update(indices)
+
+    assignments = {midi: tuple(sorted(indices)) for midi, indices in windway_map.items()}
+    return InstrumentWindwayRange(
+        min_midi=min_midi,
+        max_midi=max_midi,
+        comfort_center=center,
+        windway_ids=windway_ids,
+        windway_map=assignments,
+    )
 
 
 def _normalize_difficulty(difficulty) -> tuple[float, float, float, float, float, float]:

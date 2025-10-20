@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Sequence
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Iterable, Mapping, Sequence
 
 from .phrase import PhraseSpan
 
@@ -24,6 +25,38 @@ class InstrumentRange:
     @property
     def span(self) -> int:
         return max(1, self.max_midi - self.min_midi)
+
+
+@dataclass(frozen=True)
+class InstrumentWindwayRange(InstrumentRange):
+    """Instrument range enriched with windway assignment metadata."""
+
+    windway_ids: tuple[str, ...] = field(default_factory=tuple)
+    windway_map: Mapping[int, tuple[int, ...]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        normalized_ids = tuple(self.windway_ids)
+        object.__setattr__(self, "windway_ids", normalized_ids)
+
+        assignments: dict[int, tuple[int, ...]] = {}
+        for midi, indices in dict(self.windway_map).items():
+            try:
+                midi_value = int(midi)
+            except (TypeError, ValueError):
+                continue
+            normalized = tuple(sorted({int(index) for index in indices}))
+            assignments[midi_value] = normalized
+        object.__setattr__(self, "windway_map", MappingProxyType(assignments))
+
+    def windways_for(self, midi: int) -> tuple[int, ...]:
+        """Return the windway indices associated with ``midi`` if known."""
+
+        try:
+            midi_value = int(midi)
+        except (TypeError, ValueError):
+            return ()
+        return self.windway_map.get(midi_value, ())
 
 
 @dataclass(frozen=True)
@@ -131,6 +164,7 @@ def soft_key_search(
 
 __all__ = [
     "InstrumentRange",
+    "InstrumentWindwayRange",
     "KeySearchWeights",
     "KeyFit",
     "soft_key_search",
