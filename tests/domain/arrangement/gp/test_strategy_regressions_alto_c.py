@@ -188,9 +188,14 @@ def test_rhythm_simplify_weight_penalises_simplification_programs() -> None:
         penalties=ScoringPenalties(rhythm_simplify_weight=4.0),
     )
 
-    assert heavy_key[2] > default_key[2]
-    assert light_key[2] <= default_key[2]
-    assert heavy_key[2] > heavy_clean_key[2]
+    # Index 8 tracks program complexity within the sort key. The rhythm
+    # simplification weight should scale that component so heavier weights
+    # penalise simplification programs more aggressively while lighter weights
+    # reduce the penalty.
+    program_complexity_index = 8
+    assert heavy_key[program_complexity_index] > default_key[program_complexity_index]
+    assert light_key[program_complexity_index] <= default_key[program_complexity_index]
+    assert heavy_key[program_complexity_index] > heavy_clean_key[program_complexity_index]
 
 
 def _note_sequence_to_midis(note_block: str) -> list[int]:

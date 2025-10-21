@@ -31,6 +31,7 @@ def build_project_snapshot(view_model: "MainViewModel") -> ProjectSnapshot:
         arranger_budgets=state.arranger_budgets,
         arranger_gp_settings=state.arranger_gp_settings,
         grace_settings=state.grace_settings,
+        subhole_settings=state.subhole_settings,
     )
 
 
@@ -50,6 +51,7 @@ def apply_loaded_project(view_model: "MainViewModel", loaded: LoadedProject) -> 
         "instrument_id": settings.instrument_id,
         "selected_part_ids": settings.selected_part_ids,
         "grace_settings": settings.grace_settings,
+        "subhole_settings": settings.subhole_settings,
     }
     if loaded.arranger_mode is not None:
         update_kwargs["arranger_mode"] = loaded.arranger_mode

@@ -120,6 +120,7 @@ def _evaluate_program_candidate(
         program=program,
         difficulty=difficulty,
         config=fitness_config,
+        grace_settings=grace_settings,
     )
     melody_penalty = melody_pitch_penalty(
         phrase,
@@ -131,7 +132,9 @@ def _evaluate_program_candidate(
         candidate_span,
         beats_per_measure=beats_per_measure,
     )
-    if range_event is not None and penalty_shift is not None:
+    if range_event is not None and (
+        penalty_shift is not None or uniform_reference_deltas is not None
+    ):
         top_original = _top_voice_notes(phrase)
         top_candidate = _top_voice_notes(candidate_span)
         sample = min(len(top_original), len(top_candidate))
@@ -140,15 +143,45 @@ def _evaluate_program_candidate(
                 top_candidate[index].midi - top_original[index].midi
                 for index in range(sample)
             ]
-            allowed_deltas: set[int] = {int(penalty_shift)}
+            expected_shift: int | None = None
+            if penalty_shift is not None:
+                try:
+                    expected_shift = int(penalty_shift)
+                except (TypeError, ValueError):  # pragma: no cover - defensive
+                    expected_shift = None
+
+            reference_matches = 0
             if uniform_reference_deltas:
-                allowed_deltas.update(int(delta) for delta in uniform_reference_deltas)
-            unique_deltas = set(delta_values)
-            if unique_deltas.issubset(allowed_deltas):
+                for index, delta in enumerate(delta_values):
+                    try:
+                        expected_delta = int(uniform_reference_deltas[index])
+                    except (IndexError, TypeError, ValueError):
+                        expected_delta = None
+                    if expected_delta is not None and delta == expected_delta:
+                        reference_matches += 1
+
+            if expected_shift is not None and all(
+                delta == expected_shift for delta in delta_values
+            ):
+                shift_penalty = 0.0
+            elif (
+                uniform_reference_deltas is not None
+                and reference_matches == sample
+                and expected_shift is None
+            ):
                 shift_penalty = 0.0
             else:
-                matches = sum(1 for delta in delta_values if delta in allowed_deltas)
-                mismatch_ratio = 1.0 - (matches / sample)
+                uniform_matches = 0
+                if expected_shift is not None:
+                    uniform_matches = sum(
+                        1 for delta in delta_values if delta == expected_shift
+                    )
+                ratios: list[float] = []
+                if uniform_reference_deltas is not None:
+                    ratios.append(1.0 - (reference_matches / sample))
+                if expected_shift is not None:
+                    ratios.append(1.0 - (uniform_matches / sample))
+                mismatch_ratio = min(ratios) if ratios else 0.0
                 if mismatch_ratio > 0:
                     shift_penalty = max(shift_penalty, mismatch_ratio * 12.0)
     shift_penalty = round(shift_penalty, 12)
@@ -157,6 +190,7 @@ def _evaluate_program_candidate(
         phrase,
         instrument,
         beats_per_measure=beats_per_measure,
+        grace_settings=grace_settings,
     )
     disabled_event: ExplanationEvent | None = None
     if range_event is not None:

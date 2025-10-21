@@ -52,6 +52,9 @@ def test_describe_difficulty_formats_summary() -> None:
         very_hard=4.0,
         tessitura_distance=1.5,
         leap_exposure=0.25,
+        fast_windway_switch_exposure=0.0,
+        subhole_transition_duration=0.0,
+        subhole_exposure=0.0,
     )
 
     description = describe_difficulty(summary)

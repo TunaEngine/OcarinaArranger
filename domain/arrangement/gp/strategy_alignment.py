@@ -115,6 +115,14 @@ def _align_uniform_octave_span(
         if not options:
             continue
         if uniform_shift > 0:
+            non_descending = [option for option in options if option[4] >= original_midi]
+            if non_descending:
+                options = non_descending
+        elif uniform_shift < 0:
+            non_ascending = [option for option in options if option[4] <= original_midi]
+            if non_ascending:
+                options = non_ascending
+        if uniform_shift > 0:
             options.sort(key=lambda item: (item[0], item[2], item[1], item[3], item[4]))
         elif uniform_shift < 0:
             options.sort(key=lambda item: (item[1], item[2], item[0], item[3], item[4]))

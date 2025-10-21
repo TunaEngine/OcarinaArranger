@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from ocarina_gui.settings import GraceTransformSettings
+from ocarina_gui.settings import GraceTransformSettings, SubholeTransformSettings
 
 from .arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
@@ -204,8 +204,109 @@ def normalize_grace_settings(
                 "fast_tempo_bpm", base.fast_tempo_bpm if base else 132.0
             ),
             grace_bonus=_get_float("grace_bonus", base.grace_bonus if base else 0.25),
+            fast_windway_switch_weight=_get_float(
+                "fast_windway_switch_weight",
+                base.fast_windway_switch_weight if base else 0.6,
+            ),
         )
     else:
         candidate = base or GraceTransformSettings()
+    return candidate.normalized()
+
+
+def normalize_subhole_settings(
+    subhole_settings: SubholeTransformSettings | Mapping[str, Any] | None,
+    base: SubholeTransformSettings | None,
+) -> SubholeTransformSettings:
+    """Coerce subhole comfort settings into a normalized dataclass."""
+
+    if isinstance(subhole_settings, SubholeTransformSettings):
+        candidate = subhole_settings
+    elif isinstance(subhole_settings, Mapping):
+
+        def _get_rate(key: str, fallback: float) -> float:
+            value = subhole_settings.get(key, fallback)
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return fallback
+            return numeric
+
+        pair_entries: list[tuple[int, int, float, float]] = []
+        raw_pairs = subhole_settings.get("pair_limits")
+        iterable: Iterable[Any]
+        if isinstance(raw_pairs, Mapping):
+            iterable = raw_pairs.values()
+        elif isinstance(raw_pairs, (list, tuple)):
+            iterable = raw_pairs
+        else:
+            iterable = ()
+
+        for entry in iterable:
+            first: int | None = None
+            second: int | None = None
+            max_hz: float | None = None
+            ease: float | None = None
+
+            if isinstance(entry, Mapping):
+                pair = entry.get("pair") or entry.get("pitches")
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    try:
+                        first = int(pair[0])
+                        second = int(pair[1])
+                    except (TypeError, ValueError):
+                        first = second = None
+                else:
+                    try:
+                        first = int(entry.get("first"))
+                        second = int(entry.get("second"))
+                    except (TypeError, ValueError):
+                        first = second = None
+                max_hz_value = entry.get("max_hz")
+                ease_value = entry.get("ease")
+            elif isinstance(entry, (list, tuple)) and len(entry) >= 3:
+                try:
+                    first = int(entry[0])
+                    second = int(entry[1])
+                except (TypeError, ValueError):
+                    first = second = None
+                max_hz_value = entry[2]
+                ease_value = entry[3] if len(entry) > 3 else None
+            else:
+                max_hz_value = None
+                ease_value = None
+
+            try:
+                max_hz = float(max_hz_value) if max_hz_value is not None else None
+            except (TypeError, ValueError):
+                max_hz = None
+
+            try:
+                ease = float(ease_value) if ease_value is not None else None
+            except (TypeError, ValueError):
+                ease = None
+
+            if first is None or second is None or first == second or max_hz is None:
+                continue
+            if max_hz <= 0:
+                continue
+            if ease is None or ease < 0:
+                ease = 1.0
+            ordered = tuple(sorted((first, second)))
+            pair_entries.append((ordered[0], ordered[1], max_hz, ease))
+
+        defaults = base or SubholeTransformSettings()
+        candidate = SubholeTransformSettings(
+            max_changes_per_second=_get_rate(
+                "max_changes_per_second", defaults.max_changes_per_second
+            ),
+            max_subhole_changes_per_second=_get_rate(
+                "max_subhole_changes_per_second",
+                defaults.max_subhole_changes_per_second,
+            ),
+            pair_limits=tuple(pair_entries) if pair_entries else defaults.pair_limits,
+        )
+    else:
+        candidate = base or SubholeTransformSettings()
     return candidate.normalized()
 

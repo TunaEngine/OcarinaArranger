@@ -153,6 +153,10 @@ def test_compute_arranger_preview_respects_selected_range_override(
             hard=0.0,
             very_hard=0.0,
             tessitura_distance=0.0,
+            leap_exposure=0.0,
+            fast_windway_switch_exposure=0.0,
+            subhole_transition_duration=0.0,
+            subhole_exposure=0.0,
         )
         arrangement = InstrumentArrangement(
             instrument_id=instrument_id,
@@ -227,6 +231,10 @@ def test_compute_arranger_preview_preserves_override_for_starred_selection(
             hard=0.0,
             very_hard=0.0,
             tessitura_distance=0.0,
+            leap_exposure=0.0,
+            fast_windway_switch_exposure=0.0,
+            subhole_transition_duration=0.0,
+            subhole_exposure=0.0,
         )
         arrangement = InstrumentArrangement(
             instrument_id=instrument_id,

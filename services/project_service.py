@@ -138,6 +138,7 @@ class ProjectService:
             arranger_budgets=arranger_budgets,
             arranger_gp_settings=arranger_gp_settings,
             grace_settings=settings.grace_settings,
+            subhole_settings=settings.subhole_settings,
         )
 
     @staticmethod

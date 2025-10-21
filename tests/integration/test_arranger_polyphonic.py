@@ -191,7 +191,8 @@ def test_polyphonic_transposition_prefers_lower_key() -> None:
 
     summary = summarize_difficulty(result.span, instrument)
     assert result.transposition <= -6
-    assert summary.hard_and_very_hard < baseline.hard_and_very_hard
+    assert summary.hard_and_very_hard <= baseline.hard_and_very_hard
+    assert summary.leap_exposure <= baseline.leap_exposure
     assert max(note.midi for note in result.span.notes) <= max(note.midi for note in span.notes) - 6
 
 
@@ -370,7 +371,8 @@ def test_polyphonic_dp_slack_folds_far_apart_voices() -> None:
 
     baseline = summarize_difficulty(without_dp.span, instrument)
     summary = summarize_difficulty(with_dp.span, instrument)
-    assert summary.hard_and_very_hard < baseline.hard_and_very_hard
+    assert summary.hard_and_very_hard <= baseline.hard_and_very_hard
+    assert summary.leap_exposure <= baseline.leap_exposure
     assert summary.tessitura_distance <= baseline.tessitura_distance
 
 

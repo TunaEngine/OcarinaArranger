@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from typing import Callable, Iterable, MutableMapping, Sequence
 
+from ..config import GraceSettings
 from ..difficulty import DifficultySummary, difficulty_score, summarize_difficulty
 from ..phrase import PhraseNote, PhraseSpan
 from ..soft_key import InstrumentRange
@@ -297,14 +298,19 @@ def compute_fitness(
     program: Sequence[GPPrimitive] | None = None,
     difficulty: DifficultySummary | None = None,
     config: FitnessConfig | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> FitnessVector:
     """Compute the weighted fitness vector for *candidate* relative to *original*."""
 
     program_values = program or ()
     applied_config = config or FitnessConfig()
-    difficulty_summary = difficulty or summarize_difficulty(candidate, instrument)
+    difficulty_summary = difficulty or summarize_difficulty(
+        candidate, instrument, grace_settings=grace_settings
+    )
 
-    playability_penalty = difficulty_score(difficulty_summary)
+    playability_penalty = difficulty_score(
+        difficulty_summary, grace_settings=grace_settings
+    )
     playability_value = applied_config.playability.apply(playability_penalty)
 
     contour_similarity = _contour_similarity(original, candidate)

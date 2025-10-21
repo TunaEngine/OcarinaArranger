@@ -26,6 +26,9 @@ class FeatureFlags:
 DEFAULT_FEATURE_FLAGS = FeatureFlags()
 
 
+FAST_WINDWAY_SWITCH_WEIGHT_MAX = 3.0
+
+
 @dataclass(frozen=True)
 class GraceSettings:
     """Domain-level settings for realizing and scoring grace notes."""
@@ -39,6 +42,8 @@ class GraceSettings:
     slow_tempo_bpm: float = 60.0
     fast_tempo_bpm: float = 132.0
     grace_bonus: float = 0.25
+    fast_windway_switch_weight: float = 0.6
+    subhole_exposure_weight: float = 0.5
 
     def __post_init__(self) -> None:
         policy = (self.policy or "tempo-weighted").strip().lower()
@@ -67,6 +72,20 @@ class GraceSettings:
 
         bonus = max(0.0, float(self.grace_bonus))
         object.__setattr__(self, "grace_bonus", min(1.0, bonus))
+
+        fast_switch_weight = max(0.0, float(self.fast_windway_switch_weight))
+        object.__setattr__(
+            self,
+            "fast_windway_switch_weight",
+            min(FAST_WINDWAY_SWITCH_WEIGHT_MAX, fast_switch_weight),
+        )
+
+        subhole_weight = max(0.0, float(self.subhole_exposure_weight))
+        object.__setattr__(
+            self,
+            "subhole_exposure_weight",
+            min(1.0, subhole_weight),
+        )
 
     def importer_settings(self) -> ImporterGraceSettings:
         """Return importer-compatible settings for MusicXML parsing."""
@@ -133,6 +152,7 @@ __all__ = [
     "DEFAULT_FEATURE_FLAGS",
     "GraceSettings",
     "DEFAULT_GRACE_SETTINGS",
+    "FAST_WINDWAY_SWITCH_WEIGHT_MAX",
     "register_instrument_range",
     "get_instrument_range",
     "clear_instrument_registry",

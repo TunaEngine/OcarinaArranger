@@ -197,6 +197,9 @@ def gui_app(request, monkeypatch):
             very_hard=0.0,
             tessitura_distance=0.0,
             leap_exposure=0.0,
+            fast_windway_switch_exposure=0.0,
+            subhole_transition_duration=0.0,
+            subhole_exposure=0.0,
         )
 
         candidate = SimpleNamespace(

@@ -71,8 +71,20 @@ def layout_editor_specs() -> List[InstrumentSpec]:
                 "closed": True,
             },
             "holes": [
-                {"id": "LH1", "x": 60.0, "y": 60.0, "radius": 7.0},
-                {"id": "LH2", "x": 100.0, "y": 55.0, "radius": 7.5},
+                {
+                    "id": "LH1",
+                    "x": 60.0,
+                    "y": 60.0,
+                    "radius": 7.0,
+                    "is_subhole": False,
+                },
+                {
+                    "id": "LH2",
+                    "x": 100.0,
+                    "y": 55.0,
+                    "radius": 7.5,
+                    "is_subhole": True,
+                },
             ],
             "windways": [
                 {"id": "Chamber A", "x": 40.0, "y": 28.0, "width": 18.0, "height": 10.0}
@@ -106,9 +118,27 @@ def layout_editor_specs() -> List[InstrumentSpec]:
             },
             "outline": None,
             "holes": [
-                {"id": "RH1", "x": 70.0, "y": 85.0, "radius": 8.0},
-                {"id": "RH2", "x": 110.0, "y": 80.0, "radius": 8.5},
-                {"id": "RH3", "x": 150.0, "y": 78.0, "radius": 8.0},
+                {
+                    "id": "RH1",
+                    "x": 70.0,
+                    "y": 85.0,
+                    "radius": 8.0,
+                    "is_subhole": False,
+                },
+                {
+                    "id": "RH2",
+                    "x": 110.0,
+                    "y": 80.0,
+                    "radius": 8.5,
+                    "is_subhole": False,
+                },
+                {
+                    "id": "RH3",
+                    "x": 150.0,
+                    "y": 78.0,
+                    "radius": 8.0,
+                    "is_subhole": True,
+                },
             ],
             "windways": [
                 {"id": "Chamber B", "x": 60.0, "y": 32.0, "width": 20.0, "height": 12.0}

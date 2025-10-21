@@ -6,15 +6,24 @@ from domain.arrangement.api import (
     arrange_span,
     summarize_difficulty,
 )
-from domain.arrangement.config import FeatureFlags
+from domain.arrangement.config import FeatureFlags, GraceSettings
 from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.salvage import default_salvage_cascade
-from domain.arrangement.soft_key import InstrumentRange
+from domain.arrangement.soft_key import InstrumentRange, InstrumentWindwayRange
 
 
 def _make_span(midi_values: list[int]) -> PhraseSpan:
     notes = [
         PhraseNote(onset=index * 480, duration=480, midi=midi)
+        for index, midi in enumerate(midi_values)
+    ]
+    return PhraseSpan(tuple(notes))
+
+
+def _make_fast_windway_span(midi_values: list[int]) -> PhraseSpan:
+    sixteenth = 120
+    notes = [
+        PhraseNote(onset=index * sixteenth, duration=sixteenth, midi=midi)
         for index, midi in enumerate(midi_values)
     ]
     return PhraseSpan(tuple(notes))
@@ -144,3 +153,79 @@ def test_difficulty_penalizes_large_leaps() -> None:
 
     assert leaping_summary.leap_exposure > smooth_summary.leap_exposure
     assert _difficulty_score(leaping_summary) > _difficulty_score(smooth_summary)
+
+
+def test_fast_windway_weight_prioritizes_low_switch_transposition() -> None:
+    instrument = InstrumentWindwayRange(
+        min_midi=60,
+        max_midi=80,
+        windway_ids=("primary", "secondary", "tertiary"),
+        windway_map={
+            66: (0,),
+            67: (0,),
+            68: (0,),
+            69: (0,),
+            70: (1,),
+            71: (1,),
+            72: (1,),
+            73: (2,),
+        },
+    )
+    span = _make_fast_windway_span([68, 71, 68, 71])
+
+    muted_weight = GraceSettings(fast_windway_switch_weight=0.0)
+    heavy_weight = GraceSettings(fast_windway_switch_weight=3.0)
+
+    muted_result = arrange_span(span, instrument=instrument, grace_settings=muted_weight)
+    muted_summary = summarize_difficulty(
+        muted_result.span, instrument, grace_settings=muted_weight
+    )
+
+    assert muted_result.transposition == 0
+    assert muted_summary.fast_windway_switch_exposure > 0.0
+
+    heavy_result = arrange_span(span, instrument=instrument, grace_settings=heavy_weight)
+    heavy_summary = summarize_difficulty(
+        heavy_result.span, instrument, grace_settings=heavy_weight
+    )
+
+    assert heavy_result.transposition == -2
+    assert heavy_summary.fast_windway_switch_exposure == 0.0
+
+
+def test_fast_windway_weight_overrides_range_bias_when_exposure_high() -> None:
+    instrument = InstrumentWindwayRange(
+        min_midi=62,
+        max_midi=69,
+        windway_ids=("primary", "secondary"),
+        windway_map={
+            62: (0,),
+            63: (0,),
+            64: (0,),
+            65: (0,),
+            66: (0,),
+            67: (1,),
+            68: (1,),
+            69: (1,),
+        },
+    )
+    notes = [
+        PhraseNote(onset=0, duration=120, midi=64),
+        PhraseNote(onset=120, duration=120, midi=69),
+        PhraseNote(onset=240, duration=120, midi=64),
+    ]
+    span = PhraseSpan(tuple(notes), pulses_per_quarter=480)
+
+    muted_settings = GraceSettings(fast_windway_switch_weight=0.0)
+    muted_result = arrange_span(span, instrument=instrument, grace_settings=muted_settings)
+    muted_summary = summarize_difficulty(muted_result.span, instrument, grace_settings=muted_settings)
+
+    assert muted_result.transposition == 0
+    assert muted_summary.fast_windway_switch_exposure > 0.0
+
+    heavy_settings = GraceSettings(fast_windway_switch_weight=3.0)
+    heavy_result = arrange_span(span, instrument=instrument, grace_settings=heavy_settings)
+    heavy_summary = summarize_difficulty(heavy_result.span, instrument, grace_settings=heavy_settings)
+
+    assert heavy_result.transposition != muted_result.transposition
+    assert heavy_summary.fast_windway_switch_exposure < muted_summary.fast_windway_switch_exposure

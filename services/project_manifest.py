@@ -6,7 +6,11 @@ from typing import Any, Dict, Iterable, Mapping, Tuple
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import GraceTransformSettings, TransformSettings
+from ocarina_gui.settings import (
+    GraceTransformSettings,
+    SubholeTransformSettings,
+    TransformSettings,
+)
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 from .project_models import PreviewPlaybackSnapshot, ProjectSnapshot
@@ -21,6 +25,12 @@ def build_manifest(snapshot: ProjectSnapshot, version: int) -> Dict[str, Any]:
     if isinstance(fractions, tuple):
         grace_payload["fractions"] = list(fractions)
     settings_payload["grace_settings"] = grace_payload
+
+    subhole_payload = asdict(snapshot.settings.subhole_settings.normalized())
+    pair_limits = subhole_payload.get("pair_limits")
+    if isinstance(pair_limits, tuple):
+        subhole_payload["pair_limits"] = [list(entry) for entry in pair_limits]
+    settings_payload["subhole_settings"] = subhole_payload
 
     manifest: Dict[str, Any] = {
         "version": version,
@@ -144,6 +154,7 @@ def iter_export_files(conversion: ConversionResult) -> Iterable[Tuple[str, Path]
 
 def load_settings(data: Dict[str, Any]) -> TransformSettings:
     grace_settings = load_grace_settings(data.get("grace_settings"))
+    subhole_settings = load_subhole_settings(data.get("subhole_settings"))
     raw_lenient = data.get("lenient_midi_import", True)
     if isinstance(raw_lenient, bool):
         lenient_import = raw_lenient
@@ -169,6 +180,7 @@ def load_settings(data: Dict[str, Any]) -> TransformSettings:
         instrument_id=str(data.get("instrument_id", "")),
         selected_part_ids=load_selected_part_ids(data.get("selected_part_ids")),
         grace_settings=grace_settings,
+        subhole_settings=subhole_settings,
         lenient_midi_import=lenient_import,
     )
 
@@ -297,8 +309,104 @@ def load_grace_settings(data: Any) -> GraceTransformSettings:
         slow_tempo_bpm=_float("slow_tempo_bpm", 60.0),
         fast_tempo_bpm=_float("fast_tempo_bpm", 132.0),
         grace_bonus=_float("grace_bonus", 0.25),
+        fast_windway_switch_weight=_float("fast_windway_switch_weight", 0.6),
     )
     return settings.normalized()
+
+
+def load_subhole_settings(data: Any) -> SubholeTransformSettings:
+    if isinstance(data, SubholeTransformSettings):
+        return data.normalized()
+    if not isinstance(data, Mapping):
+        return SubholeTransformSettings()
+
+    defaults = SubholeTransformSettings()
+
+    def _float(value: Any, fallback: float) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return fallback
+        return numeric
+
+    max_changes = _float(
+        data.get("max_changes_per_second", defaults.max_changes_per_second),
+        defaults.max_changes_per_second,
+    )
+    subhole_changes = _float(
+        data.get(
+            "max_subhole_changes_per_second",
+            defaults.max_subhole_changes_per_second,
+        ),
+        defaults.max_subhole_changes_per_second,
+    )
+
+    entries: list[tuple[int, int, float, float]] = []
+    raw_pairs = data.get("pair_limits")
+    if isinstance(raw_pairs, Mapping):
+        iterable = raw_pairs.values()
+    elif isinstance(raw_pairs, (list, tuple)):
+        iterable = raw_pairs
+    else:
+        iterable = ()
+
+    for entry in iterable:
+        first: int | None = None
+        second: int | None = None
+        max_hz: float | None = None
+        ease: float | None = None
+
+        if isinstance(entry, Mapping):
+            pair = entry.get("pair") or entry.get("pitches")
+            if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                try:
+                    first = int(pair[0])
+                    second = int(pair[1])
+                except (TypeError, ValueError):
+                    first = second = None
+            else:
+                try:
+                    first = int(entry.get("first"))
+                    second = int(entry.get("second"))
+                except (TypeError, ValueError):
+                    first = second = None
+            max_hz_value = entry.get("max_hz")
+            ease_value = entry.get("ease")
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 3:
+            try:
+                first = int(entry[0])
+                second = int(entry[1])
+            except (TypeError, ValueError):
+                first = second = None
+            max_hz_value = entry[2]
+            ease_value = entry[3] if len(entry) > 3 else None
+        else:
+            continue
+
+        try:
+            max_hz = float(max_hz_value) if max_hz_value is not None else None
+        except (TypeError, ValueError):
+            max_hz = None
+
+        try:
+            ease = float(ease_value) if ease_value is not None else None
+        except (TypeError, ValueError):
+            ease = None
+
+        if first is None or second is None or first == second or max_hz is None:
+            continue
+        if max_hz <= 0:
+            continue
+        if ease is None or ease < 0:
+            ease = 1.0
+        ordered = tuple(sorted((first, second)))
+        entries.append((ordered[0], ordered[1], max_hz, ease))
+
+    return SubholeTransformSettings(
+        max_changes_per_second=max_changes,
+        max_subhole_changes_per_second=subhole_changes,
+        pair_limits=tuple(entries),
+    ).normalized()
 
 
 def load_arranger_mode(data: Any) -> str | None:
@@ -371,6 +479,7 @@ __all__ = [
     "load_arranger_strategy",
     "load_conversion",
     "load_grace_settings",
+    "load_subhole_settings",
     "load_pdf_options",
     "load_preview_settings",
     "load_selected_part_ids",

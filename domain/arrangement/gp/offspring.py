@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 from typing import Mapping, Sequence
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
 
@@ -30,6 +31,7 @@ def produce_offspring(
     crossover_rate: float,
     population_size: int,
     constraints,
+    grace_settings: GraceSettings | None = None,
 ) -> list[Individual]:
     """Generate a population of offspring from *population*."""
 
@@ -69,6 +71,7 @@ def produce_offspring(
                         fitness_config=fitness_config,
                         penalties=penalties,
                         metadata=metadata,
+                        grace_settings=grace_settings,
                     )
                 )
                 if len(offspring) >= population_size:
@@ -103,6 +106,7 @@ def produce_offspring(
                 fitness_config=fitness_config,
                 penalties=penalties,
                 metadata=metadata,
+                grace_settings=grace_settings,
             )
         )
 

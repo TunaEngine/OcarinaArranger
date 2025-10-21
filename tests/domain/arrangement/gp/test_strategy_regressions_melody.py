@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from domain.arrangement.config import register_instrument_range
+from domain.arrangement.config import GraceSettings, register_instrument_range
 from domain.arrangement.difficulty import DifficultySummary, summarize_difficulty
 from domain.arrangement.gp.fitness import compute_fitness, melody_pitch_penalty
 from domain.arrangement.gp.ops import GlobalTranspose, LocalOctave, SpanDescriptor
@@ -20,7 +20,7 @@ from domain.arrangement.phrase import PhraseNote, PhraseSpan
 from domain.arrangement.range_guard import enforce_instrument_range
 from domain.arrangement.soft_key import InstrumentRange
 
-from tests.domain.arrangement.gp.gp_test_helpers import make_span
+from tests.domain.arrangement.gp.gp_test_helpers import gp_config, make_span
 
 
 BASS_CONFLICT_MIDIS = [
@@ -302,6 +302,9 @@ def test_conflicting_local_octaves_remain_penalized_when_easier() -> None:
                 0.0, conflicting_candidate.difficulty.tessitura_distance - 1.5
             ),
             leap_exposure=max(0.0, conflicting_candidate.difficulty.leap_exposure / 2.0),
+            fast_windway_switch_exposure=conflicting_candidate.difficulty.fast_windway_switch_exposure,
+            subhole_transition_duration=conflicting_candidate.difficulty.subhole_transition_duration,
+            subhole_exposure=conflicting_candidate.difficulty.subhole_exposure,
         ),
     )
 
@@ -472,4 +475,3 @@ def test_zero_transpose_prefix_penalised_for_floor_clamp() -> None:
     first_op = best_candidate.program[0]
     assert isinstance(first_op, GlobalTranspose)
     assert first_op.semitones == 12
-

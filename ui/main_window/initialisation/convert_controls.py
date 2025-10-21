@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import logging
 import tkinter as tk
 from typing import Dict
@@ -29,6 +28,7 @@ from .arranger_results import ArrangerResultsMixin
 from .convert_advanced_controls import ArrangerAdvancedControlsMixin
 from .convert_gp_controls import ArrangerGPControlsMixin
 from .convert_grace_controls import ArrangerGraceControlsMixin
+from .convert_subhole_controls import ArrangerSubholeControlsMixin
 from .convert_starred_controls import ArrangerStarredControlsMixin
 from .convert_summary_controls import ArrangerSummaryControlsMixin
 
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 class ConvertControlsMixin(
     ArrangerGraceControlsMixin,
+    ArrangerSubholeControlsMixin,
     ArrangerResultsMixin,
     ArrangerStarredControlsMixin,
     ArrangerSummaryControlsMixin,
@@ -219,6 +220,7 @@ class ConvertControlsMixin(
         }
         self._suspend_arranger_gp_trace = False
         self._initialize_grace_controls(state)
+        self._initialize_subhole_controls(state)
         self._initialise_arranger_results(state)
         self.status = tk.StringVar(master=self, value=state.status_message)
         self._reimport_button: ttk.Button | None = None
@@ -243,6 +245,7 @@ class ConvertControlsMixin(
         for var in self._arranger_gp_vars.values():
             self._register_convert_setting_var(var)
         self._register_grace_setting_vars()
+        self._register_subhole_setting_vars()
         self.arranger_mode.trace_add("write", self._on_arranger_mode_changed)
         self.arranger_strategy.trace_add("write", self._on_arranger_strategy_changed)
         self.lenient_midi_import.trace_add(
@@ -264,6 +267,7 @@ class ConvertControlsMixin(
                 lambda *_args, gp_key=key: self._on_arranger_gp_changed(gp_key),
             )
         self._register_grace_traces()
+        self._register_subhole_traces()
         self.arranger_show_advanced.trace_add(
             "write", self._on_arranger_show_advanced_changed
         )

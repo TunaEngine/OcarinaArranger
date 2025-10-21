@@ -7,9 +7,15 @@ import zipfile
 
 import pytest
 
+from domain.arrangement.config import FAST_WINDWAY_SWITCH_WEIGHT_MAX
+
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import GraceTransformSettings, TransformSettings
+from ocarina_gui.settings import (
+    GraceTransformSettings,
+    SubholeTransformSettings,
+    TransformSettings,
+)
 from services.project_service import (
     LoadedProject,
     ProjectPersistenceError,
@@ -57,6 +63,12 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         slow_tempo_bpm=72.0,
         fast_tempo_bpm=180.0,
         grace_bonus=0.6,
+        fast_windway_switch_weight=FAST_WINDWAY_SWITCH_WEIGHT_MAX + 0.2,
+    ).normalized()
+    subhole_settings = SubholeTransformSettings(
+        max_changes_per_second=5.5,
+        max_subhole_changes_per_second=3.25,
+        pair_limits=((60, 62, 2.5, 1.1), (64, 65, 1.8, 0.9)),
     )
     settings = TransformSettings(
         prefer_mode="auto",
@@ -69,6 +81,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         instrument_id="alto",
         selected_part_ids=("P1",),
         grace_settings=grace_settings,
+        subhole_settings=subhole_settings,
     )
     pdf_options = PdfExportOptions.with_defaults(page_size="A4", orientation="landscape")
     arranger_budgets = ArrangerBudgetSettings(
@@ -126,6 +139,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
         arranger_budgets=arranger_budgets,
         arranger_gp_settings=arranger_gp_settings,
         grace_settings=settings.grace_settings,
+        subhole_settings=settings.subhole_settings,
     )
 
     service = ProjectService()
@@ -177,6 +191,22 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert grace_manifest["slow_tempo_bpm"] == pytest.approx(72.0)
     assert grace_manifest["fast_tempo_bpm"] == pytest.approx(180.0)
     assert grace_manifest["grace_bonus"] == pytest.approx(0.6)
+    assert grace_manifest["fast_windway_switch_weight"] == pytest.approx(
+        FAST_WINDWAY_SWITCH_WEIGHT_MAX
+    )
+
+    subhole_manifest = manifest["settings"].get("subhole_settings")
+    assert subhole_manifest["max_changes_per_second"] == pytest.approx(5.5)
+    assert subhole_manifest["max_subhole_changes_per_second"] == pytest.approx(3.25)
+    assert len(subhole_manifest["pair_limits"]) == 2
+    first_pair = subhole_manifest["pair_limits"][0]
+    second_pair = subhole_manifest["pair_limits"][1]
+    assert first_pair[0:2] == [60, 62]
+    assert first_pair[2] == pytest.approx(2.5)
+    assert first_pair[3] == pytest.approx(1.1)
+    assert second_pair[0:2] == [64, 65]
+    assert second_pair[2] == pytest.approx(1.8)
+    assert second_pair[3] == pytest.approx(0.9)
 
     preview_manifest = manifest["preview_settings"]["arranged"]
     assert preview_manifest["tempo_bpm"] == pytest.approx(96.0)
@@ -224,6 +254,7 @@ def test_project_service_save_and_load_round_trip(tmp_path: Path) -> None:
     assert loaded.arranger_budgets == arranger_budgets.normalized()
     assert loaded.arranger_gp_settings == arranger_gp_settings.normalized()
     assert loaded.grace_settings == settings.grace_settings.normalized()
+    assert loaded.subhole_settings == settings.subhole_settings.normalized()
 
 
 def test_project_service_requires_existing_input(tmp_path: Path) -> None:
@@ -246,6 +277,7 @@ def test_project_service_requires_existing_input(tmp_path: Path) -> None:
         conversion=None,
         preview_settings={},
         grace_settings=settings.grace_settings,
+        subhole_settings=settings.subhole_settings,
     )
 
     service = ProjectService()
@@ -279,6 +311,7 @@ def test_project_manifest_includes_manual_transpose_options(tmp_path: Path) -> N
             "arranged": PreviewPlaybackSnapshot(loop_start_beat=0.0, loop_end_beat=4.0)
         },
         grace_settings=manual_settings.grace_settings,
+        subhole_settings=manual_settings.subhole_settings,
     )
 
     service = ProjectService()

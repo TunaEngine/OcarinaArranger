@@ -7,7 +7,7 @@ from dataclasses import replace
 from collections.abc import Callable
 
 from ocarina_gui.preview import PreviewData
-from ocarina_gui.settings import GraceTransformSettings
+from ocarina_gui.settings import GraceTransformSettings, SubholeTransformSettings
 
 from services.arranger_preview import ArrangerComputation, compute_arranger_preview
 
@@ -38,6 +38,9 @@ def apply_arranger_results_from_preview(
         grace_settings = viewmodel.state.grace_settings
         if not isinstance(grace_settings, GraceTransformSettings):
             grace_settings = GraceTransformSettings()
+        subhole_settings = viewmodel.state.subhole_settings
+        if not isinstance(subhole_settings, SubholeTransformSettings):
+            subhole_settings = SubholeTransformSettings()
 
     computation = compute_arranger_preview(
         preview,
@@ -52,6 +55,7 @@ def apply_arranger_results_from_preview(
         selected_instrument_range=(range_min, range_max),
         progress_callback=progress_callback,
         grace_settings=grace_settings.to_domain(),
+        subhole_settings=subhole_settings.to_domain(),
     )
 
     winner_id = next(

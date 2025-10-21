@@ -157,6 +157,18 @@ def build_grace_section(app: "App", parent: ttk.LabelFrame, pad: int) -> ttk.Lab
         "Difficulty bonus applied when passages include properly realized grace notes.",
     )
 
+    ttk.Label(controls, text="Windway switch weight").grid(row=3, column=2, sticky="w")
+    fast_switch_entry = ttk.Entry(
+        controls,
+        width=6,
+        textvariable=app.grace_fast_windway_switch_weight,
+    )
+    fast_switch_entry.grid(row=3, column=3, sticky="w")
+    attach_tooltip(
+        fast_switch_entry,
+        "Scales the penalty applied when the arranger detects fast windway switches (0.0–3.0).",
+    )
+
     reset_button = ttk.Button(
         controls,
         text="Reset to defaults",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from domain.arrangement.config import FAST_WINDWAY_SWITCH_WEIGHT_MAX
 from ocarina_gui.settings import GraceTransformSettings
 
 
@@ -54,6 +55,10 @@ class ArrangerGraceControlsMixin:
         self.grace_bonus = tk.StringVar(
             master=self, value=self._format_decimal(grace_state.grace_bonus)
         )
+        self.grace_fast_windway_switch_weight = tk.StringVar(
+            master=self,
+            value=self._format_decimal(grace_state.fast_windway_switch_weight),
+        )
         self._grace_fraction_displays: dict[str, tk.StringVar] = {
             "fraction_0": tk.StringVar(
                 master=self,
@@ -80,6 +85,7 @@ class ArrangerGraceControlsMixin:
             "slow_tempo_bpm": self.grace_slow_tempo,
             "fast_tempo_bpm": self.grace_fast_tempo,
             "grace_bonus": self.grace_bonus,
+            "fast_windway_switch_weight": self.grace_fast_windway_switch_weight,
         }
         self._suspend_grace_trace = False
 
@@ -164,6 +170,10 @@ class ArrangerGraceControlsMixin:
         slow_tempo = _float_from_var(self.grace_slow_tempo, defaults.slow_tempo_bpm)
         fast_tempo = _float_from_var(self.grace_fast_tempo, defaults.fast_tempo_bpm)
         grace_bonus = _float_from_var(self.grace_bonus, defaults.grace_bonus)
+        fast_switch_weight = _float_from_var(
+            self.grace_fast_windway_switch_weight,
+            defaults.fast_windway_switch_weight,
+        )
 
         return GraceTransformSettings(
             policy=policy or defaults.policy,
@@ -175,6 +185,9 @@ class ArrangerGraceControlsMixin:
             slow_tempo_bpm=max(0.0, slow_tempo),
             fast_tempo_bpm=max(0.0, fast_tempo),
             grace_bonus=max(0.0, grace_bonus),
+            fast_windway_switch_weight=max(
+                0.0, min(FAST_WINDWAY_SWITCH_WEIGHT_MAX, fast_switch_weight)
+            ),
         )
 
     def _on_grace_setting_changed(self, key: str) -> None:
@@ -222,6 +235,9 @@ class ArrangerGraceControlsMixin:
                 self._format_decimal(normalized.fast_tempo_bpm, precision=1)
             )
             self.grace_bonus.set(self._format_decimal(normalized.grace_bonus))
+            self.grace_fast_windway_switch_weight.set(
+                self._format_decimal(normalized.fast_windway_switch_weight)
+            )
             self._update_grace_fraction_display("fraction_0", fractions[0])
             self._update_grace_fraction_display("fraction_1", fractions[1])
             self._update_grace_fraction_display("fraction_2", fractions[2])

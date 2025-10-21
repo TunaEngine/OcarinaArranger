@@ -9,7 +9,7 @@ from typing import Sequence
 
 from domain.arrangement.api import arrange
 from domain.arrangement.config import DEFAULT_GRACE_SETTINGS, FeatureFlags, GraceSettings
-from domain.arrangement.constraints import BreathSettings
+from domain.arrangement.constraints import BreathSettings, SubholeConstraintSettings
 from domain.arrangement.gp import arrange_v3_gp
 from domain.arrangement.soft_key import InstrumentRange
 from domain.arrangement.importers import note_events_from_phrase, phrase_from_note_events
@@ -141,6 +141,7 @@ def compute_arranger_preview(
     selected_instrument_range: tuple[str | None, str | None] | None = None,
     progress_callback: ProgressCallback | None = None,
     grace_settings: GraceSettings | None = None,
+    subhole_settings: SubholeConstraintSettings | None = None,
 ) -> ArrangerComputation:
     """Return arranger summaries derived from ``preview`` for UI consumption."""
 
@@ -254,6 +255,7 @@ def compute_arranger_preview(
     name_map = _instrument_name_map(choices)
 
     active_grace = grace_settings or DEFAULT_GRACE_SETTINGS
+    active_subhole = subhole_settings
 
     if mode == "best_effort":
         budget_settings = (budgets or ArrangerBudgetSettings()).normalized()
@@ -275,6 +277,7 @@ def compute_arranger_preview(
                 tempo_bpm=float(preview.tempo_bpm) if preview.tempo_bpm else None,
                 breath_settings=breath_settings,
                 grace_settings=active_grace,
+                subhole_settings=active_subhole,
                 progress_callback=progress_callback,
             )
         except Exception:

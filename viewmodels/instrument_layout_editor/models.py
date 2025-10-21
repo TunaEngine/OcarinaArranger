@@ -15,6 +15,8 @@ class EditableHole:
     x: float
     y: float
     radius: float
+    is_subhole: bool = False
+    has_explicit_subhole: bool = False
 
 
 @dataclass
@@ -119,7 +121,16 @@ def state_from_spec(instrument: InstrumentSpec) -> InstrumentLayoutState:
     """Build a layout editor state from a fingering instrument spec."""
 
     holes = [
-        EditableHole(identifier=hole.identifier, x=hole.x, y=hole.y, radius=hole.radius)
+        EditableHole(
+            identifier=hole.identifier,
+            x=hole.x,
+            y=hole.y,
+            radius=hole.radius,
+            is_subhole=getattr(hole, "is_subhole", False),
+            has_explicit_subhole=bool(
+                getattr(hole, "_has_explicit_subhole", False)
+            ),
+        )
         for hole in instrument.holes
     ]
     windways = [
@@ -211,6 +222,8 @@ def clone_state(
                 x=hole.x,
                 y=hole.y,
                 radius=hole.radius,
+                is_subhole=hole.is_subhole,
+                has_explicit_subhole=hole.has_explicit_subhole,
             )
             for hole in template.holes
         ]
@@ -290,12 +303,7 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
         "canvas": {"width": state.canvas_width, "height": state.canvas_height},
         "style": state.style.to_dict(),
         "holes": [
-            {
-                "id": hole.identifier,
-                "x": hole.x,
-                "y": hole.y,
-                "radius": hole.radius,
-            }
+            _serialize_hole(hole)
             for hole in state.holes
         ],
         "windways": [
@@ -330,6 +338,18 @@ def state_to_dict(state: InstrumentLayoutState) -> Dict[str, object]:
             "points": [[point.x, point.y] for point in state.outline_points],
             "closed": state.outline_closed,
         }
+    return data
+
+
+def _serialize_hole(hole: EditableHole) -> Dict[str, object]:
+    data: Dict[str, object] = {
+        "id": hole.identifier,
+        "x": hole.x,
+        "y": hole.y,
+        "radius": hole.radius,
+    }
+    if hole.is_subhole or hole.has_explicit_subhole:
+        data["is_subhole"] = hole.is_subhole
     return data
 
 

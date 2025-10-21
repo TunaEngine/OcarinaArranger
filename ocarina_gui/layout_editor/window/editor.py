@@ -74,6 +74,7 @@ class InstrumentLayoutEditor(
         self._hole_entry: ttk.Entry | None = None
         self._width_entry: ttk.Entry | None = None
         self._height_entry: ttk.Entry | None = None
+        self._hole_subhole_check: ttk.Checkbutton | None = None
         self._json_text: tk.Text | None = None
         self._preview_frame: ttk.Frame | None = None
         self._preview_toggle: ttk.Button | None = None
@@ -114,6 +115,7 @@ class InstrumentLayoutEditor(
         self._status_var = tk.StringVar(master=self)
         self._selection_info_var = tk.StringVar(master=self, value="No element selected")
         self._hole_identifier_var = tk.StringVar(master=self)
+        self._hole_subhole_var = tk.BooleanVar(master=self, value=False)
         self._preferred_min_var = tk.StringVar(master=self)
         self._preferred_max_var = tk.StringVar(master=self)
         self._candidate_min_var = tk.StringVar(master=self)

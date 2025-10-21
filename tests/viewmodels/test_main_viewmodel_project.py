@@ -4,9 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from domain.arrangement.config import FAST_WINDWAY_SWITCH_WEIGHT_MAX
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import GraceTransformSettings, TransformSettings
+from ocarina_gui.settings import (
+    GraceTransformSettings,
+    SubholeTransformSettings,
+    TransformSettings,
+)
 from services.project_service import LoadedProject, PreviewPlaybackSnapshot
 from shared.result import Result
 from tests.viewmodels._fakes import FakeDialogs, StubProjectService, StubScoreService
@@ -29,6 +34,12 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
         slow_tempo_bpm=72.0,
         fast_tempo_bpm=160.0,
         grace_bonus=0.4,
+        fast_windway_switch_weight=FAST_WINDWAY_SWITCH_WEIGHT_MAX + 0.1,
+    ).normalized()
+    subhole_settings = SubholeTransformSettings(
+        max_changes_per_second=6.5,
+        max_subhole_changes_per_second=3.1,
+        pair_limits=((62, 63, 2.2, 1.0),),
     ).normalized()
     return LoadedProject(
         archive_path=archive,
@@ -45,6 +56,7 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
             instrument_id="alto",
             selected_part_ids=("P2",),
             grace_settings=grace_settings,
+            subhole_settings=subhole_settings,
         ),
         pdf_options=PdfExportOptions.with_defaults(page_size="A6", orientation="portrait"),
         pitch_list=["C4", "D4"],
@@ -61,6 +73,7 @@ def _make_loaded_project(tmp_path: Path, conversion: ConversionResult) -> Loaded
             )
         },
         grace_settings=grace_settings,
+        subhole_settings=subhole_settings,
     )
 
 
@@ -96,8 +109,18 @@ def test_save_project_invokes_service(tmp_path: Path, conversion_result: Convers
         slow_tempo_bpm=72.0,
         fast_tempo_bpm=180.0,
         grace_bonus=0.6,
+        fast_windway_switch_weight=FAST_WINDWAY_SWITCH_WEIGHT_MAX + 0.2,
     )
-    viewmodel.update_settings(input_path=str(input_path), grace_settings=grace_settings)
+    subhole_settings = SubholeTransformSettings(
+        max_changes_per_second=6.2,
+        max_subhole_changes_per_second=3.3,
+        pair_limits=((60, 61, 2.4, 1.0),),
+    )
+    viewmodel.update_settings(
+        input_path=str(input_path),
+        grace_settings=grace_settings,
+        subhole_settings=subhole_settings,
+    )
     convert_result = viewmodel.convert()
     assert convert_result is not None and convert_result.is_ok()
     viewmodel.update_preview_settings(
@@ -131,7 +154,15 @@ def test_save_project_invokes_service(tmp_path: Path, conversion_result: Convers
     assert viewmodel.state.status_message == "Project saved."
     assert viewmodel.state.project_path == str(tmp_path / "project.ocarina")
     assert snapshot.settings.grace_settings == grace_settings.normalized()
+    assert snapshot.settings.grace_settings.fast_windway_switch_weight == pytest.approx(
+        FAST_WINDWAY_SWITCH_WEIGHT_MAX
+    )
     assert snapshot.grace_settings == grace_settings.normalized()
+    assert snapshot.grace_settings.fast_windway_switch_weight == pytest.approx(
+        FAST_WINDWAY_SWITCH_WEIGHT_MAX
+    )
+    assert snapshot.settings.subhole_settings == subhole_settings.normalized()
+    assert snapshot.subhole_settings == subhole_settings.normalized()
 
 
 def test_load_project_updates_state(tmp_path: Path, conversion_result: ConversionResult) -> None:
@@ -164,6 +195,10 @@ def test_load_project_updates_state(tmp_path: Path, conversion_result: Conversio
     assert restored_preview.tempo_bpm == pytest.approx(88.0)
     assert restored_preview.metronome_enabled is True
     assert state.grace_settings == loaded.settings.grace_settings
+    assert state.grace_settings.fast_windway_switch_weight == pytest.approx(
+        FAST_WINDWAY_SWITCH_WEIGHT_MAX
+    )
+    assert state.subhole_settings == loaded.settings.subhole_settings
 
 
 def test_load_project_failure(tmp_path: Path) -> None:

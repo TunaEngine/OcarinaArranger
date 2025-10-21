@@ -15,6 +15,7 @@ class _LayoutEditorSelectionMixin:
     _add_hole_button: ttk.Button | None
     _add_windway_button: ttk.Button | None
     _remove_element_button: ttk.Button | None
+    _hole_subhole_check: ttk.Checkbutton | None
 
     def _build_selection_panel(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Selection")
@@ -49,22 +50,31 @@ class _LayoutEditorSelectionMixin:
         self._radius_entry.bind("<Return>", lambda _e: self._apply_selection_radius())
         self._radius_entry.bind("<FocusOut>", lambda _e: self._apply_selection_radius())
 
-        ttk.Label(frame, text="Width:").grid(row=5, column=0, sticky="w", padx=4, pady=4)
+        subhole_check = ttk.Checkbutton(
+            frame,
+            text="Subhole",
+            variable=self._hole_subhole_var,
+            command=self._apply_subhole_flag,
+        )
+        subhole_check.grid(row=5, column=0, columnspan=2, sticky="w", padx=4, pady=(0, 4))
+        self._hole_subhole_check = subhole_check
+
+        ttk.Label(frame, text="Width:").grid(row=6, column=0, sticky="w", padx=4, pady=4)
         width_entry = ttk.Entry(frame, textvariable=self._selection_width_var)
-        width_entry.grid(row=5, column=1, sticky="ew", padx=4, pady=4)
+        width_entry.grid(row=6, column=1, sticky="ew", padx=4, pady=4)
         width_entry.bind("<Return>", lambda _e: self._apply_windway_size())
         width_entry.bind("<FocusOut>", lambda _e: self._apply_windway_size())
         self._width_entry = width_entry
 
-        ttk.Label(frame, text="Height:").grid(row=6, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(frame, text="Height:").grid(row=7, column=0, sticky="w", padx=4, pady=4)
         height_entry = ttk.Entry(frame, textvariable=self._selection_height_var)
-        height_entry.grid(row=6, column=1, sticky="ew", padx=4, pady=4)
+        height_entry.grid(row=7, column=1, sticky="ew", padx=4, pady=4)
         height_entry.bind("<Return>", lambda _e: self._apply_windway_size())
         height_entry.bind("<FocusOut>", lambda _e: self._apply_windway_size())
         self._height_entry = height_entry
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=7, column=0, columnspan=2, pady=(4, 2))
+        buttons.grid(row=8, column=0, columnspan=2, pady=(4, 2))
         add_hole_button = ttk.Button(buttons, text="Add Hole", command=self._add_hole)
         add_hole_button.pack(side="left", padx=2)
         add_windway_button = ttk.Button(
@@ -80,7 +90,7 @@ class _LayoutEditorSelectionMixin:
         self._remove_element_button = remove_button
 
         nudge_row = ttk.Frame(frame)
-        nudge_row.grid(row=8, column=0, columnspan=2, pady=(4, 2))
+        nudge_row.grid(row=9, column=0, columnspan=2, pady=(4, 2))
         ttk.Button(nudge_row, text="←", width=2, command=lambda: self._nudge_selection(-1, 0)).pack(
             side="left", padx=2
         )

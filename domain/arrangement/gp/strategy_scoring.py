@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Sequence, Tuple
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.melody import isolate_melody
 from domain.arrangement.phrase import PhraseNote, PhraseSpan
 
@@ -18,6 +19,8 @@ FIDELITY_WEIGHT = 3.0
 RANGE_CLAMP_PENALTY = 1000.0
 RANGE_CLAMP_MELODY_BIAS = 1.0
 MELODY_SHIFT_WEIGHT = 2.0
+
+SortKey = tuple[int, float, float, float, float, float, float, float, float, float, float, float, float]
 
 
 def _top_voice_notes(span: PhraseSpan) -> Tuple[PhraseNote, ...]:
@@ -165,11 +168,19 @@ def _difficulty_sort_key(
     baseline_melody: float | None = None,
     melody_importance: float = 1.0,
     penalties: ScoringPenalties | None = None,
-) -> tuple[int, float, float, float, float, float, float, float, float, float, float]:
+    grace_settings: GraceSettings | None = None,
+) -> SortKey:
     """Return a tuple that ranks candidates by melodic fidelity before difficulty."""
 
     penalties = penalties or ScoringPenalties()
     difficulty = candidate.difficulty
+    try:
+        fast_switch_weight = max(
+            0.0,
+            float(getattr(grace_settings, "fast_windway_switch_weight", 0.0)),
+        )
+    except (TypeError, ValueError, AttributeError):  # pragma: no cover - defensive
+        fast_switch_weight = 0.0
     has_range_clamp = any(
         event.reason_code == "range-clamp" for event in candidate.explanations
     )
@@ -451,9 +462,13 @@ def _difficulty_sort_key(
     # difficulty heuristics so larger instruments prefer solutions that keep
     # the phrase intact whenever possible while still favouring un-clamped
     # phrases when the melodic penalty is comparable.
+    fast_switch_key = round(
+        difficulty.fast_windway_switch_exposure * fast_switch_weight, 12
+    )
     return (
         has_shift_drift,
         melody_shift_key,
+        fast_switch_key,
         melody_key,
         transpose_octave_bias,
         transpose_key,
@@ -474,6 +489,7 @@ __all__ = [
     "ScoringPenalties",
     "RANGE_CLAMP_MELODY_BIAS",
     "RANGE_CLAMP_PENALTY",
+    "SortKey",
     "_difficulty_sort_key",
     "_melody_shift_penalty",
     "_summarize_individual",

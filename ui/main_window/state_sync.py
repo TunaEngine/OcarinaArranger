@@ -92,6 +92,12 @@ class MainWindowStateSyncMixin:
                     self._sync_grace_settings_from_state(grace_settings)
                 except Exception:
                     pass
+            if hasattr(self, "_sync_subhole_settings_from_state"):
+                try:
+                    subhole_settings = getattr(state, "subhole_settings", None)
+                    self._sync_subhole_settings_from_state(subhole_settings)
+                except Exception:
+                    pass
         finally:
             self._suspend_state_sync = False
         self.status.set(state.status_message)

@@ -7,6 +7,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Mapping, Sequence, Tuple
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.explanations import ExplanationEvent
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
@@ -217,6 +218,7 @@ def run_gp_session(
     salvage_events: Sequence[ExplanationEvent] | None = None,
     transposition: int = 0,
     progress_callback: Callable[[int, int], None] | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> GPSessionResult:
     rng = random.Random(config.random_seed)
     span_limits = dict(config.span_limits or {})
@@ -250,6 +252,7 @@ def run_gp_session(
             fitness_config=config.fitness_config,
             metadata={"origin": "seed", "generation": 0, "index": index},
             penalties=config.scoring_penalties,
+            grace_settings=grace_settings,
         )
         for index, program in enumerate(initial_pool)
     ]
@@ -334,6 +337,7 @@ def run_gp_session(
             crossover_rate=config.crossover_rate,
             population_size=config.population_size,
             constraints=config.constraints,
+            grace_settings=grace_settings,
         )
 
     def _selection(

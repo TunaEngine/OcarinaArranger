@@ -32,6 +32,7 @@ from .strategy_alignment import _align_top_voice_to_target
 from .strategy_evaluation import _evaluate_program_candidate
 from .strategy_instrument import score_instrument as _score_instrument
 from .strategy_scoring import (
+    SortKey,
     _difficulty_sort_key,
     _melody_shift_penalty,
     _summarize_individual,
@@ -91,6 +92,7 @@ def arrange_v3_gp(
         salvage_events=salvage_events,
         transposition=transposition,
         progress_callback=progress_callback,
+        grace_settings=active_grace,
     )
 
     if logger.isEnabledFor(logging.DEBUG):
@@ -168,10 +170,7 @@ def arrange_v3_gp(
             candidate_ids.append(starred)
 
     candidates: list[GPInstrumentCandidate] = []
-    candidate_keys: dict[
-        str,
-        tuple[int, float, float, float, float, float, float, float, float, float, float],
-    ] = {}
+    candidate_keys: dict[str, SortKey] = {}
     baseline_top_voice: tuple[PhraseNote, ...] | None = None
     for candidate_id in candidate_ids:
         instrument = get_instrument_range(candidate_id)
@@ -279,6 +278,7 @@ def arrange_v3_gp(
             instrument_id=instrument_id,
             starred_ids=starred_ids,
             strategy="starred-best",
+            grace_settings=active_grace,
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("arrange_v3_gp:fallback computed strategy=starred-best")

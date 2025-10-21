@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = [
@@ -22,23 +22,39 @@ class HoleSpec:
     x: float
     y: float
     radius: float
+    is_subhole: bool = False
+    _has_explicit_subhole: bool = field(default=False, repr=False, compare=False)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "HoleSpec":
+        has_explicit_flag = False
+        is_subhole = data.get("is_subhole")
+        if is_subhole is None and "subhole" in data:
+            is_subhole = data["subhole"]
+        if is_subhole is not None:
+            has_explicit_flag = True
+        else:
+            is_subhole = False
+
         return cls(
             identifier=str(data.get("id", "")),
             x=float(data["x"]),
             y=float(data["y"]),
             radius=float(data.get("radius", 8.0)),
+            is_subhole=bool(is_subhole),
+            _has_explicit_subhole=has_explicit_flag,
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data = {
             "id": self.identifier,
             "x": self.x,
             "y": self.y,
             "radius": self.radius,
         }
+        if self.is_subhole or getattr(self, "_has_explicit_subhole", False):
+            data["is_subhole"] = self.is_subhole
+        return data
 
 
 @dataclass(frozen=True)

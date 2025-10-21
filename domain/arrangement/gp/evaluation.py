@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.difficulty import summarize_difficulty
 from domain.arrangement.phrase import PhraseSpan
 from domain.arrangement.soft_key import InstrumentRange
@@ -22,13 +23,16 @@ def evaluate_program(
     fitness_config: FitnessConfig | None,
     metadata: Mapping[str, object] | None = None,
     penalties: ScoringPenalties | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> Individual:
     """Evaluate *program* and return a scored individual."""
 
     from .program_ops import apply_program
 
     candidate = apply_program(program, phrase)
-    difficulty = summarize_difficulty(candidate, instrument)
+    difficulty = summarize_difficulty(
+        candidate, instrument, grace_settings=grace_settings
+    )
     fitness = compute_fitness(
         original=phrase,
         candidate=candidate,
@@ -36,6 +40,7 @@ def evaluate_program(
         program=program,
         difficulty=difficulty,
         config=fitness_config,
+        grace_settings=grace_settings,
     )
     penalties = penalties or ScoringPenalties()
     simplify_count = sum(

@@ -92,7 +92,6 @@ def _scaled_progress(
 
     return reporter
 
-# Backwards-compatible alias for legacy imports in downstream tests.
 _run_candidate_pipeline = run_candidate_pipeline
 
 
@@ -140,6 +139,7 @@ def _candidate_transpositions(
     span: PhraseSpan,
     instrument: InstrumentRange,
     *,
+    grace_settings: GraceSettings,
     top_k: int = _KEY_SEARCH_TOP_K,
 ) -> tuple[int, ...]:
     fits = soft_key_search(span, instrument, top_k=top_k)
@@ -147,8 +147,33 @@ def _candidate_transpositions(
     for fit in fits:
         if fit.transposition not in ordered:
             ordered.append(fit.transposition)
+
+    difficulty_ranked: list[tuple[float, float, int, int]] = []
+    for transposition in range(-10, 11):
+        candidate_span = span.transpose(transposition)
+        summary = summarize_difficulty(
+            candidate_span,
+            instrument,
+            grace_settings=grace_settings,
+        )
+        score = difficulty_score(summary, grace_settings=grace_settings)
+        difficulty_ranked.append(
+            (
+                score,
+                summary.fast_windway_switch_exposure,
+                abs(transposition),
+                transposition,
+            )
+        )
+
+    difficulty_ranked.sort()
+    for _, _, _, candidate in difficulty_ranked[:top_k]:
+        if candidate not in ordered:
+            ordered.append(candidate)
+
     if 0 not in ordered:
         ordered.append(0)
+
     return tuple(ordered)
 
 
@@ -176,9 +201,13 @@ def arrange_span(
         span=base_span,
         actions=melody_result.actions,
     )
-    candidates = _candidate_transpositions(base_span, instrument)
-    log_transpositions(logger, candidates=candidates)
     grace_config = grace_settings or DEFAULT_GRACE_SETTINGS
+    candidates = _candidate_transpositions(
+        base_span,
+        instrument,
+        grace_settings=grace_config,
+    )
+    log_transpositions(logger, candidates=candidates)
     best: tuple[tuple[int | float, ...], ArrangementResult] | None = None
     report = progress_callback or _noop_progress
     total_candidates = max(len(candidates), 1)
@@ -216,43 +245,47 @@ def arrange_span(
             instrument,
             grace_settings=grace_config,
         )
+        try:
+            fast_switch_penalty = summary.fast_windway_switch_exposure * max(
+                0.0, float(getattr(grace_config, "fast_windway_switch_weight", 0.0))
+            )
+        except (TypeError, ValueError, AttributeError):
+            fast_switch_penalty = 0.0
         salvage = arranged.salvage
-        salvage_failure = 0
-        salvage_steps = 0
-        range_clamp_penalty = 0
-        if any(event.action == "range-clamp" for event in arranged.preprocessing):
-            range_clamp_penalty = 1
-        if salvage is not None:
-            salvage_failure = 0 if salvage.success else 1
-            usage_total = int(salvage.edits_used.get("total", len(salvage.applied_steps)))
-            salvage_steps = usage_total
-            if "range-clamp" in salvage.applied_steps:
-                range_clamp_penalty = 1
+        range_clamp_penalty = int(
+            any(event.action == "range-clamp" for event in arranged.preprocessing)
+            or (salvage is not None and "range-clamp" in salvage.applied_steps)
+        )
+        salvage_failure = 0 if salvage is None or salvage.success else 1
+        salvage_steps = (
+            int(salvage.edits_used.get("total", len(salvage.applied_steps)))
+            if salvage is not None
+            else 0
+        )
+        base_score = difficulty_score(summary, grace_settings=grace_config)
         if salvage is not None and salvage.applied_steps and salvage.success:
-            penalized_score = difficulty_score(summary, grace_settings=grace_config) + abs(transposition)
-            ranking = (
-                salvage_failure,
-                range_clamp_penalty,
-                salvage_steps,
+            difficulty_components = (
                 summary.hard_and_very_hard,
                 summary.medium,
                 summary.tessitura_distance,
-                penalized_score,
-                abs(transposition),
-                transposition,
+                base_score + abs(transposition),
             )
         else:
-            ranking = (
-                salvage_failure,
-                range_clamp_penalty,
-                salvage_steps,
-                difficulty_score(summary, grace_settings=grace_config),
+            difficulty_components = (
+                base_score,
                 summary.hard_and_very_hard,
                 summary.medium,
                 summary.tessitura_distance,
-                abs(transposition),
-                transposition,
             )
+        ranking = (
+            salvage_failure,
+            fast_switch_penalty,
+            range_clamp_penalty,
+            salvage_steps,
+            *difficulty_components,
+            abs(transposition),
+            transposition,
+        )
         if best is None or ranking < best[0]:
             best = (ranking, arranged)
         log_candidate_result(

@@ -150,6 +150,10 @@ def test_compute_arranger_preview_collapses_polyphonic_results(
             hard=0.0,
             very_hard=0.0,
             tessitura_distance=0.0,
+            leap_exposure=0.0,
+            fast_windway_switch_exposure=0.0,
+            subhole_transition_duration=0.0,
+            subhole_exposure=0.0,
         )
         arrangement = InstrumentArrangement(
             instrument_id="alto_c_12",

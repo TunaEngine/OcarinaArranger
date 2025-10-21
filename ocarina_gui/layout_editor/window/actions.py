@@ -205,6 +205,23 @@ class _LayoutEditorActionsMixin:
             return
         self._refresh_state()
 
+    def _apply_subhole_flag(self) -> None:
+        if self._updating:
+            return
+        selection = self._viewmodel.state.selection
+        if selection is None or selection.kind != SelectionKind.HOLE:
+            return
+        try:
+            enabled = bool(self._hole_subhole_var.get())
+        except Exception:
+            enabled = False
+        try:
+            self._viewmodel.set_hole_subhole(selection.index, enabled)
+        except IndexError as exc:
+            messagebox.showerror("Update hole", str(exc), parent=self)
+            return
+        self._refresh_state()
+
     def _nudge_selection(self, dx: float, dy: float) -> None:
         if self._viewmodel.state.selection is None:
             return

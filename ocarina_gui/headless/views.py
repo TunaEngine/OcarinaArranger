@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import Callable, Optional, Sequence, Tuple
 
 from ocarina_tools import NoteEvent
 
 from .containers import HeadlessCanvas, HeadlessScrollbar
-from ocarina_gui.piano_roll.view.tempo_markers import (
-    _TEMPO_MARKER_BARLINE_PADDING as ROLL_TEMPO_BARLINE_PADDING,
-    _TEMPO_MARKER_LEFT_PADDING as ROLL_TEMPO_LEFT_PADDING,
-)
+from .piano_roll import HeadlessPianoRoll
 from ocarina_gui.staff.view.base import (
     _TEMPO_MARKER_BARLINE_PADDING as STAFF_TEMPO_BARLINE_PADDING,
     _TEMPO_MARKER_LEFT_PADDING as STAFF_TEMPO_LEFT_PADDING,
 )
+
+
+
 
 
 class HeadlessFingeringView:
@@ -88,98 +87,6 @@ class HeadlessFingeringView:
 
 
 @dataclass
-class HeadlessPianoRoll:
-    label_width: int = 70
-    LEFT_PAD: int = 10
-    canvas: HeadlessCanvas = field(default_factory=HeadlessCanvas)
-    _cached: Optional[Tuple[Sequence[NoteEvent], int, int, int]] = None
-    _fingering_cb: Optional[Callable[[Optional[int]], None]] = None
-    _cursor_cb: Optional[Callable[[int], None]] = None
-    _cursor_drag_state_cb: Optional[Callable[[bool], None]] = None
-    _cursor_tick: int = 0
-    loop_region: Optional[Tuple[int, int, bool]] = None
-    auto_scroll_mode: str = "flip"
-    px_per_tick: float = 0.5
-    px_per_note: float = 6.0
-    max_midi: int = 84
-    _tempo_markers: Tuple[tuple[int, str], ...] = ()
-    total_ticks: int = 0
-
-    def set_range(self, minimum: int, maximum: int) -> None:  # pragma: no cover - stored for completeness
-        self.range = (minimum, maximum)
-
-    def render(
-        self,
-        events: Sequence[NoteEvent],
-        pulses_per_quarter: int,
-        *,
-        beats: int = 4,
-        beat_unit: int = 4,
-        total_ticks: int | None = None,
-    ) -> None:
-        self._cached = (events, pulses_per_quarter, beats, beat_unit)
-        if self._fingering_cb:
-            self._fingering_cb(None)
-        self.total_ticks = int(total_ticks or 0)
-
-    def set_fingering_cb(self, callback: Callable[[Optional[int]], None]) -> None:
-        self._fingering_cb = callback
-
-    def set_cursor_callback(self, callback: Callable[[int], None]) -> None:
-        self._cursor_cb = callback
-
-    def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
-        self._cursor_drag_state_cb = callback
-
-    def set_auto_scroll_mode(self, mode: object) -> None:
-        if isinstance(mode, str):
-            self.auto_scroll_mode = mode
-        elif hasattr(mode, "value"):
-            self.auto_scroll_mode = getattr(mode, "value")
-
-    def set_cursor(self, tick: int, allow_autoscroll: bool = True) -> None:
-        self._cursor_tick = max(0, tick)
-
-    def sync_x_with(self, _target: HeadlessCanvas) -> None:  # pragma: no cover
-        pass
-
-    def set_tempo_markers(self, markers: Sequence[tuple[int, str]]) -> None:
-        self._tempo_markers = tuple(markers)
-        geometry = self._current_geometry()
-        base_y = max(
-            24.0,
-            geometry.note_y(self.max_midi)
-            + min(self.px_per_note * 0.4, 14.0)
-            - 18.0,
-        )
-        self.canvas.set_tempo_markers(
-            self._tempo_markers,
-            left_pad=self.LEFT_PAD,
-            px_per_tick=self.px_per_tick,
-            base_y=base_y,
-            left_padding=ROLL_TEMPO_LEFT_PADDING,
-            barline_padding=ROLL_TEMPO_BARLINE_PADDING,
-        )
-
-    def _current_geometry(self) -> SimpleNamespace:
-        base_y = 36.0
-
-        def _note_y(_midi: int) -> float:
-            return base_y
-
-        return SimpleNamespace(note_y=_note_y)
-
-    def set_zoom(self, _delta: int) -> None:  # pragma: no cover
-        pass
-
-    def set_time_zoom(self, _multiplier: float) -> None:  # pragma: no cover
-        pass
-
-    def set_loop_region(self, start_tick: int, end_tick: int, visible: bool) -> None:
-        self.loop_region = (start_tick, end_tick, visible)
-
-
-@dataclass
 class HeadlessStaffView:
     LEFT_PAD: int = 10
     px_per_tick: float = 0.25
@@ -198,6 +105,7 @@ class HeadlessStaffView:
     _vbar_grid_defaults: dict[str, object] = field(default_factory=dict, init=False)
     _wrap_pending_rerender: bool = False
     _tempo_markers: Tuple[tuple[int, str], ...] = ()
+    _tempo_marker_items: list[int] = field(default_factory=list)
     _last_y_top: float = 42.0
     total_ticks: int = 0
 
@@ -219,6 +127,8 @@ class HeadlessStaffView:
                 self.render(events, ppq, beats, beat_type)
         else:
             self.px_per_tick = new_px
+        if self._tempo_markers:
+            self.set_tempo_markers(self._tempo_markers)
 
     def render(
         self,
@@ -245,6 +155,7 @@ class HeadlessStaffView:
 
     def set_tempo_markers(self, markers: Sequence[tuple[int, str]]) -> None:
         self._tempo_markers = tuple(markers)
+        self._tempo_marker_items = list(range(len(self._tempo_markers)))
         base_y = max(24.0, self._last_y_top - 18.0)
         self.canvas.set_tempo_markers(
             self._tempo_markers,
@@ -257,9 +168,6 @@ class HeadlessStaffView:
 
     def set_cursor_drag_state_cb(self, callback: Callable[[bool], None]) -> None:
         self._cursor_drag_state_cb = callback
-
-    def set_tempo_markers(self, markers: Sequence[tuple[int, str]]) -> None:
-        self._tempo_markers = tuple(markers)
 
     def set_secondary_cursor(self, tick: Optional[int]) -> None:
         if tick is None:

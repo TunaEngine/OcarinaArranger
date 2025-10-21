@@ -21,6 +21,7 @@ class HoleManagementMixin:
         x: Optional[float] = None,
         y: Optional[float] = None,
         radius: Optional[float] = None,
+        is_subhole: bool = False,
     ) -> EditableHole:
         state = self.state
         previous_holes = len(state.holes)
@@ -30,7 +31,14 @@ class HoleManagementMixin:
         hole_x = float(x) if x is not None else state.canvas_width / 2.0
         hole_y = float(y) if y is not None else state.canvas_height / 2.0
 
-        new_hole = EditableHole(identifier=hole_id, x=hole_x, y=hole_y, radius=hole_radius)
+        new_hole = EditableHole(
+            identifier=hole_id,
+            x=hole_x,
+            y=hole_y,
+            radius=hole_radius,
+            is_subhole=bool(is_subhole),
+            has_explicit_subhole=bool(is_subhole),
+        )
         state.holes.append(new_hole)
         sync_note_map_length(
             state,
@@ -40,6 +48,19 @@ class HoleManagementMixin:
         state.selection = Selection(kind=SelectionKind.HOLE, index=len(state.holes) - 1)
         state.dirty = True
         return new_hole
+
+    def set_hole_subhole(self, index: int, enabled: bool) -> None:
+        state = self.state
+        if not (0 <= index < len(state.holes)):
+            raise IndexError(f"Hole index {index} is out of range")
+
+        hole = state.holes[index]
+        value = bool(enabled)
+        if hole.is_subhole == value:
+            return
+        hole.is_subhole = value
+        hole.has_explicit_subhole = True
+        state.dirty = True
 
     def remove_hole(self, index: int) -> None:
         state = self.state

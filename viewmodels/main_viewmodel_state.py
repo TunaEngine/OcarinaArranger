@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Tuple
 
 from ocarina_gui.constants import DEFAULT_MAX, DEFAULT_MIN
-from ocarina_gui.settings import GraceTransformSettings
+from ocarina_gui.settings import GraceTransformSettings, SubholeTransformSettings
 from ocarina_gui.preferences import DEFAULT_ARRANGER_MODE
 from services.project_service import PreviewPlaybackSnapshot
 from ocarina_tools.parts import MusicXmlPartInfo
@@ -63,6 +63,9 @@ class MainViewModelState:
     )
     grace_settings: GraceTransformSettings = field(
         default_factory=GraceTransformSettings
+    )
+    subhole_settings: SubholeTransformSettings = field(
+        default_factory=SubholeTransformSettings
     )
     lenient_midi_import: bool = True
     midi_import_report: MidiImportReport | None = None

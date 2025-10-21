@@ -1,7 +1,6 @@
 """Helper builders for sections within the Convert tab."""
 
 from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Dict
 
@@ -10,6 +9,7 @@ from ui.widgets import attach_tooltip
 
 from .convert_gp_panel import build_gp_panel
 from .convert_grace_section import build_grace_section
+from .convert_subhole_section import build_subhole_section
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
     from ..app import App
@@ -134,7 +134,12 @@ def build_instrument_section(app: "App", parent: ttk.Frame, pad: int) -> ttk.Lab
 
     grace_section = build_grace_section(app, instrument_section, pad)
     grace_section.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(pad, 0))
+
+    subhole_section = build_subhole_section(app, instrument_section, pad)
+    subhole_section.grid(row=6, column=0, columnspan=2, sticky="nsew", pady=(pad, 0))
+
     instrument_section.rowconfigure(5, weight=1)
+    instrument_section.rowconfigure(6, weight=1)
 
     return instrument_section
 

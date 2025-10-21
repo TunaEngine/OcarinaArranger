@@ -68,6 +68,11 @@ class _LayoutEditorStateMixin:
                 self._selection_height_var.set(0.0)
                 self._selection_info_var.set("No element selected")
                 self._hole_identifier_var.set("")
+                if hasattr(self, "_hole_subhole_var"):
+                    try:
+                        self._hole_subhole_var.set(False)
+                    except Exception:
+                        pass
             else:
                 self._update_selection_vars(state)
         finally:
@@ -96,6 +101,11 @@ class _LayoutEditorStateMixin:
             self._selection_width_var.set(0.0)
             self._selection_height_var.set(0.0)
             self._hole_identifier_var.set(hole.identifier)
+            if hasattr(self, "_hole_subhole_var"):
+                try:
+                    self._hole_subhole_var.set(bool(getattr(hole, "is_subhole", False)))
+                except Exception:
+                    pass
         elif selection.kind == SelectionKind.WINDWAY:
             windway = state.windways[selection.index]
             self._selection_x_var.set(windway.x)
@@ -104,6 +114,11 @@ class _LayoutEditorStateMixin:
             self._selection_width_var.set(windway.width)
             self._selection_height_var.set(windway.height)
             self._hole_identifier_var.set(windway.identifier)
+            if hasattr(self, "_hole_subhole_var"):
+                try:
+                    self._hole_subhole_var.set(False)
+                except Exception:
+                    pass
         elif selection.kind == SelectionKind.OUTLINE:
             point = state.outline_points[selection.index]
             self._selection_x_var.set(point.x)
@@ -112,6 +127,11 @@ class _LayoutEditorStateMixin:
             self._selection_width_var.set(0.0)
             self._selection_height_var.set(0.0)
             self._hole_identifier_var.set("")
+            if hasattr(self, "_hole_subhole_var"):
+                try:
+                    self._hole_subhole_var.set(False)
+                except Exception:
+                    pass
         self._selection_info_var.set(self._describe_selection(state))
 
     def _update_size_entry_state(self) -> None:
@@ -139,6 +159,7 @@ class _LayoutEditorStateMixin:
         remove_button = self._remove_element_button
         add_button = self._add_hole_button
         add_windway = self._add_windway_button
+        subhole_check = getattr(self, "_hole_subhole_check", None)
         if add_button is not None:
             add_button.state(["!disabled"])
         if add_windway is not None:
@@ -150,6 +171,11 @@ class _LayoutEditorStateMixin:
                 entry.configure(state="normal")
             if remove_button is not None:
                 remove_button.state(["!disabled"])
+            if subhole_check is not None:
+                if selection.kind == SelectionKind.HOLE:
+                    subhole_check.state(["!disabled"])
+                else:
+                    subhole_check.state(["disabled"])
         else:
             if entry is not None:
                 entry.configure(state="disabled")
@@ -160,6 +186,8 @@ class _LayoutEditorStateMixin:
                 SelectionKind.WINDWAY,
             ):
                 self._hole_identifier_var.set("")
+            if subhole_check is not None:
+                subhole_check.state(["disabled"])
 
     def _update_half_hole_var(self, instrument_id: str) -> None:
         var = getattr(self, "_allow_half_var", None)

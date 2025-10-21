@@ -7,7 +7,11 @@ from pathlib import Path
 
 from ocarina_gui.conversion import ConversionResult
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_gui.settings import GraceTransformSettings, TransformSettings
+from ocarina_gui.settings import (
+    GraceTransformSettings,
+    SubholeTransformSettings,
+    TransformSettings,
+)
 from viewmodels.arranger_models import ArrangerBudgetSettings, ArrangerGPSettings
 
 
@@ -30,6 +34,7 @@ class ProjectSnapshot:
     arranger_budgets: ArrangerBudgetSettings | None = None
     arranger_gp_settings: ArrangerGPSettings | None = None
     grace_settings: GraceTransformSettings = GraceTransformSettings()
+    subhole_settings: SubholeTransformSettings = SubholeTransformSettings()
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,7 @@ class LoadedProject:
     arranger_budgets: ArrangerBudgetSettings | None = None
     arranger_gp_settings: ArrangerGPSettings | None = None
     grace_settings: GraceTransformSettings = GraceTransformSettings()
+    subhole_settings: SubholeTransformSettings = SubholeTransformSettings()
 
 
 @dataclass(frozen=True)

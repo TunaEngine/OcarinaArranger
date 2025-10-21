@@ -53,6 +53,15 @@ class PreviewLayoutMixin:
                 roll.set_time_scroll_orientation("horizontal")
             except Exception:
                 logger.debug("Failed to reset piano roll orientation", exc_info=True)
+            if active_mode == "piano_vertical":
+                try:
+                    roll.set_time_scroll_orientation("vertical")
+                except Exception:
+                    logger.debug(
+                        "Unable to set vertical piano roll orientation",
+                        exc_info=True,
+                        extra={"side": side},
+                    )
 
         target_staff_layout = "wrapped" if active_mode == "staff" else "horizontal"
         if staff is not None and hasattr(staff, "set_layout_mode"):
@@ -88,16 +97,15 @@ class PreviewLayoutMixin:
             main.grid_rowconfigure(0, weight=1, minsize=0)
             main.grid_rowconfigure(1, weight=0)
         elif active_mode == "piano_vertical":
-            if roll is not None and hasattr(roll, "set_time_scroll_orientation"):
+            if roll is not None and hasattr(roll, "grid"):
                 try:
-                    roll.set_time_scroll_orientation("vertical")
+                    roll.grid(row=0, column=0, sticky="nsew")
                 except Exception:
                     logger.debug(
-                        "Unable to set vertical piano roll orientation",
+                        "Unable to grid piano roll in vertical layout",
                         exc_info=True,
                         extra={"side": side},
                     )
-                roll.grid(row=0, column=0, sticky="nsew")
             if staff is not None:
                 staff.grid_remove()
             main.grid_rowconfigure(0, weight=1, minsize=0)

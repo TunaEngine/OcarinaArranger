@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Tuple
+from typing import Iterable, Mapping, Tuple
 
-from domain.arrangement.config import GraceSettings as DomainGraceSettings
+from domain.arrangement.config import (
+    GraceSettings as DomainGraceSettings,
+    FAST_WINDWAY_SWITCH_WEIGHT_MAX,
+)
+from domain.arrangement.constraints import (
+    SubholeConstraintSettings as DomainSubholeConstraintSettings,
+    SubholePairLimit,
+)
 from ocarina_tools.events import GraceSettings as ImporterGraceSettings
 
 
@@ -54,6 +61,7 @@ class GraceTransformSettings:
     slow_tempo_bpm: float = 60.0
     fast_tempo_bpm: float = 132.0
     grace_bonus: float = 0.25
+    fast_windway_switch_weight: float = 0.6
 
     def normalized(self) -> "GraceTransformSettings":
         policy = (self.policy or "tempo-weighted").strip().lower()
@@ -106,6 +114,15 @@ class GraceTransformSettings:
         if grace_bonus > 1.0:
             grace_bonus = 1.0
 
+        try:
+            fast_windway_switch_weight = float(self.fast_windway_switch_weight)
+        except (TypeError, ValueError):
+            fast_windway_switch_weight = 0.6
+        if fast_windway_switch_weight < 0.0:
+            fast_windway_switch_weight = 0.0
+        if fast_windway_switch_weight > FAST_WINDWAY_SWITCH_WEIGHT_MAX:
+            fast_windway_switch_weight = FAST_WINDWAY_SWITCH_WEIGHT_MAX
+
         return GraceTransformSettings(
             policy=policy,
             fractions=fractions,
@@ -116,6 +133,7 @@ class GraceTransformSettings:
             slow_tempo_bpm=slow_tempo_bpm,
             fast_tempo_bpm=fast_tempo_bpm,
             grace_bonus=grace_bonus,
+            fast_windway_switch_weight=fast_windway_switch_weight,
         )
 
     def to_importer(self) -> ImporterGraceSettings:
@@ -142,6 +160,125 @@ class GraceTransformSettings:
             slow_tempo_bpm=normalized.slow_tempo_bpm,
             fast_tempo_bpm=normalized.fast_tempo_bpm,
             grace_bonus=normalized.grace_bonus,
+            fast_windway_switch_weight=normalized.fast_windway_switch_weight,
+        )
+
+
+def _normalize_positive_float(value: object, fallback: float, *, minimum: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if numeric < minimum:
+        return fallback
+    return numeric
+
+
+@dataclass(frozen=True)
+class SubholeTransformSettings:
+    """GUI-level subhole comfort configuration for arranger transforms."""
+
+    max_changes_per_second: float = 6.0
+    max_subhole_changes_per_second: float = 4.0
+    pair_limits: tuple[tuple[int, int, float, float], ...] = ()
+
+    def normalized(self) -> "SubholeTransformSettings":
+        max_changes = _normalize_positive_float(
+            self.max_changes_per_second, 6.0, minimum=0.01
+        )
+        max_subhole_changes = _normalize_positive_float(
+            self.max_subhole_changes_per_second, 4.0, minimum=0.01
+        )
+
+        normalized_pairs: dict[frozenset[int], tuple[int, int, float, float]] = {}
+        for entry in self.pair_limits:
+            first: int | None = None
+            second: int | None = None
+            max_hz: float | None = None
+            ease: float | None = None
+
+            if isinstance(entry, Mapping):
+                pair = entry.get("pair") or entry.get("pitches")
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    try:
+                        first = int(pair[0])
+                        second = int(pair[1])
+                    except (TypeError, ValueError):
+                        first = second = None
+                else:
+                    try:
+                        first = int(entry.get("first"))
+                        second = int(entry.get("second"))
+                    except (TypeError, ValueError):
+                        first = second = None
+                max_hz_value = entry.get("max_hz")
+                ease_value = entry.get("ease")
+            else:
+                values = tuple(entry) if isinstance(entry, Iterable) else ()
+                if len(values) >= 3:
+                    try:
+                        first = int(values[0])
+                        second = int(values[1])
+                    except (TypeError, ValueError):
+                        first = second = None
+                    max_hz_value = values[2]
+                    ease_value = values[3] if len(values) > 3 else None
+                else:
+                    max_hz_value = None
+                    ease_value = None
+
+            try:
+                max_hz = float(max_hz_value) if max_hz_value is not None else None
+            except (TypeError, ValueError):
+                max_hz = None
+
+            try:
+                ease = float(ease_value) if ease_value is not None else None
+            except (TypeError, ValueError):
+                ease = None
+
+            if first is None or second is None or first == second or max_hz is None:
+                continue
+            if max_hz <= 0:
+                continue
+            if ease is None or ease < 0:
+                ease = 1.0
+
+            ordered = tuple(sorted((first, second)))
+            normalized_pairs[frozenset(ordered)] = (ordered[0], ordered[1], max_hz, ease)
+
+        normalized_tuple = tuple(normalized_pairs.values())
+
+        return SubholeTransformSettings(
+            max_changes_per_second=max_changes,
+            max_subhole_changes_per_second=max_subhole_changes,
+            pair_limits=normalized_tuple,
+        )
+
+    def to_domain(
+        self,
+        base: DomainSubholeConstraintSettings | None = None,
+    ) -> DomainSubholeConstraintSettings:
+        normalized = self.normalized()
+        if base is None:
+            pair_limits: dict[frozenset[int], SubholePairLimit] = {}
+            alternate = {}
+        else:
+            pair_limits = dict(base.pair_limits)
+            alternate = dict(base.alternate_fingerings)
+
+        for first, second, max_hz, ease in normalized.pair_limits:
+            pair = frozenset({first, second})
+            existing_limit = pair_limits.get(pair)
+            baseline_ease = existing_limit.ease if isinstance(existing_limit, SubholePairLimit) else 1.0
+            effective_ease = ease if ease is not None else baseline_ease
+            pair_limits[pair] = SubholePairLimit(max_hz=max_hz, ease=effective_ease)
+
+        return DomainSubholeConstraintSettings(
+            max_changes_per_second=normalized.max_changes_per_second,
+            max_subhole_changes_per_second=normalized.max_subhole_changes_per_second,
+            pair_limits=pair_limits,
+            alternate_fingerings=alternate,
         )
 
 
@@ -157,10 +294,12 @@ class TransformSettings:
     instrument_id: str = ""
     selected_part_ids: tuple[str, ...] = ()
     grace_settings: GraceTransformSettings = GraceTransformSettings()
+    subhole_settings: SubholeTransformSettings = SubholeTransformSettings()
     lenient_midi_import: bool = True
 
 
 __all__ = [
     "GraceTransformSettings",
+    "SubholeTransformSettings",
     "TransformSettings",
 ]

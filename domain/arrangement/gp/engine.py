@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Sequence, Tuple
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.difficulty import DifficultySummary, difficulty_score, summarize_difficulty
 from domain.arrangement.folding import FoldingResult, FoldingSettings, fold_octaves_with_slack
 from domain.arrangement.phrase import PhraseSpan
@@ -32,10 +33,11 @@ class SpanEvaluation:
     difficulty: DifficultySummary
     annotations: Tuple[str, ...] = ()
     folding: FoldingResult | None = None
+    grace_settings: GraceSettings | None = None
 
     @property
     def playability_penalty(self) -> float:
-        return difficulty_score(self.difficulty)
+        return difficulty_score(self.difficulty, grace_settings=self.grace_settings)
 
     def with_updates(
         self,
@@ -44,6 +46,7 @@ class SpanEvaluation:
         difficulty: DifficultySummary | None = None,
         annotations: Tuple[str, ...] | None = None,
         folding: FoldingResult | None = None,
+        grace_settings: GraceSettings | None = None,
     ) -> "SpanEvaluation":
         return SpanEvaluation(
             index=self.index,
@@ -51,6 +54,7 @@ class SpanEvaluation:
             difficulty=difficulty or self.difficulty,
             annotations=self.annotations if annotations is None else annotations,
             folding=folding if folding is not None else self.folding,
+            grace_settings=self.grace_settings if grace_settings is None else grace_settings,
         )
 
 
@@ -94,6 +98,7 @@ def evaluate_spans(
     folding_settings: FoldingSettings | None = None,
     budgets: LocalSearchBudgets | None = None,
     annotations: Sequence[Sequence[str]] | None = None,
+    grace_settings: GraceSettings | None = None,
 ) -> Tuple[SpanEvaluation, ...]:
     """Evaluate spans for playability, optionally running memetic local search."""
 
@@ -103,13 +108,16 @@ def evaluate_spans(
     evaluations: list[SpanEvaluation] = []
     for index, span in enumerate(spans):
         existing_annotations = tuple(annotations[index]) if annotations else ()
-        summary = summarize_difficulty(span, instrument)
+        summary = summarize_difficulty(
+            span, instrument, grace_settings=grace_settings
+        )
         evaluations.append(
             SpanEvaluation(
                 index=index,
                 span=span,
                 difficulty=summary,
                 annotations=existing_annotations,
+                grace_settings=grace_settings,
             )
         )
 
@@ -138,8 +146,12 @@ def evaluate_spans(
     if folding_result.span == candidate.span:
         return tuple(evaluations)
 
-    updated_summary = summarize_difficulty(folding_result.span, instrument)
-    updated_penalty = difficulty_score(updated_summary)
+    updated_summary = summarize_difficulty(
+        folding_result.span, instrument, grace_settings=grace_settings
+    )
+    updated_penalty = difficulty_score(
+        updated_summary, grace_settings=grace_settings
+    )
     if updated_penalty > candidate.playability_penalty + 1e-9:
         return tuple(evaluations)
 
@@ -150,6 +162,7 @@ def evaluate_spans(
         difficulty=updated_summary,
         annotations=annotations_with_memetic,
         folding=folding_result,
+        grace_settings=grace_settings,
     )
 
     return tuple(evaluations)

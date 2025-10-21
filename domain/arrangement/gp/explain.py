@@ -9,6 +9,7 @@ from ocarina_tools.pitch import midi_to_name
 
 from shared.ottava import OttavaShift
 
+from domain.arrangement.config import GraceSettings
 from domain.arrangement.difficulty import difficulty_score, summarize_difficulty
 from domain.arrangement.explanations import (
     ExplanationEvent,
@@ -168,6 +169,7 @@ def explain_program(
     instrument: InstrumentRange,
     *,
     beats_per_measure: int = 4,
+    grace_settings: GraceSettings | None = None,
 ) -> Tuple[ExplanationEvent, ...]:
     """Return ordered ``ExplanationEvent`` entries for ``program``."""
 
@@ -188,8 +190,14 @@ def explain_program(
         start, end = _operation_window(operation, before)
         span_id = _span_identifier(operation, start, end)
 
-        before_score = difficulty_score(summarize_difficulty(before, instrument))
-        after_score = difficulty_score(summarize_difficulty(after, instrument))
+        before_score = difficulty_score(
+            summarize_difficulty(before, instrument, grace_settings=grace_settings),
+            grace_settings=grace_settings,
+        )
+        after_score = difficulty_score(
+            summarize_difficulty(after, instrument, grace_settings=grace_settings),
+            grace_settings=grace_settings,
+        )
 
         if isinstance(operation, GlobalTranspose):
             reason = _reason_for_transpose(operation)

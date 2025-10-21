@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from typing import Sequence, Tuple
 
 from domain.arrangement.config import GraceSettings
@@ -30,6 +31,7 @@ from .strategy_evaluation import (
 )
 from .strategy_scoring import (
     ScoringPenalties,
+    SortKey,
     _difficulty_sort_key,
     _top_voice_notes,
 )
@@ -78,7 +80,7 @@ def score_instrument(
     expected_offset: int | None = None,
 ) -> tuple[
     "GPInstrumentCandidate",
-    tuple[int, float, float, float, float, float, float, float, float, float, float],
+    SortKey,
     tuple[tuple[GPPrimitive, ...], ...],
 ]:
     """Score candidate GP programs for ``instrument_id``.
@@ -166,7 +168,21 @@ def score_instrument(
             len(program_spans),
         )
 
-    for program in candidate_programs:
+    if phrase_exceeds_span:
+        uniform_programs: list[Tuple[GPPrimitive, ...]] = []
+        non_uniform_programs: list[Tuple[GPPrimitive, ...]] = []
+        for program in candidate_programs:
+            program_key = tuple(program)
+            uniform_shift = _uniform_octave_shift(program_key, phrase)
+            if uniform_shift not in (None, 0):
+                uniform_programs.append(program_key)
+            else:
+                non_uniform_programs.append(program_key)
+        ordered_programs = uniform_programs + non_uniform_programs
+    else:
+        ordered_programs = [tuple(program) for program in candidate_programs]
+
+    for program in ordered_programs:
         program_key = tuple(program)
         if program_key in processed_programs:
             continue
@@ -179,26 +195,59 @@ def score_instrument(
         if phrase_exceeds_span and uniform_shift not in (None, 0):
             stored = uniform_reference_spans.get(uniform_shift)
             if stored is None:
-                reference_candidate, _, _ = enforce_instrument_range(
-                    candidate_span,
-                    instrument,
-                    beats_per_measure=beats_per_measure,
-                    prefer_octave_top_voice=True,
-                )
-                reference_top_voice = _top_voice_notes(reference_candidate)
-                allowed_deltas = (
-                    tuple(
+                if phrase_top_voice:
+                    reference_notes: list[PhraseNote] = []
+                    min_gap = None
+                    if instrument.min_midi is not None and phrase_min is not None:
+                        min_gap = instrument.min_midi - phrase_min
+                    for original_note in phrase_top_voice:
+                        if uniform_shift is not None and uniform_shift < 0:
+                            target_midi = original_note.midi + uniform_shift
+                        elif (
+                            uniform_shift
+                            and uniform_shift > 0
+                            and min_gap is not None
+                            and min_gap >= 6
+                        ):
+                            target_midi = original_note.midi + uniform_shift
+                        else:
+                            target_midi = original_note.midi
+                        iteration = 0
+                        while (
+                            instrument.min_midi is not None
+                            and target_midi < instrument.min_midi
+                            and iteration < 8
+                        ):
+                            target_midi += 12
+                            iteration += 1
+                        iteration = 0
+                        while (
+                            instrument.max_midi is not None
+                            and target_midi > instrument.max_midi
+                            and iteration < 8
+                        ):
+                            target_midi -= 12
+                            iteration += 1
+                        if instrument.min_midi is not None:
+                            target_midi = max(instrument.min_midi, target_midi)
+                        if instrument.max_midi is not None:
+                            target_midi = min(instrument.max_midi, target_midi)
+                        reference_notes.append(original_note.with_midi(int(target_midi)))
+                    reference_top_voice = tuple(reference_notes)
+                    allowed_deltas = tuple(
                         reference_note.midi - original_note.midi
                         for reference_note, original_note in zip(
                             reference_top_voice, phrase_top_voice
                         )
                     )
-                    if phrase_top_voice
-                    else tuple()
-                )
-                stored = (reference_candidate, reference_top_voice, allowed_deltas)
+                else:
+                    reference_top_voice = tuple()
+                    allowed_deltas = tuple()
+                stored = (candidate_span, reference_top_voice, allowed_deltas)
                 uniform_reference_spans[uniform_shift] = stored
             _, uniform_reference_voice, uniform_reference_deltas = stored
+        elif phrase_exceeds_span and uniform_reference_spans:
+            _, _, uniform_reference_deltas = next(iter(uniform_reference_spans.values()))
         candidate, range_event = evaluate_candidate(
             program_key,
             instrument_id=instrument_id,
@@ -215,10 +264,57 @@ def score_instrument(
             uniform_reference_top_voice=uniform_reference_voice,
             uniform_reference_deltas=(
                 uniform_reference_deltas
-                if phrase_exceeds_span and uniform_shift not in (None, 0)
+                if (
+                    phrase_exceeds_span
+                    and (uniform_shift not in (None, 0) or uniform_reference_spans)
+                )
                 else None
             ),
         )
+        if (
+            phrase_exceeds_span
+            and range_event is not None
+            and uniform_reference_spans
+            and phrase_top_voice
+        ):
+            top_candidate = _top_voice_notes(candidate.span)
+            sample = min(len(phrase_top_voice), len(top_candidate))
+            if sample:
+                delta_values = [
+                    top_candidate[index].midi - phrase_top_voice[index].midi
+                    for index in range(sample)
+                ]
+                reference_deltas_options: list[tuple[int, ...]] = []
+                if uniform_shift not in (None, 0):
+                    stored = uniform_reference_spans.get(uniform_shift)
+                    if stored is not None:
+                        reference_deltas_options.append(stored[2])
+                else:
+                    reference_deltas_options.extend(
+                        stored[2] for stored in uniform_reference_spans.values()
+                    )
+                if reference_deltas_options:
+                    ratios: list[float] = []
+                    for option in reference_deltas_options:
+                        matches = 0
+                        for index, delta in enumerate(delta_values):
+                            try:
+                                expected_delta = int(option[index])
+                            except (IndexError, TypeError, ValueError):
+                                expected_delta = None
+                            if expected_delta is not None and delta == expected_delta:
+                                matches += 1
+                        ratios.append(1.0 - (matches / sample))
+                    mismatch_ratio = min(ratios) if ratios else 0.0
+                    if mismatch_ratio > 0:
+                        adjusted_penalty = max(
+                            candidate.melody_shift_penalty, mismatch_ratio * 12.0
+                        )
+                        if adjusted_penalty != candidate.melody_shift_penalty:
+                            candidate = replace(
+                                candidate,
+                                melody_shift_penalty=round(adjusted_penalty, 12),
+                            )
         if not program_key:
             identity_candidate = candidate
             identity_reference_span = candidate.span
@@ -275,6 +371,7 @@ def score_instrument(
             baseline_melody=melody_baseline,
             melody_importance=melody_importance,
             penalties=penalties,
+            grace_settings=grace_settings,
         )
         key_prefix = 1
         if (
