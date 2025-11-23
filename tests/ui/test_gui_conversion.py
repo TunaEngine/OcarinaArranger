@@ -92,6 +92,8 @@ def test_convert_exports_files_and_reports_success(gui_app, tmp_path, monkeypatc
         pdf_options,
         *,
         midi_mode: str = "auto",
+        arranged_events=None,
+        arranged_pulses_per_quarter=None,
     ):
         export_folder = os.path.splitext(output_xml_path)[0]
         saved["folder"] = export_folder

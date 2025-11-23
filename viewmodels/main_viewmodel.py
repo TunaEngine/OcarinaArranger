@@ -68,6 +68,7 @@ class MainViewModel(
         self.state = MainViewModelState()
         self._last_conversion: ConversionResult | None = None
         self._last_pdf_options: PdfExportOptions | None = None
+        self._last_preview: PreviewData | None = None
         self._pitch_entries: list[str] = []
         self._pending_input_confirmation = False
         self._last_successful_input_snapshot: PreviewStateSnapshot | None = None
@@ -158,6 +159,7 @@ class MainViewModel(
             self._last_successful_input_snapshot = capture_preview_state(
                 self.state, self._pitch_entries
             )
+            self._last_preview = updated_preview
         logger.info("Preview build completed", extra={"path": path})
         return Result.ok(updated_preview)
 
@@ -182,6 +184,12 @@ class MainViewModel(
             return None
         options = pdf_options or PdfExportOptions.with_defaults()
         midi_mode = self._midi_import_mode()
+        arranged_events = None
+        arranged_ppq = None
+        with self._state_lock:
+            if self._last_preview is not None:
+                arranged_events = tuple(self._last_preview.arranged_events)
+                arranged_ppq = self._last_preview.pulses_per_quarter
         try:
             result = self._score_service.convert(
                 path,
@@ -189,6 +197,8 @@ class MainViewModel(
                 self.settings(),
                 options,
                 midi_mode=midi_mode,
+                arranged_events=arranged_events,
+                arranged_pulses_per_quarter=arranged_ppq,
             )
         except Exception as exc:
             error_message = str(exc) or exc.__class__.__name__

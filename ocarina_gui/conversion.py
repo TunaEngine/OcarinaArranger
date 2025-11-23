@@ -5,18 +5,23 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from itertools import count
-from typing import Callable, Dict, List, Protocol
+from typing import Callable, Dict, List, Protocol, Sequence
 
 from ocarina_tools import (
     collect_used_pitches,
     favor_lower_register,
+    filter_parts,
+    get_note_events,
+    get_time_signature,
     load_score,
+    NoteEvent,
     transform_to_ocarina,
 )
 from ocarina_tools.midi_import.models import MidiImportReport
 
 from .settings import TransformSettings
 from .pdf_export.types import PdfExportOptions
+from .events import trim_leading_silence
 
 Exporter = Callable[[object, str], None]
 
@@ -43,6 +48,10 @@ class PdfExporter(Protocol):
         columns: int,
         prefer_flats: bool,
         *,
+        events: object | None = None,
+        pulses_per_quarter: int | None = None,
+        beats: int | None = None,
+        beat_type: int | None = None,
         include_piano_roll: bool = True,
         include_staff: bool = True,
         include_text: bool = True,
@@ -90,9 +99,14 @@ def convert_score(
     pdf_options: PdfExportOptions,
     *,
     midi_mode: str = "auto",
+    arranged_events: Sequence[NoteEvent] | None = None,
+    arranged_pulses_per_quarter: int | None = None,
 ) -> ConversionResult:
     load_result = load_score(input_path, midi_mode=midi_mode)
     tree, root = load_result
+
+    if settings.selected_part_ids:
+        filter_parts(root, settings.selected_part_ids)
 
     summary = transform_to_ocarina(
         tree,
@@ -109,6 +123,23 @@ def convert_score(
     shifted = 0
     if settings.favor_lower:
         shifted = favor_lower_register(root, range_min=settings.range_min)
+
+    importer_grace = settings.grace_settings.to_importer()
+    pulses_per_quarter = arranged_pulses_per_quarter
+    events: Sequence[NoteEvent] | None = arranged_events
+    if events is None or pulses_per_quarter is None:
+        events_from_score, pulses_from_score = get_note_events(
+            root, grace_settings=importer_grace
+        )
+        if events is None:
+            events = events_from_score
+        if pulses_per_quarter is None:
+            pulses_per_quarter = pulses_from_score
+
+    pulses_per_quarter = pulses_per_quarter or 0
+    beats, beat_type = get_time_signature(root)
+
+    trimmed_events = trim_leading_silence(events)
 
     export_folder = derive_export_folder(output_xml_path)
     os.makedirs(export_folder, exist_ok=True)
@@ -136,6 +167,10 @@ def convert_score(
         orientation,
         pdf_options.columns,
         False,
+        events=trimmed_events,
+        pulses_per_quarter=pulses_per_quarter,
+        beats=beats,
+        beat_type=beat_type,
         include_piano_roll=pdf_options.include_piano_roll,
         include_staff=pdf_options.include_staff,
         include_text=pdf_options.include_text,

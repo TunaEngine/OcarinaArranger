@@ -8,6 +8,8 @@ from typing import DefaultDict, List, Sequence
 from ocarina_tools import midi_to_name as pitch_midi_to_name
 from shared.tempo import TempoChange, scaled_tempo_marker_pairs
 
+from ._time_signature import ticks_per_measure
+
 from ._tempo import (
     TEMPO_MARKER_BARLINE_PADDING,
     draw_tempo_marker,
@@ -30,6 +32,8 @@ def build_piano_roll_pages(
     events: Sequence[NoteEvent],
     pulses_per_quarter: int,
     *,
+    beats: int = 4,
+    beat_type: int = 4,
     tempo_changes: Sequence[TempoChange] | None = None,
     tempo_base: float | None = None,
 ) -> List[PageBuilder]:
@@ -60,8 +64,9 @@ def build_piano_roll_pages(
     width = max(1.0, layout.width - 2 * layout.margin_left)
     label_width = max(32.0, layout.font_size * 2.5)
     quarter_ticks = max(1, pulses_per_quarter or 1)
+    measure_ticks = ticks_per_measure(quarter_ticks, beats, beat_type)
     quarters_per_page = max(4, int(width / 18.0))
-    ticks_per_page = max(quarter_ticks * 4, quarters_per_page * quarter_ticks)
+    ticks_per_page = max(measure_ticks, quarters_per_page * quarter_ticks)
 
     min_midi = min(event[2] for event in events)
     max_midi = max(event[2] for event in events)
@@ -105,6 +110,7 @@ def build_piano_roll_pages(
             width,
             label_width,
             quarter_ticks,
+            measure_ticks,
             min_midi,
             max_midi,
             low_name,
@@ -132,6 +138,7 @@ def _draw_piano_roll_page(
     width: float,
     label_width: float,
     quarter_ticks: int,
+    ticks_per_measure: int,
     min_midi: int,
     max_midi: int,
     low_name: str,
@@ -159,8 +166,8 @@ def _draw_piano_roll_page(
     grid_width = max(1.0, width - label_width)
     scale_x = grid_width / max(1.0, float(page_span))
 
-    start_measure = int(page_start // (quarter_ticks * 4)) + 1
-    end_measure = int((page_start + span - 1) // (quarter_ticks * 4)) + 1
+    start_measure = int(page_start // max(1, ticks_per_measure)) + 1
+    end_measure = int((page_start + span - 1) // max(1, ticks_per_measure)) + 1
 
     summary = (
         f"Range: {low_name} to {high_name} | Pulses/quarter: {pulses_per_quarter or 0}"

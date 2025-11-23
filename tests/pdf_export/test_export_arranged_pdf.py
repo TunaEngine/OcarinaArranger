@@ -9,6 +9,7 @@ import pytest
 from ocarina_gui.fingering import FingeringLibrary, InstrumentSpec
 from ocarina_gui.pdf_export import export_arranged_pdf
 from ocarina_gui.pdf_export.types import PdfExportOptions
+from ocarina_tools import NoteEvent
 from tests.helpers import make_linear_score, make_score_with_tempo_changes
 
 
@@ -155,6 +156,40 @@ def test_export_arranged_pdf_includes_tempo_markers(
     assert b"= 180" in data
     assert b"= 120" in data
     assert b"= 210" in data
+
+
+def test_export_arranged_pdf_prefers_provided_events_when_ppq_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree, root = make_linear_score()
+    _install_test_instrument(monkeypatch)
+
+    provided_events = [NoteEvent(0, 120, 69, 0)]
+
+    def fake_get_note_events(_root):
+        return [NoteEvent(0, 120, 64, 0)], 960
+
+    monkeypatch.setattr("ocarina_gui.pdf_export.get_note_events", fake_get_note_events)
+
+    pdf_path = tmp_path / "custom.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A4",
+        "portrait",
+        4,
+        prefer_flats=True,
+        events=provided_events,
+        pulses_per_quarter=None,
+        include_piano_roll=False,
+        include_staff=False,
+        include_text=True,
+        include_fingerings=False,
+    )
+
+    data = pdf_path.read_bytes()
+    assert b"A4" in data
+    assert b"E4" not in data
 
 
 def test_export_arranged_pdf_skips_disabled_sections(

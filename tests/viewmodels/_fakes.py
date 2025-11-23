@@ -113,6 +113,8 @@ class StubScoreService:
         pdf_options,
         *,
         midi_mode: str = "auto",
+        arranged_events=None,
+        arranged_pulses_per_quarter: int | None = None,
     ) -> ConversionResult:
         if self.convert_error:
             raise self.convert_error

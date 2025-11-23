@@ -69,6 +69,8 @@ class ScoreService:
         pdf_options: PdfExportOptions,
         *,
         midi_mode: str = "auto",
+        arranged_events=None,
+        arranged_pulses_per_quarter: int | None = None,
     ) -> ConversionResult:
         result = self.convert_score(
             path,
@@ -80,6 +82,8 @@ class ScoreService:
             export_pdf=self.export_pdf,
             pdf_options=pdf_options,
             midi_mode=midi_mode,
+            arranged_events=arranged_events,
+            arranged_pulses_per_quarter=arranged_pulses_per_quarter,
         )
         self.last_midi_report = getattr(result, "midi_report", None)
         return result

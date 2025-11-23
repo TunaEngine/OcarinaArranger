@@ -84,6 +84,44 @@ def test_piano_roll_pdf_includes_measure_numbers() -> None:
     assert "3" in measure_numbers
 
 
+def test_staff_pdf_uses_time_signature_for_measure_spans() -> None:
+    layout = resolve_layout("A4", "portrait")
+    events = [
+        NoteEvent(0, 240, 60, 0),
+        NoteEvent(720, 240, 62, 0),
+        NoteEvent(1440, 240, 64, 0),
+    ]
+
+    pages = build_staff_pages(
+        layout, events, pulses_per_quarter=480, beats=3, beat_type=8
+    )
+
+    summaries = [
+        text for _x, _y, text in _collect_text_blocks(pages[0]) if text.startswith("Staff visuals")
+    ]
+
+    assert any("Measures 1-3" in summary for summary in summaries)
+
+
+def test_piano_roll_pdf_uses_time_signature_for_measure_spans() -> None:
+    layout = resolve_layout("A4", "portrait")
+    events = [
+        NoteEvent(0, 240, 60, 0),
+        NoteEvent(720, 240, 62, 0),
+        NoteEvent(1440, 240, 64, 0),
+    ]
+
+    pages = build_piano_roll_pages(
+        layout, events, pulses_per_quarter=480, beats=3, beat_type=8
+    )
+
+    summaries = [
+        text for _x, _y, text in _collect_text_blocks(pages[0]) if text.startswith("Range:")
+    ]
+
+    assert any("Measures 1-3" in summary for summary in summaries)
+
+
 def test_text_page_uses_multiple_columns_when_space_allows() -> None:
     instrument = InstrumentSpec.from_dict(
         {
@@ -310,7 +348,7 @@ def test_group_patterns_handles_mixed_accidentals_and_octaves() -> None:
     ]
 
 
-def test_staff_page_draws_ledger_lines_and_octave_labels() -> None:
+def test_staff_page_draws_ledger_lines_without_octave_labels() -> None:
     layout = resolve_layout("A4", "portrait")
     events = [
         NoteEvent(0, 120, 52, 0),
@@ -337,7 +375,7 @@ def test_staff_page_draws_ledger_lines_and_octave_labels() -> None:
         for _x, y, text in blocks
         if text in {"3", "6"} and y > summary_threshold
     }
-    assert {"3", "6"} <= octave_blocks
+    assert not octave_blocks
 
 
 def _collect_text_with_gray(page) -> list[tuple[float, str]]:

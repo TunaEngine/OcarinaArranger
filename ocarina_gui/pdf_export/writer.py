@@ -193,6 +193,48 @@ class PageBuilder:
         commands.append("Q")
         self._commands.extend(commands)
 
+    def draw_oval(
+        self,
+        cx: float,
+        cy: float,
+        rx: float,
+        ry: float,
+        *,
+        fill_gray: Optional[float] = None,
+        stroke_gray: Optional[float] = 0.0,
+        line_width: float = 1.0,
+    ) -> None:
+        if rx <= 0 or ry <= 0:
+            return
+        cx_pdf, cy_pdf = self._to_pdf_point(cx, cy)
+        kx = rx * 0.5522847498307936
+        ky = ry * 0.5522847498307936
+        commands = ["q"]
+        if stroke_gray is not None:
+            commands.append(f"{stroke_gray:.3f} G")
+            commands.append(f"{line_width:.2f} w")
+        if fill_gray is not None:
+            commands.append(f"{fill_gray:.3f} g")
+        commands.extend(
+            [
+                f"{cx_pdf + rx:.2f} {cy_pdf:.2f} m",
+                f"{cx_pdf + rx:.2f} {cy_pdf + ky:.2f} {cx_pdf + kx:.2f} {cy_pdf + ry:.2f} {cx_pdf:.2f} {cy_pdf + ry:.2f} c",
+                f"{cx_pdf - kx:.2f} {cy_pdf + ry:.2f} {cx_pdf - rx:.2f} {cy_pdf + ky:.2f} {cx_pdf - rx:.2f} {cy_pdf:.2f} c",
+                f"{cx_pdf - rx:.2f} {cy_pdf - ky:.2f} {cx_pdf - kx:.2f} {cy_pdf - ry:.2f} {cx_pdf:.2f} {cy_pdf - ry:.2f} c",
+                f"{cx_pdf + kx:.2f} {cy_pdf - ry:.2f} {cx_pdf + rx:.2f} {cy_pdf - ky:.2f} {cx_pdf + rx:.2f} {cy_pdf:.2f} c",
+            ]
+        )
+        if fill_gray is not None and stroke_gray is not None:
+            commands.append("B")
+        elif fill_gray is not None:
+            commands.append("f")
+        elif stroke_gray is not None:
+            commands.append("S")
+        else:
+            commands.append("n")
+        commands.append("Q")
+        self._commands.extend(commands)
+
     def fill_half_circle(self, cx: float, cy: float, radius: float, *, fill_gray: float) -> None:
         if radius <= 0:
             return

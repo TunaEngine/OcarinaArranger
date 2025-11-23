@@ -134,6 +134,8 @@ class FakeScoreService:
         export_pdf,  # noqa: ANN001 - protocol hook
         pdf_options: PdfExportOptions,
         midi_mode: str = "auto",
+        arranged_events=None,
+        arranged_pulses_per_quarter=None,
     ) -> ConversionResult:
         if self._conversion_outcomes:
             outcome = self._conversion_outcomes.popleft()

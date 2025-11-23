@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Tuple, TYPE_CHECKING
 
 from ...note_values import NoteGlyphDescription
+from .geometry import staff_pos, staff_y, tie_control_offsets
 
 if TYPE_CHECKING:  # pragma: no cover - only imported for typing
     from ..view import StaffView
@@ -19,12 +20,12 @@ class NotePainter:
     def staff_pos(self, midi: int) -> int:
         """Return the staff position for the given MIDI value."""
 
-        return int(round((midi - 64) * 7 / 12))
+        return staff_pos(midi)
 
     def y_for_pos(self, y_top: int, pos: int, staff_spacing: int) -> float:
         """Return the vertical coordinate for the given staff position."""
 
-        return y_top + (8 - pos) * (staff_spacing / 2)
+        return staff_y(y_top, pos, float(staff_spacing))
 
     def draw_ledger_lines(
         self,
@@ -173,11 +174,9 @@ class NotePainter:
 
         view = self._view
         y_center = self.y_for_pos(y_top, pos, view.staff_spacing)
-        direction = 1 if pos < 6 else -1
-        base_offset = view.staff_spacing * 0.55
-        curve_offset = view.staff_spacing * 0.95
-        base_y = y_center + direction * base_offset
-        control_y = y_center + direction * curve_offset
+        base_offset, curve_offset = tie_control_offsets(view.staff_spacing, pos)
+        base_y = y_center + base_offset
+        control_y = y_center + curve_offset
         width = max(1.1, view.staff_spacing * 0.14)
         span = end_x - start_x
         control_dx = span * 0.35

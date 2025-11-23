@@ -8,7 +8,7 @@ import pytest
 from ocarina_gui.conversion import convert_score, derive_export_folder
 from ocarina_gui.settings import TransformSettings
 from ocarina_gui.pdf_export.types import PdfExportOptions
-from ocarina_tools import ScoreLoadResult, filter_parts
+from ocarina_tools import NoteEvent, ScoreLoadResult, filter_parts
 
 
 def test_derive_export_folder_returns_base_name(tmp_path: Path) -> None:
@@ -54,6 +54,14 @@ def _stub_transform(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "ocarina_gui.conversion.collect_used_pitches",
         lambda root, flats: ["C4"],
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.conversion.get_note_events",
+        lambda _root, *, grace_settings=None: ([], 480),
+    )
+    monkeypatch.setattr(
+        "ocarina_gui.conversion.get_time_signature",
+        lambda _root: (4, 4),
     )
 
 
@@ -212,3 +220,147 @@ def test_convert_score_respects_selected_parts(tmp_path: Path, monkeypatch: pyte
     for label in ("xml", "mxl", "mid", "pdf"):
         assert exporters_parts[label] == ["P2"]
     assert result.used_pitches == ["P2"]
+
+
+def test_convert_score_trims_arranged_events_for_pdf_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    root = ET.Element("score-partwise")
+
+    def fake_load_score(_path: str, *, midi_mode: str = "auto"):
+        return ScoreLoadResult(tree=ET.ElementTree(root), root=root)
+
+    def fake_export_tree(_tree: object, path: str, *args, **kwargs):
+        Path(path).write_text("tree", encoding="utf-8")
+
+    def fake_export_root(_root: object, path: str, *args, **kwargs):
+        Path(path).write_text("root", encoding="utf-8")
+
+    def fake_transform(*_args, **_kwargs):
+        return {"range_names": {"min": "C4", "max": "C6"}}
+
+    def fake_get_note_events(_root: object, *, grace_settings=None):
+        return ([NoteEvent(240, 120, 60, 0), NoteEvent(360, 120, 64, 0)], 960)
+
+    def fake_export_pdf(
+        _root: object,
+        _path: str,
+        _page_size: str,
+        _orientation: str,
+        _columns: int,
+        _prefer_flats: bool,
+        *,
+        events,
+        pulses_per_quarter,
+        beats,
+        beat_type,
+        **_kwargs,
+    ) -> None:
+        captured["events"] = events
+        captured["ppq"] = pulses_per_quarter
+        captured["beats"] = beats
+        captured["beat_type"] = beat_type
+        Path(_path).write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr("ocarina_gui.conversion.load_score", fake_load_score)
+    monkeypatch.setattr("ocarina_gui.conversion.transform_to_ocarina", fake_transform)
+    monkeypatch.setattr("ocarina_gui.conversion.collect_used_pitches", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr("ocarina_gui.conversion.favor_lower_register", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr("ocarina_gui.conversion.get_note_events", fake_get_note_events)
+    monkeypatch.setattr("ocarina_gui.conversion.get_time_signature", lambda _root: (3, 8))
+
+    result = convert_score(
+        input_path="ignored",
+        output_xml_path=str(tmp_path / "song.musicxml"),
+        settings=_fake_settings(),
+        export_musicxml=fake_export_tree,
+        export_mxl=fake_export_tree,
+        export_midi=fake_export_root,
+        export_pdf=fake_export_pdf,
+        pdf_options=PdfExportOptions.with_defaults(),
+    )
+
+    assert result.output_pdf_paths
+    trimmed_events = captured.get("events", [])
+    assert [event.onset for event in trimmed_events] == [0, 120]
+    assert captured["ppq"] == 960
+    assert captured["beats"] == 3
+    assert captured["beat_type"] == 8
+
+
+def test_convert_score_uses_supplied_arranged_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    root = ET.Element("score-partwise")
+
+    def fake_load_score(_path: str, *, midi_mode: str = "auto"):
+        return ScoreLoadResult(tree=ET.ElementTree(root), root=root)
+
+    def fake_export_tree(_tree: object, path: str, *args, **kwargs):
+        Path(path).write_text("tree", encoding="utf-8")
+
+    def fake_export_root(_root: object, path: str, *args, **kwargs):
+        Path(path).write_text("root", encoding="utf-8")
+
+    def fake_transform(*_args, **_kwargs):
+        return {"range_names": {"min": "C4", "max": "C6"}}
+
+    def fake_export_pdf(
+        _root: object,
+        _path: str,
+        _page_size: str,
+        _orientation: str,
+        _columns: int,
+        _prefer_flats: bool,
+        *,
+        events,
+        pulses_per_quarter,
+        beats,
+        beat_type,
+        **_kwargs,
+    ) -> None:
+        captured["events"] = events
+        captured["ppq"] = pulses_per_quarter
+        captured["beats"] = beats
+        captured["beat_type"] = beat_type
+        Path(_path).write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr("ocarina_gui.conversion.load_score", fake_load_score)
+    monkeypatch.setattr("ocarina_gui.conversion.transform_to_ocarina", fake_transform)
+    monkeypatch.setattr(
+        "ocarina_gui.conversion.collect_used_pitches", lambda *_args, **_kwargs: []
+    )
+    monkeypatch.setattr("ocarina_gui.conversion.favor_lower_register", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        "ocarina_gui.conversion.get_note_events",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("get_note_events should not be called")
+        ),
+    )
+    monkeypatch.setattr("ocarina_gui.conversion.get_time_signature", lambda _root: (4, 4))
+
+    arranged_events = (NoteEvent(0, 120, 64, 0),)
+
+    result = convert_score(
+        input_path="ignored",
+        output_xml_path=str(tmp_path / "song.musicxml"),
+        settings=_fake_settings(),
+        export_musicxml=fake_export_tree,
+        export_mxl=fake_export_tree,
+        export_midi=fake_export_root,
+        export_pdf=fake_export_pdf,
+        pdf_options=PdfExportOptions.with_defaults(),
+        arranged_events=arranged_events,
+        arranged_pulses_per_quarter=720,
+    )
+
+    assert result.output_pdf_paths
+    events = captured.get("events", [])
+    assert [event.midi for event in events] == [64]
+    assert captured["ppq"] == 720
+    assert captured["beats"] == 4
+    assert captured["beat_type"] == 4

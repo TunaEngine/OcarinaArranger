@@ -21,6 +21,7 @@ from ocarina_tools import (
 )
 from ocarina_tools.midi_import.models import MidiImportReport
 from .settings import TransformSettings
+from .events import trim_leading_silence
 
 @dataclass(frozen=True)
 class PreviewData:
@@ -81,7 +82,7 @@ def build_preview_data(
     events_arranged, _ = get_note_events(
         root_arranged, grace_settings=importer_grace
     )
-    events_arranged = _trim_leading_silence(events_arranged)
+    events_arranged = trim_leading_silence(events_arranged)
 
     original_range = _calculate_range(events_original, default_range=(48, 84))
     arranged_range = _calculate_range(events_arranged, default_range=(69, 89))
@@ -106,14 +107,3 @@ def _calculate_range(events: Sequence[NoteEvent], default_range: Tuple[int, int]
     lowest = min(event.midi for event in events)
     highest = max(event.midi for event in events)
     return lowest, highest
-
-
-def _trim_leading_silence(events: Sequence[NoteEvent]) -> list[NoteEvent]:
-    if not events:
-        return list(events)
-
-    earliest_onset = min(event.onset for event in events)
-    if earliest_onset <= 0:
-        return list(events)
-
-    return [event.shift(-earliest_onset) for event in events]
