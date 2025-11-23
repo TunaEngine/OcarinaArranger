@@ -43,7 +43,8 @@ class NotePainter:
         x_left = max(0.0, x_center - note_width / 2 - extra)
         x_right = x_center + note_width / 2 + extra
         if pos < 0:
-            for ledger_pos in range(pos, 0, 2):
+            start = pos if pos % 2 == 0 else pos - 1
+            for ledger_pos in range(start, 0, 2):
                 self._ledger_line(y_top, ledger_pos, x_left, x_right, tags, state=state)
         elif pos > 8:
             for ledger_pos in range(10, pos + 1, 2):

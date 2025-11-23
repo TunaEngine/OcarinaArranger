@@ -30,6 +30,7 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
         events = [
             (0, 120, 52, 0),
             (480, 120, 84, 0),
+            (960, 120, 62, 0),
             (1920, 120, 64, 0),
         ]
         staff.render(events, pulses_per_quarter=480, beats=4, beat_type=4)
@@ -62,6 +63,21 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
         assert ledger_segments, "expected ledger lines to be drawn"
 
         note_width = 12
+        d_onset = 960
+        d_pos = staff._staff_pos(62)
+        assert d_pos == -1
+        x_center_d = staff.LEFT_PAD + int(d_onset * staff.px_per_tick) + note_width / 2
+        d_line_y = staff._y_for_pos(y_top, -2)
+        assert any(
+            abs(segment_y - d_line_y) < 0.6
+            and abs((x1 + x2) / 2 - x_center_d) < 1.6
+            for x1, segment_y, x2, _ in ledger_segments
+        ), "expected D4 to use the lower ledger line"
+        d_y = staff._y_for_pos(y_top, d_pos)
+        assert not any(
+            abs(segment_y - d_y) < 0.6 and abs((x1 + x2) / 2 - x_center_d) < 1.6
+            for x1, segment_y, x2, _ in ledger_segments
+        ), "D4 ledger line should not cross the note head"
         high_onset = 480
         x_center_high = staff.LEFT_PAD + int(high_onset * staff.px_per_tick) + note_width / 2
         high_pos = staff._staff_pos(84)

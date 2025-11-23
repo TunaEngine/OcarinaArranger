@@ -589,7 +589,8 @@ def _draw_staff_ledger_lines(
     left = max(0.0, center - half_width - extra)
     right = center + half_width + extra
     if pos < 0:
-        for ledger_pos in range(pos, 0, 2):
+        start = pos if pos % 2 == 0 else pos - 1
+        for ledger_pos in range(start, 0, 2):
             y = staff_y(staff_top, ledger_pos, spacing)
             page.draw_line(left, y, right, y, gray=0.4, line_width=0.6)
     elif pos > 8:
