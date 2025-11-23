@@ -23,12 +23,24 @@ def build_fingering_pages(
     missing_notes: Sequence[str],
     instrument: InstrumentSpec,
     columns: int,
+    *,
+    header_lines: Sequence[HeaderLine] | None = None,
+    header_on_first_page_only: bool = False,
 ) -> List[PageBuilder]:
     pages: List[PageBuilder] = []
 
-    header_lines = build_header_lines()
-    header_height = compute_header_height(layout, header_lines)
-    header_gap = compute_header_gap(layout, header_lines)
+    header_lines = tuple(header_lines if header_lines is not None else build_header_lines())
+
+    def _header_for_page(page_index: int) -> tuple[HeaderLine, ...]:
+        if not header_lines:
+            return ()
+        if header_on_first_page_only and page_index > 0:
+            return ()
+        return header_lines
+
+    first_page_header = _header_for_page(0)
+    header_height = compute_header_height(layout, first_page_header)
+    header_gap = compute_header_gap(layout, first_page_header)
 
     available_width = layout.width - 2 * layout.margin_left
     content_top = layout.margin_top + header_height + header_gap
@@ -42,7 +54,8 @@ def build_fingering_pages(
     pattern_count = len(patterns)
     if pattern_count == 0:
         builder = PageBuilder(layout)
-        draw_document_header(builder, layout, header_lines)
+        page_header_lines = _header_for_page(len(pages))
+        draw_document_header(builder, layout, page_header_lines)
         heading_top = content_top
         builder.draw_text(
             layout.margin_left,
@@ -101,7 +114,8 @@ def build_fingering_pages(
     for start in range(0, pattern_count, items_per_page):
         page_patterns = patterns[start : start + items_per_page]
         builder = PageBuilder(layout)
-        draw_document_header(builder, layout, header_lines)
+        page_header_lines = _header_for_page(len(pages))
+        draw_document_header(builder, layout, page_header_lines)
         heading_top = content_top
         builder.draw_text(
             layout.margin_left,

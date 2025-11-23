@@ -26,13 +26,17 @@ class HeaderLine:
     color_rgb: Tuple[float, float, float] | None = None
 
 
-def build_header_lines() -> Tuple[HeaderLine, ...]:
-    """Create the header line containing the GitHub link."""
+def build_header_lines(title: str | None = None) -> Tuple[HeaderLine, ...]:
+    """Create the header lines to render on the first page."""
 
     account, app = _split_github_repo(GITHUB_REPO)
     link_label = f"{account} {app}".strip() or GITHUB_REPO
 
     lines: List[HeaderLine] = []
+    title = title.strip() if title else ""
+    if title:
+        lines.append(HeaderLine(text=title))
+
     link_url = f"https://github.com/{GITHUB_REPO}"
     lines.append(
         HeaderLine(

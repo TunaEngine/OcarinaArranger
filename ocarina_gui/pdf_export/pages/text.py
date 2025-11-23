@@ -7,6 +7,7 @@ from typing import Iterable, List, Sequence, Tuple
 
 from ..layouts import PdfLayout
 from ..header import (
+    HeaderLine,
     build_header_lines,
     draw_document_header,
     header_gap as compute_header_gap,
@@ -26,14 +27,22 @@ def build_text_page(
     instrument: InstrumentSpec,
     page_size: str,
     notes: Sequence[ArrangedNote],
+    *,
+    header_lines: Sequence[HeaderLine] | None = None,
+    header_on_first_page_only: bool = False,
 ) -> List[PageBuilder]:
     entry_lines, hole_labels, column_offset = _build_document_lines(
         instrument, page_size, notes
     )
 
-    header_lines = build_header_lines()
-    header_height = compute_header_height(layout, header_lines)
-    header_gap = compute_header_gap(layout, header_lines)
+    header_lines = tuple(header_lines if header_lines is not None else build_header_lines())
+
+    def _header_for_page(page_index: int) -> tuple[HeaderLine, ...]:
+        if not header_lines:
+            return ()
+        if header_on_first_page_only and page_index > 0:
+            return ()
+        return header_lines
 
     char_step = layout.font_size * _CHAR_WIDTH_SCALE
     available_width = layout.width - 2 * layout.margin_left
@@ -44,8 +53,11 @@ def build_text_page(
     )
 
     if not entry_lines:
+        page_header_lines = _header_for_page(0)
+        header_height = compute_header_height(layout, page_header_lines)
+        header_gap = compute_header_gap(layout, page_header_lines)
         page = PageBuilder(layout)
-        draw_document_header(page, layout, header_lines)
+        draw_document_header(page, layout, page_header_lines)
         content_top = layout.margin_top + header_height + header_gap
         label_top = content_top
         label_height = _draw_fingering_labels(
@@ -70,8 +82,11 @@ def build_text_page(
     index = 0
     while index < total_entries:
         page = PageBuilder(layout)
+        page_header_lines = _header_for_page(len(pages))
+        header_height = compute_header_height(layout, page_header_lines)
+        header_gap = compute_header_gap(layout, page_header_lines)
 
-        draw_document_header(page, layout, header_lines)
+        draw_document_header(page, layout, page_header_lines)
 
         content_top = layout.margin_top + header_height + header_gap
         label_top = content_top

@@ -18,6 +18,7 @@ from ._tempo import (
 
 from ..layouts import PdfLayout
 from ..header import (
+    HeaderLine,
     build_header_lines,
     draw_document_header,
     header_gap as compute_header_gap,
@@ -36,23 +37,30 @@ def build_piano_roll_pages(
     beat_type: int = 4,
     tempo_changes: Sequence[TempoChange] | None = None,
     tempo_base: float | None = None,
+    header_lines: Sequence[HeaderLine] | None = None,
+    header_on_first_page_only: bool = False,
+    title: str | None = None,
 ) -> List[PageBuilder]:
     """Render one or more piano roll pages depending on song length."""
 
-    header_lines = build_header_lines()
-    header_height = compute_header_height(layout, header_lines)
-    header_gap = compute_header_gap(layout, header_lines)
+    header_lines = tuple(header_lines if header_lines is not None else build_header_lines())
+    heading = (title or "").strip() or "Arranged piano roll"
+
+    def _header_for_page(page_index: int) -> tuple[HeaderLine, ...]:
+        if not header_lines:
+            return ()
+        if header_on_first_page_only and page_index > 0:
+            return ()
+        return header_lines
 
     if not events:
+        page_header_lines = _header_for_page(0)
+        header_height = compute_header_height(layout, page_header_lines)
+        header_gap = compute_header_gap(layout, page_header_lines)
         page = PageBuilder(layout)
-        draw_document_header(page, layout, header_lines)
+        draw_document_header(page, layout, page_header_lines)
         content_top = layout.margin_top + header_height + header_gap
-        page.draw_text(
-            layout.margin_left,
-            content_top,
-            "Arranged piano roll",
-            size=layout.font_size + 2,
-        )
+        page.draw_text(layout.margin_left, content_top, heading, size=layout.font_size + 2)
         page.draw_text(
             layout.margin_left,
             content_top + layout.line_height,
@@ -65,7 +73,8 @@ def build_piano_roll_pages(
     label_width = max(32.0, layout.font_size * 2.5)
     quarter_ticks = max(1, pulses_per_quarter or 1)
     measure_ticks = ticks_per_measure(quarter_ticks, beats, beat_type)
-    quarters_per_page = max(4, int(width / 18.0))
+    target_px_per_quarter = 18.0 * (0.5 if layout.page_size == "A6" else 1.0)
+    quarters_per_page = max(4, int(width / target_px_per_quarter))
     ticks_per_page = max(measure_ticks, quarters_per_page * quarter_ticks)
 
     min_midi = min(event[2] for event in events)
@@ -98,6 +107,9 @@ def build_piano_roll_pages(
 
     for page_number, index in enumerate(page_indices, start=1):
         builder = PageBuilder(layout)
+        page_header_lines = _header_for_page(page_number - 1)
+        header_height = compute_header_height(layout, page_header_lines)
+        header_gap = compute_header_gap(layout, page_header_lines)
         _draw_piano_roll_page(
             builder,
             page_events[index],
@@ -116,10 +128,11 @@ def build_piano_roll_pages(
             low_name,
             high_name,
             pulses_per_quarter,
-            header_lines,
+            page_header_lines,
             header_height,
             header_gap,
             tempo_markers,
+            heading,
         )
         pages.append(builder)
 
@@ -144,15 +157,13 @@ def _draw_piano_roll_page(
     low_name: str,
     high_name: str,
     pulses_per_quarter: int,
-    header_lines: Sequence[str],
+    header_lines: Sequence[HeaderLine],
     header_height: float,
     header_gap: float,
     tempo_markers: Sequence[tuple[int, str]],
+    heading: str,
 ) -> None:
     layout = page.layout
-    heading = "Arranged piano roll"
-    if total_pages > 1:
-        heading = f"{heading} (Page {page_number} of {total_pages})"
     draw_document_header(page, layout, header_lines)
     heading_top = layout.margin_top + header_height + header_gap
     page.draw_text(left, heading_top, heading, size=layout.font_size + 2)
@@ -166,25 +177,17 @@ def _draw_piano_roll_page(
     grid_width = max(1.0, width - label_width)
     scale_x = grid_width / max(1.0, float(page_span))
 
-    start_measure = int(page_start // max(1, ticks_per_measure)) + 1
-    end_measure = int((page_start + span - 1) // max(1, ticks_per_measure)) + 1
-
-    summary = (
-        f"Range: {low_name} to {high_name} | Pulses/quarter: {pulses_per_quarter or 0}"
-        f" | Measures {start_measure}-{end_measure} | Events on page: {len(events)}"
-    )
-    summary_y = heading_top + layout.line_height
-    page.draw_text(left, summary_y, summary, size=layout.font_size - 1)
-
     markers_on_page = [
         (tick, label)
         for tick, label in tempo_markers
         if page_start <= tick < page_start + page_span
     ]
     marker_height = layout.line_height if markers_on_page else 0.0
-    marker_y = summary_y + layout.line_height + 4
-    grid_top = summary_y + layout.line_height + 6 + marker_height
-    grid_bottom = layout.height - layout.margin_bottom
+    marker_y = heading_top + layout.line_height + 4
+    grid_top = heading_top + layout.line_height + 6 + marker_height
+    footer_padding = layout.line_height * (1.5 if total_pages > 1 else 0.5)
+    grid_bottom = layout.height - layout.margin_bottom - footer_padding
+    grid_bottom = max(grid_top + 24.0, grid_bottom)
     available_height = max(40.0, grid_bottom - grid_top)
 
     note_count = max(1, max_midi - min_midi + 1)
@@ -272,6 +275,20 @@ def _draw_piano_roll_page(
         primary_size = max(6.0, min(layout.font_size - 2.0, note_height * 0.55))
         name_baseline = min(note_y + note_height - 1.0, note_y + note_height * 0.6)
         page.draw_text(label_x, name_baseline, name_text, size=primary_size, fill_gray=1.0)
+
+    if total_pages > 1:
+        footer_text = f"Page {page_number} of {total_pages}"
+        footer_size = max(6.0, layout.font_size - 3)
+        footer_width = page.estimate_text_width(footer_text, size=footer_size)
+        footer_y = layout.height - layout.margin_bottom + layout.line_height * 0.25
+        footer_x = max(layout.margin_left, layout.width - layout.margin_left - footer_width)
+        page.draw_text(
+            footer_x,
+            footer_y,
+            footer_text,
+            size=footer_size,
+            fill_gray=0.5,
+        )
 
 
 __all__ = ["build_piano_roll_pages"]

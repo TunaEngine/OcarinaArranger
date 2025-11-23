@@ -15,6 +15,7 @@ from ocarina_tools.events import (
 
 from ..fingering import get_current_instrument
 from ..events import trim_leading_silence
+from .header import build_header_lines
 from .layouts import resolve_layout
 from .notes import ArrangedNote, PatternData, collect_arranged_notes, group_patterns
 from .types import NoteEvent
@@ -42,12 +43,15 @@ def export_arranged_pdf(
     beat_type: int | None = None,
     include_piano_roll: bool = True,
     include_staff: bool = True,
-    include_text: bool = True,
+    include_text: bool = False,
     include_fingerings: bool = True,
 ) -> None:
     """Export the arranged score's fingering sequence to a PDF document."""
 
     layout = resolve_layout(page_size, orientation)
+    title = _extract_title(root)
+    header_lines = build_header_lines()
+    header_available = bool(header_lines)
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -90,6 +94,7 @@ def export_arranged_pdf(
     writer = PdfWriter(layout)
 
     if include_piano_roll:
+        piano_header_lines = header_lines if header_available else ()
         piano_pages = build_piano_roll_pages(
             layout,
             resolved_events,
@@ -98,21 +103,32 @@ def export_arranged_pdf(
             beat_type=beat_type,
             tempo_changes=tempo_changes,
             tempo_base=tempo_base,
+            header_lines=piano_header_lines,
+            header_on_first_page_only=header_available,
+            title=title,
         )
         for page in piano_pages:
             writer.add_page(page)
+        if piano_pages:
+            header_available = False
 
     if include_text:
+        text_header_lines = header_lines if header_available else ()
         text_pages = build_text_page(
             layout,
             instrument,
             page_size.upper(),
             notes,
+            header_lines=text_header_lines,
+            header_on_first_page_only=header_available,
         )
         for page in text_pages:
             writer.add_page(page)
+        if text_pages:
+            header_available = False
 
     if include_staff:
+        staff_header_lines = header_lines if header_available else ()
         staff_pages = build_staff_pages(
             layout,
             resolved_events,
@@ -121,15 +137,54 @@ def export_arranged_pdf(
             beat_type=beat_type,
             tempo_changes=tempo_changes,
             tempo_base=tempo_base,
+            header_lines=staff_header_lines,
+            header_on_first_page_only=header_available,
+            title=title,
         )
         for page in staff_pages:
             writer.add_page(page)
+        if staff_pages:
+            header_available = False
 
     if include_fingerings:
+        fingering_header_lines = header_lines if header_available else ()
         fingering_pages = build_fingering_pages(
-            layout, grouped_patterns, missing_notes, instrument, columns
+            layout,
+            grouped_patterns,
+            missing_notes,
+            instrument,
+            columns,
+            header_lines=fingering_header_lines,
+            header_on_first_page_only=header_available,
         )
         for page in fingering_pages:
             writer.add_page(page)
 
     writer.write(output_file)
+
+
+def _extract_title(root: ET.Element) -> str | None:
+    def _text_for(tag: str) -> str | None:
+        element = root.find(f".//{tag}")
+        if element is not None and element.text:
+            value = element.text.strip()
+            if value:
+                return value
+        namespaced = root.find(f".//{{*}}{tag}")
+        if namespaced is not None and namespaced.text:
+            value = namespaced.text.strip()
+            if value:
+                return value
+        return None
+
+    for candidate in ("work-title", "movement-title", "credit-words", "title"):
+        value = _text_for(candidate)
+        if value:
+            return value
+
+    for attr in ("title", "name"):
+        value = root.attrib.get(attr, "").strip()
+        if value:
+            return value
+
+    return None

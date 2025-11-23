@@ -99,11 +99,67 @@ def test_export_arranged_pdf_writes_expected_content(
     assert b"Quarter" not in data
     assert b"Quarter note" not in data
     assert b"Eighth" not in data
+    assert b"Range:" not in data
+    assert b"Pulses/quarter" not in data
     for label in (b"h1", b"h2", b"h3"):
         assert label in data
     assert b"Arranged staff view" in data
     assert b"Used fingerings visuals" in data
     assert b"C4" in data
+
+
+def test_export_arranged_pdf_uses_song_title_headings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree, root = make_linear_score()
+    work = ET.SubElement(root, "work")
+    ET.SubElement(work, "work-title").text = "Sample Tune"
+    _install_test_instrument(monkeypatch)
+
+    pdf_path = tmp_path / "arranged.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A4",
+        "portrait",
+        4,
+        prefer_flats=True,
+        include_piano_roll=True,
+        include_staff=True,
+        include_text=False,
+        include_fingerings=False,
+    )
+
+    data = pdf_path.read_bytes()
+    assert b"Sample Tune" in data
+    assert b"Arranged piano roll" not in data
+    assert b"Arranged staff view" not in data
+
+
+def test_export_arranged_pdf_omits_title_from_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree, root = make_linear_score()
+    work = ET.SubElement(root, "work")
+    ET.SubElement(work, "work-title").text = "Sample Tune"
+    _install_test_instrument(monkeypatch)
+
+    pdf_path = tmp_path / "arranged.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A4",
+        "portrait",
+        4,
+        prefer_flats=True,
+        include_piano_roll=True,
+        include_staff=False,
+        include_text=False,
+        include_fingerings=False,
+    )
+
+    data = pdf_path.read_bytes()
+    assert data.count(b"Sample Tune") == 1
 
 
 def test_export_arranged_pdf_uses_sharps_even_when_prefer_flats(
@@ -156,6 +212,34 @@ def test_export_arranged_pdf_includes_tempo_markers(
     assert b"= 180" in data
     assert b"= 120" in data
     assert b"= 210" in data
+
+
+def test_export_arranged_pdf_piano_roll_footer_includes_page_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _tree, root = make_linear_score()
+    _install_test_instrument(monkeypatch)
+
+    events = [NoteEvent(index * 960, 240, 60 + index % 4, 0) for index in range(40)]
+
+    pdf_path = tmp_path / "paged.pdf"
+    export_arranged_pdf(
+        root,
+        str(pdf_path),
+        "A6",
+        "portrait",
+        4,
+        prefer_flats=True,
+        events=events,
+        pulses_per_quarter=480,
+        include_piano_roll=True,
+        include_staff=False,
+        include_text=False,
+        include_fingerings=False,
+    )
+
+    data = pdf_path.read_bytes()
+    assert b"Page 2 of" in data
 
 
 def test_export_arranged_pdf_prefers_provided_events_when_ppq_missing(
@@ -249,5 +333,5 @@ def test_pdf_export_options_enable_sections_by_default() -> None:
     options = PdfExportOptions(page_size="A6", orientation="portrait")
     assert options.include_piano_roll is True
     assert options.include_staff is True
-    assert options.include_text is True
+    assert options.include_text is False
     assert options.include_fingerings is True

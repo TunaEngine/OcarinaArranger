@@ -96,11 +96,10 @@ def test_staff_pdf_uses_time_signature_for_measure_spans() -> None:
         layout, events, pulses_per_quarter=480, beats=3, beat_type=8
     )
 
-    summaries = [
-        text for _x, _y, text in _collect_text_blocks(pages[0]) if text.startswith("Staff visuals")
-    ]
+    texts_with_gray = _collect_text_with_gray(pages[0])
+    measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.55) < 1e-6}
 
-    assert any("Measures 1-3" in summary for summary in summaries)
+    assert {"2", "3"} <= measure_numbers
 
 
 def test_piano_roll_pdf_uses_time_signature_for_measure_spans() -> None:
@@ -115,11 +114,10 @@ def test_piano_roll_pdf_uses_time_signature_for_measure_spans() -> None:
         layout, events, pulses_per_quarter=480, beats=3, beat_type=8
     )
 
-    summaries = [
-        text for _x, _y, text in _collect_text_blocks(pages[0]) if text.startswith("Range:")
-    ]
+    texts_with_gray = _collect_text_with_gray(pages[0])
+    measure_numbers = {text for gray, text in texts_with_gray if abs(gray - 0.35) < 1e-6}
 
-    assert any("Measures 1-3" in summary for summary in summaries)
+    assert {"2", "3"} <= measure_numbers
 
 
 def test_text_page_uses_multiple_columns_when_space_allows() -> None:
@@ -368,7 +366,7 @@ def test_staff_page_draws_ledger_lines_without_octave_labels() -> None:
         layout.margin_top
         + compute_header_height(layout, header_lines)
         + compute_header_gap(layout, header_lines)
-        + layout.line_height
+        + layout.line_height * 2
     )
     octave_blocks = {
         text

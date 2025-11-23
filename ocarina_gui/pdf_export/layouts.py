@@ -35,7 +35,31 @@ def resolve_layout(page_size: str, orientation: str) -> PdfLayout:
     width, height = PAGE_SIZES[key]
     if orient == "landscape":
         width, height = height, width
-    return PdfLayout(page_size=key, orientation=orient, width=width, height=height)
+
+    if key == "A6":
+        margin_left = 28.0
+        margin_top = 30.0
+        margin_bottom = 32.0
+        font_size = 10.0
+        line_height = 13.0
+    else:
+        margin_left = PdfLayout.margin_left
+        margin_top = PdfLayout.margin_top
+        margin_bottom = PdfLayout.margin_bottom
+        font_size = PdfLayout.font_size
+        line_height = PdfLayout.line_height
+
+    return PdfLayout(
+        page_size=key,
+        orientation=orient,
+        width=width,
+        height=height,
+        margin_left=margin_left,
+        margin_top=margin_top,
+        margin_bottom=margin_bottom,
+        font_size=font_size,
+        line_height=line_height,
+    )
 
 
 __all__ = ["PdfLayout", "resolve_layout", "PAGE_SIZES"]

@@ -81,7 +81,7 @@ class PdfExportOptionsDialog(tk.Toplevel):
 
         self._include_piano_roll_var = tk.BooleanVar(value=True)
         self._include_staff_var = tk.BooleanVar(value=True)
-        self._include_text_var = tk.BooleanVar(value=True)
+        self._include_text_var = tk.BooleanVar(value=False)
         self._include_fingerings_var = tk.BooleanVar(value=True)
 
         section_controls = (

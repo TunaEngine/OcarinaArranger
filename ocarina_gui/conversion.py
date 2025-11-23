@@ -54,7 +54,7 @@ class PdfExporter(Protocol):
         beat_type: int | None = None,
         include_piano_roll: bool = True,
         include_staff: bool = True,
-        include_text: bool = True,
+        include_text: bool = False,
         include_fingerings: bool = True,
     ) -> None:
         """Export a PDF document for the arranged score."""

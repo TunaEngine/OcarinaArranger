@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import DefaultDict, List, Sequence
 
 from ..header import (
+    HeaderLine,
     build_header_lines,
     draw_document_header,
     header_gap as compute_header_gap,
@@ -28,7 +29,8 @@ from ._tempo import (
 
 
 SHARP_SEMITONES = {1, 3, 6, 8, 10}
-TARGET_PX_PER_TICK = 0.12
+BASE_TARGET_PX_PER_TICK = 0.12
+TARGET_PX_PER_TICK = BASE_TARGET_PX_PER_TICK
 
 
 def _choose_measures_per_system(
@@ -61,21 +63,36 @@ def build_staff_pages(
     beat_type: int = 4,
     tempo_changes: Sequence[TempoChange] | None = None,
     tempo_base: float | None = None,
+    header_lines: Sequence[HeaderLine] | None = None,
+    header_on_first_page_only: bool = False,
+    title: str | None = None,
 ) -> List[PageBuilder]:
-    header_lines = build_header_lines()
-    header_height = compute_header_height(layout, header_lines)
-    header_gap = compute_header_gap(layout, header_lines)
+    header_lines = tuple(header_lines if header_lines is not None else build_header_lines())
+    heading = (title or "").strip() or "Arranged staff view"
+
+    def _header_for_page(page_index: int) -> tuple[HeaderLine, ...]:
+        if not header_lines:
+            return ()
+        if header_on_first_page_only and page_index > 0:
+            return ()
+        return header_lines
+
+    first_page_header = _header_for_page(0)
+    header_height = compute_header_height(layout, first_page_header)
+    header_gap = compute_header_gap(layout, first_page_header)
+    heading_padding = layout.line_height * (1.2 if layout.page_size == "A6" else 2.0)
+    heading_extra = 12.0 if layout.page_size == "A6" else 20.0
+    heading_top = layout.margin_top + header_height + header_gap + heading_padding
+    systems_top = heading_top + heading_extra
 
     if not events:
+        page_header_lines = _header_for_page(0)
+        page_header_height = compute_header_height(layout, page_header_lines)
+        page_header_gap = compute_header_gap(layout, page_header_lines)
         page = PageBuilder(layout)
-        draw_document_header(page, layout, header_lines)
-        content_top = layout.margin_top + header_height + header_gap
-        page.draw_text(
-            layout.margin_left,
-            content_top,
-            "Arranged staff view",
-            size=layout.font_size + 2,
-        )
+        draw_document_header(page, layout, page_header_lines)
+        content_top = layout.margin_top + page_header_height + page_header_gap + heading_padding
+        page.draw_text(layout.margin_left, content_top, heading, size=layout.font_size + 2)
         page.draw_text(
             layout.margin_left,
             content_top + layout.line_height,
@@ -85,12 +102,13 @@ def build_staff_pages(
 
     left = layout.margin_left
     width = max(1.0, layout.width - 2 * layout.margin_left)
-    staff_scale = 0.5
+    is_a6 = layout.page_size == "A6"
+    staff_scale = 0.45 if is_a6 else 0.5
     staff_spacing = 8.0 * staff_scale
     staff_height = staff_spacing * 4
-    system_padding = staff_spacing * 4.0
-    system_spacing = staff_spacing * 4.5
-    content_top = layout.margin_top + header_height + header_gap + layout.line_height * 2 + 20
+    system_padding = staff_spacing * (2.75 if is_a6 else 4.0)
+    system_spacing = staff_spacing * (3.0 if is_a6 else 4.5)
+    content_top = systems_top
     available_height = max(80.0, layout.height - layout.margin_bottom - content_top)
     system_total_height = staff_height + 2 * system_padding
     systems_per_page = max(
@@ -99,7 +117,7 @@ def build_staff_pages(
     quarter_ticks = max(1, pulses_per_quarter or 1)
     measure_ticks = ticks_per_measure(quarter_ticks, beats, beat_type)
     staff_width = max(1.0, width - 80.0)
-    target_px_per_tick = TARGET_PX_PER_TICK
+    target_px_per_tick = BASE_TARGET_PX_PER_TICK * (0.5 if is_a6 else 1.0)
     measures_per_system = _choose_measures_per_system(
         staff_width, measure_ticks, target_px_per_tick
     )
@@ -124,6 +142,7 @@ def build_staff_pages(
 
     for page_number, index in enumerate(page_indices, start=1):
         builder = PageBuilder(layout)
+        page_header_lines = _header_for_page(page_number - 1)
         _draw_staff_page(
             builder,
             page_events[index],
@@ -140,10 +159,11 @@ def build_staff_pages(
             staff_spacing,
             system_padding,
             system_spacing,
-            header_lines,
-            header_height,
-            header_gap,
+            page_header_lines,
             tempo_markers,
+            heading,
+            heading_top,
+            systems_top,
         )
         pages.append(builder)
 
@@ -166,37 +186,30 @@ def _draw_staff_page(
     staff_spacing: float,
     system_padding: float,
     system_spacing: float,
-    header_lines: Sequence[str],
-    header_height: float,
-    header_gap: float,
+    header_lines: Sequence[HeaderLine],
     tempo_markers: Sequence[tuple[int, str]],
+    heading: str,
+    heading_top: float,
+    systems_top: float,
 ) -> None:
     layout = page.layout
+    header_height = compute_header_height(layout, header_lines)
+    header_gap = compute_header_gap(layout, header_lines)
     left = layout.margin_left
     right = layout.width - layout.margin_left
     width = max(1.0, right - left)
 
-    heading = "Arranged staff view"
-    if total_pages > 1:
-        heading = f"{heading} (Page {page_number} of {total_pages})"
     draw_document_header(page, layout, header_lines)
-    heading_top = layout.margin_top + header_height + header_gap
-    page.draw_text(left, heading_top, heading, size=layout.font_size + 2)
-
-    summary_y = heading_top + layout.line_height
-    start_measure = int(page_start // max(1, ticks_per_measure)) + 1
-    remaining = max_tick - page_start
-    span = max(quarter_ticks, min(ticks_per_page, remaining if remaining > 0 else ticks_per_page))
-    end_measure = int((page_start + span - 1) // max(1, ticks_per_measure)) + 1
-    summary = (
-        f"Staff visuals | Pulses/quarter: {pulses_per_quarter or 0}"
-        f" | Measures {start_measure}-{end_measure} | Events on page: {len(events)}"
+    heading_size = layout.font_size + (1 if layout.page_size == "A6" else 2)
+    page.draw_text(left, heading_top, heading, size=heading_size)
+    span = max(
+        quarter_ticks,
+        min(ticks_per_page, max_tick - page_start if max_tick > page_start else ticks_per_page),
     )
-    page.draw_text(left, summary_y, summary, size=layout.font_size - 1)
 
     staff_height = staff_spacing * 4
-    staff_left = left + 40
-    staff_right = left + width - 20
+    staff_left = left + (32 if layout.page_size == "A6" else 40)
+    staff_right = left + width - (16 if layout.page_size == "A6" else 20)
     system_height = staff_height + 2 * system_padding
 
     for system_index in range(systems_per_page):
@@ -205,9 +218,7 @@ def _draw_staff_page(
             break
         system_remaining = span - (system_start - page_start)
         system_span = max(quarter_ticks, min(ticks_per_system, system_remaining))
-        system_box_top = summary_y + layout.line_height + 16 + system_index * (
-            system_height + system_spacing
-        )
+        system_box_top = systems_top + system_index * (system_height + system_spacing)
         staff_top = system_box_top + system_padding
         staff_bottom = staff_top + staff_height
         page.draw_rect(
@@ -391,6 +402,20 @@ def _draw_staff_page(
                     end_x = min(staff_right, system_right_x + note_width * 1.35)
                     if end_x > start_x:
                         _draw_pdf_tie(page, start_x, end_x, y_center, staff_spacing, pos)
+
+    if total_pages > 1:
+        footer_text = f"Page {page_number} of {total_pages}"
+        footer_size = max(6.0, layout.font_size - 3)
+        footer_width = page.estimate_text_width(footer_text, size=footer_size)
+        footer_y = layout.height - layout.margin_bottom + layout.line_height * 0.25
+        footer_x = max(layout.margin_left, layout.width - layout.margin_left - footer_width)
+        page.draw_text(
+            footer_x,
+            footer_y,
+            footer_text,
+            size=footer_size,
+            fill_gray=0.5,
+        )
 
 
 def _shade_note_head(

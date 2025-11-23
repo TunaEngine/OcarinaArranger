@@ -23,7 +23,7 @@ class PdfExportOptions:
     columns: Optional[int] = None
     include_piano_roll: bool = True
     include_staff: bool = True
-    include_text: bool = True
+    include_text: bool = False
     include_fingerings: bool = True
 
     def __post_init__(self) -> None:  # type: ignore[override]
@@ -69,7 +69,7 @@ class PdfExportOptions:
         *,
         include_piano_roll: bool = True,
         include_staff: bool = True,
-        include_text: bool = True,
+        include_text: bool = False,
         include_fingerings: bool = True,
     ) -> "PdfExportOptions":
         return cls(

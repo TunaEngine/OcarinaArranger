@@ -194,7 +194,7 @@ def load_pdf_options(data: Dict[str, Any] | None) -> PdfExportOptions | None:
         columns=data.get("columns"),
         include_piano_roll=bool(data.get("include_piano_roll", True)),
         include_staff=bool(data.get("include_staff", True)),
-        include_text=bool(data.get("include_text", True)),
+        include_text=bool(data.get("include_text", False)),
         include_fingerings=bool(data.get("include_fingerings", True)),
     )
 
