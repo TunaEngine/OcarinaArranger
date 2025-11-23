@@ -182,7 +182,7 @@ class MainViewModel(
         if not save_path:
             logger.info("Conversion cancelled while choosing destination", extra={"path": path})
             return None
-        options = pdf_options or PdfExportOptions.with_defaults()
+        options = pdf_options or self._last_pdf_options or PdfExportOptions.with_defaults()
         midi_mode = self._midi_import_mode()
         arranged_events = None
         arranged_ppq = None

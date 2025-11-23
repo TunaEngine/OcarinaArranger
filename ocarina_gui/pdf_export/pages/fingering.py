@@ -23,6 +23,7 @@ def build_fingering_pages(
     missing_notes: Sequence[str],
     instrument: InstrumentSpec,
     columns: int,
+    include_text: bool = False,
     *,
     header_lines: Sequence[HeaderLine] | None = None,
     header_on_first_page_only: bool = False,
@@ -47,9 +48,12 @@ def build_fingering_pages(
     available_height = layout.height - content_top - layout.margin_bottom
     heading_height = layout.font_size + 20
     spacing = 14.0
-    label_height = layout.line_height * 1.6
+    label_lines = 1 + (1 if include_text else 0)
+    label_height = layout.line_height * (label_lines + 0.6)
     canvas_width = max(1.0, float(instrument.canvas_size[0] or 160))
     canvas_height = max(1.0, float(instrument.canvas_size[1] or 120))
+
+    min_scale = 0.25 if layout.page_size == "A6" else 0.4
 
     pattern_count = len(patterns)
     if pattern_count == 0:
@@ -81,6 +85,7 @@ def build_fingering_pages(
         available_width=available_width,
         spacing=spacing,
         canvas_width=canvas_width,
+        min_scale=min_scale,
     )
     column_width = (
         (available_width - (target_columns - 1) * spacing) / target_columns
@@ -90,19 +95,27 @@ def build_fingering_pages(
     if column_width <= 0:
         column_width = available_width
 
-    min_scale = 0.4
     scale = column_width / canvas_width if canvas_width > 0 else 1.0
     scale = min(max(scale, min_scale), 1.1)
 
-    desired_rows = 3 if layout.page_size == "A4" and layout.orientation == "landscape" else None
+    desired_rows = None
+    if layout.page_size == "A4" and layout.orientation == "landscape":
+        desired_rows = 3
+    elif (
+        layout.page_size == "A6"
+        and layout.orientation == "portrait"
+        and target_columns == 2
+    ):
+        desired_rows = 3
+
     if desired_rows:
         usable_height = available_height - heading_height + spacing
         if usable_height > spacing:
-            max_row_height = max(64.0, (usable_height / desired_rows) - spacing)
-            allowed_diagram_height = max_row_height - label_height
+            per_row_allowance = usable_height / desired_rows
+            allowed_diagram_height = per_row_allowance - spacing - label_height
             if allowed_diagram_height > 0 and canvas_height > 0:
-                scale = min(scale, allowed_diagram_height / canvas_height)
-                scale = max(scale, min_scale)
+                desired_scale = allowed_diagram_height / canvas_height
+                scale = min(scale, max(desired_scale, min_scale))
 
     diagram_width = canvas_width * scale
     diagram_height = canvas_height * scale
@@ -142,6 +155,7 @@ def build_fingering_pages(
                 diagram_height,
                 scale,
                 label_height,
+                include_text,
             )
 
         if start == 0 and missing_notes:
@@ -174,15 +188,10 @@ def _render_fingering_block(
     diagram_height: float,
     scale: float,
     label_height: float,
+    include_text: bool,
 ) -> None:
     layout = page.layout
-    label_lines = [", ".join(entry.note_names) or "(No note names)", f"Pattern: {entry.pattern_text}"]
-    text_y = block_top
-    for line in label_lines:
-        page.draw_text(diagram_left, text_y, line, size=layout.font_size - 1)
-        text_y += layout.line_height
-
-    diagram_top = block_top + label_height
+    diagram_top = block_top
     page.draw_rect(
         diagram_left,
         diagram_top,
@@ -224,6 +233,14 @@ def _render_fingering_block(
         radius = max(2.0, hole.radius * scale)
         _draw_hole(page, cx, cy, radius, state)
 
+    label_lines = [", ".join(entry.note_names) or "(No note names)"]
+    if include_text and entry.pattern_text:
+        label_lines.append(entry.pattern_text)
+    text_y = diagram_top + diagram_height + layout.line_height * 0.2
+    for line in label_lines:
+        page.draw_text(diagram_left, text_y, line, size=layout.font_size - 1)
+        text_y += layout.line_height
+
 
 def _draw_hole(page: PageBuilder, cx: float, cy: float, radius: float, state: int) -> None:
     clamped = max(0, min(2, int(state)))
@@ -241,9 +258,9 @@ def _resolve_target_columns(
     available_width: float,
     spacing: float,
     canvas_width: float,
+    min_scale: float,
 ) -> int:
     target = max(1, requested)
-    min_scale = 0.45
     while target > 1:
         column_width = (
             (available_width - (target - 1) * spacing) / target if target > 0 else available_width

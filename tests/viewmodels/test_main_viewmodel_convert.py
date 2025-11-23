@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ocarina_gui.conversion import ConversionResult
+from ocarina_gui.pdf_export.types import PdfExportOptions
 
 from tests.viewmodels._fakes import FakeDialogs, StubScoreService
 from viewmodels.main_viewmodel import MainViewModel
@@ -68,3 +69,20 @@ def test_convert_passes_manual_transpose_setting(tmp_path: Path, conversion_resu
     assert outcome is not None and outcome.is_ok()
     assert service.last_convert_settings is not None
     assert service.last_convert_settings.transpose_offset == 3
+
+
+def test_convert_reuses_saved_pdf_options(tmp_path: Path, conversion_result: ConversionResult) -> None:
+    input_path = tmp_path / "score.musicxml"
+    input_path.write_text("<score />", encoding="utf-8")
+    dialogs = FakeDialogs(save_path=str(tmp_path / "saved.musicxml"))
+    service = StubScoreService(conversion=conversion_result)
+    viewmodel = MainViewModel(dialogs=dialogs, score_service=service)
+    viewmodel.update_settings(input_path=str(input_path))
+    viewmodel._last_pdf_options = PdfExportOptions(page_size="A4", orientation="portrait", columns=2)
+
+    result = viewmodel.convert()
+
+    assert result is not None and result.is_ok()
+    assert service.last_pdf_options is not None
+    assert isinstance(service.last_pdf_options, PdfExportOptions)
+    assert service.last_pdf_options.columns == 2

@@ -154,6 +154,7 @@ def export_arranged_pdf(
             missing_notes,
             instrument,
             columns,
+            include_text=include_text,
             header_lines=fingering_header_lines,
             header_on_first_page_only=header_available,
         )

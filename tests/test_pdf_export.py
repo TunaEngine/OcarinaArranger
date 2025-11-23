@@ -261,13 +261,63 @@ def test_fingering_page_respects_requested_columns() -> None:
         for idx in range(10)
     ]
 
-    pages = build_fingering_pages(layout, patterns, (), instrument, columns=4)
+    pages = build_fingering_pages(
+        layout, patterns, (), instrument, columns=4, include_text=True
+    )
     assert pages
 
     blocks = _collect_text_blocks(pages[0])
     _assert_header_present(blocks)
-    pattern_blocks = [block for block in blocks if block[2].startswith("Pattern:")]
+    pattern_texts = {entry.pattern_text for entry in patterns}
+    pattern_blocks = [block for block in blocks if block[2] in pattern_texts]
     assert pattern_blocks
+    x_positions = {round(block[0], 2) for block in pattern_blocks}
+    assert len(x_positions) >= 4
+    y_positions = {round(block[1], 2) for block in pattern_blocks}
+    assert len(y_positions) >= 2
+
+    textless_pages = build_fingering_pages(
+        layout, patterns, (), instrument, columns=4, include_text=False
+    )
+    assert textless_pages
+
+    textless_blocks = _collect_text_blocks(textless_pages[0])
+    rendered_texts = {text for _x, _y, text in textless_blocks}
+    assert not (rendered_texts & pattern_texts)
+
+
+def test_a6_fingering_page_scales_to_requested_columns() -> None:
+    instrument = InstrumentSpec.from_dict(
+        {
+            "id": "compact",
+            "name": "Compact",
+            "title": "Compact Instrument",
+            "canvas": {"width": 160, "height": 120},
+            "holes": [
+                {"id": f"h{idx}", "x": 28 * idx, "y": 60, "radius": 8}
+                for idx in range(1, 5)
+            ],
+            "note_order": ["C4"],
+            "note_map": {"C4": [2, 2, 2, 2]},
+        }
+    )
+    layout = resolve_layout("A6", "portrait")
+    patterns = [
+        PatternData(pattern=(2, 1, 0, 2), pattern_text=f"P{idx}", note_names=(f"N{idx}",))
+        for idx in range(12)
+    ]
+
+    pages = build_fingering_pages(
+        layout, patterns, (), instrument, columns=4, include_text=True
+    )
+    assert pages
+
+    blocks = _collect_text_blocks(pages[0])
+    _assert_header_present(blocks)
+    pattern_texts = {entry.pattern_text for entry in patterns}
+    pattern_blocks = [block for block in blocks if block[2] in pattern_texts]
+    assert len(pattern_blocks) >= 4
+
     x_positions = {round(block[0], 2) for block in pattern_blocks}
     assert len(x_positions) >= 4
     y_positions = {round(block[1], 2) for block in pattern_blocks}

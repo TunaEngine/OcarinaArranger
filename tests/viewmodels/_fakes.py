@@ -90,6 +90,7 @@ class StubScoreService:
     convert_error: Optional[Exception] = None
     last_preview_settings: Optional[TransformSettings] = None
     last_convert_settings: Optional[TransformSettings] = None
+    last_pdf_options: object | None = None
     part_metadata: tuple[MusicXmlPartInfo, ...] = ()
     part_metadata_calls: list[str] = field(default_factory=list)
     last_midi_mode: Optional[str] = None
@@ -121,6 +122,7 @@ class StubScoreService:
         assert self.conversion is not None
         self.last_convert_settings = settings
         self.last_midi_mode = midi_mode
+        self.last_pdf_options = pdf_options
         return self.conversion
 
     def load_part_metadata(
