@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import audioop
+import gc
 import threading
 import time
 
@@ -282,3 +283,23 @@ def test_synth_renderer_reports_intermediate_progress(monkeypatch) -> None:
         assert intermediate, "expected at least one intermediate progress update"
     finally:
         renderer.shutdown()
+
+
+def test_render_worker_shuts_down_on_gc() -> None:
+    player = DummyPlayer()
+    renderer = audio._SynthRenderer(player)
+
+    def _worker_alive() -> bool:
+        return any(t.name == "preview-render" for t in threading.enumerate())
+
+    assert _worker_alive()
+
+    renderer = None
+    gc.collect()
+
+    deadline = time.perf_counter() + 1.0
+    while time.perf_counter() < deadline and _worker_alive():
+        time.sleep(0.01)
+        gc.collect()
+
+    assert not _worker_alive()

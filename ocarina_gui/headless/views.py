@@ -9,6 +9,7 @@ from ocarina_tools import NoteEvent
 
 from .containers import HeadlessCanvas, HeadlessScrollbar
 from .piano_roll import HeadlessPianoRoll
+from ocarina_gui.staff.rendering.spacing import default_note_scale
 from ocarina_gui.staff.view.base import (
     _TEMPO_MARKER_BARLINE_PADDING as STAFF_TEMPO_BARLINE_PADDING,
     _TEMPO_MARKER_LEFT_PADDING as STAFF_TEMPO_LEFT_PADDING,
@@ -90,6 +91,7 @@ class HeadlessFingeringView:
 class HeadlessStaffView:
     LEFT_PAD: int = 10
     px_per_tick: float = 0.25
+    staff_spacing: int = 8
     canvas: HeadlessCanvas = field(default_factory=HeadlessCanvas)
     hbar: HeadlessScrollbar = field(default_factory=lambda: HeadlessScrollbar("hbar"))
     vbar: HeadlessScrollbar = field(default_factory=lambda: HeadlessScrollbar("vbar"))
@@ -140,7 +142,10 @@ class HeadlessStaffView:
         total_ticks: int | None = None,
     ) -> None:
         self._cached = (events, pulses_per_quarter, beats, beat_type)
-        self.total_ticks = int(total_ticks or 0)
+        inferred_total = (
+            max((event.onset + event.duration) for event in events) if events else 0
+        )
+        self.total_ticks = max(int(total_ticks or 0), inferred_total)
 
     def set_cursor(self, tick: int, allow_autoscroll: bool = True) -> None:
         self.cursor_tick = max(0, int(tick))

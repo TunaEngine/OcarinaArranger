@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import weakref
 from queue import Empty, SimpleQueue
 from typing import Callable, Optional, Sequence
 
@@ -46,13 +47,18 @@ class _RenderWorker:
         # triggered when spawning threads during interpreter finalisation
         # (observed under pytest).
         self._tasks: SimpleQueue[Callable[[], None] | None] = SimpleQueue()
+        self_ref = weakref.ref(self)
         self._thread: Optional[threading.Thread] = threading.Thread(
             target=self._worker_loop,
+            args=(self_ref,),
             name="preview-render",
             daemon=True,
         )
         self._thread.start()
         self._shutdown = False
+        self._finalizer = weakref.finalize(
+            self, self._finalize, weakref.ref(self)
+        )
 
         # The following state variables are protected by self._lock
         self._events: tuple[Event, ...] = ()
@@ -117,6 +123,9 @@ class _RenderWorker:
 
         # Fresh queue instance in case the worker is ever restarted for tests.
         self._tasks = SimpleQueue()
+
+        if self._finalizer.alive:
+            self._finalizer.detach()
 
     def update_source(
         self,
@@ -338,16 +347,28 @@ class _RenderWorker:
             self._notify_render_progress(active_listener, generation, 1.0)
             self._notify_render_complete(active_listener, generation, False)
 
-    def _worker_loop(self) -> None:
+    @staticmethod
+    def _worker_loop(worker_ref: weakref.ReferenceType["_RenderWorker"]) -> None:
         """Consume queued render tasks until shutdown."""
         while True:
-            task = self._tasks.get()
+            worker = worker_ref()
+            if worker is None:
+                return
+            tasks = worker._tasks
+            worker = None
+            task = tasks.get()
             if task is None:
                 return
             try:
                 task()
             except Exception:  # pragma: no cover - defensive guard
                 logger.exception("Render task execution failed")
+
+    @staticmethod
+    def _finalize(worker_ref: weakref.ReferenceType["_RenderWorker"]) -> None:
+        worker = worker_ref()
+        if worker is not None:
+            worker.shutdown()
 
     @staticmethod
     def _notify_render_progress(

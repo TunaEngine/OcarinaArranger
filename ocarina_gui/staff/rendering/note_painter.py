@@ -11,6 +11,9 @@ if TYPE_CHECKING:  # pragma: no cover - only imported for typing
     from ..view import StaffView
 
 
+GRACE_NOTE_SCALE = 0.75
+
+
 class NotePainter:
     """Helper responsible for rendering individual note components."""
 
@@ -42,11 +45,11 @@ class NotePainter:
         extra = max(4.0, note_width * 0.25)
         x_left = max(0.0, x_center - note_width / 2 - extra)
         x_right = x_center + note_width / 2 + extra
-        if pos < 0:
-            start = pos if pos % 2 == 0 else pos - 1
+        if pos < -1:
+            start = pos if pos % 2 == 0 else pos + 1
             for ledger_pos in range(start, 0, 2):
                 self._ledger_line(y_top, ledger_pos, x_left, x_right, tags, state=state)
-        elif pos > 8:
+        elif pos > 9:
             for ledger_pos in range(10, pos + 1, 2):
                 self._ledger_line(y_top, ledger_pos, x_left, x_right, tags, state=state)
 
@@ -60,6 +63,7 @@ class NotePainter:
         tags: Tuple[str, ...],
         *,
         state: str = "hidden",
+        scale: float = 1.0,
     ) -> None:
         """Draw stems and flags for notes that require them."""
 
@@ -67,7 +71,7 @@ class NotePainter:
             return
 
         view = self._view
-        stem_length = view.staff_spacing * 3.5
+        stem_length = view.staff_spacing * 3.5 * max(scale, 0.1)
         stem_up = pos < 6
         stem_x = x0 + note_width if stem_up else x0
         y_end = y_center - stem_length if stem_up else y_center + stem_length
@@ -77,7 +81,7 @@ class NotePainter:
             stem_x,
             y_end,
             fill=view._palette.note_outline,
-            width=1.3,
+            width=max(0.8, 1.3 * scale),
             tags=tags,
             state=state,
         )
@@ -93,7 +97,7 @@ class NotePainter:
             return
 
         flag_length = note_width * 1.2
-        flag_height = view.staff_spacing * 0.8
+        flag_height = view.staff_spacing * 0.8 * max(scale, 0.1)
         for index in range(flag_count):
             if stem_up:
                 start_y = y_end + index * (flag_height * 0.65)
@@ -106,7 +110,7 @@ class NotePainter:
                     start_y + flag_height,
                     smooth=True,
                     fill=view._palette.note_outline,
-                    width=1.1,
+                    width=max(0.7, 1.1 * scale),
                     tags=tags,
                     state=state,
                 )
@@ -121,7 +125,7 @@ class NotePainter:
                     start_y - flag_height,
                     smooth=True,
                     fill=view._palette.note_outline,
-                    width=1.1,
+                    width=max(0.7, 1.1 * scale),
                     tags=tags,
                     state=state,
                 )
@@ -134,6 +138,7 @@ class NotePainter:
         glyph: NoteGlyphDescription,
         tags: Tuple[str, ...],
         *,
+        available_space: float | None = None,
         state: str = "hidden",
     ) -> None:
         """Draw augmentation dots for dotted notes."""
@@ -144,6 +149,10 @@ class NotePainter:
         view = self._view
         radius = note_width * 0.18
         gap = note_width * 0.45
+        if available_space is not None:
+            from .spacing import dot_gap_for_available_space
+
+            gap = dot_gap_for_available_space(note_width, available_space)
         x = x0 + note_width + gap
         for _ in range(glyph.dots):
             view.canvas.create_oval(

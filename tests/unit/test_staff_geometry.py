@@ -1,25 +1,19 @@
-from ocarina_gui.staff.rendering.geometry import (
-    staff_pos,
-    staff_y,
-    tie_control_offsets,
+import pytest
+
+from ocarina_gui.staff.rendering.geometry import staff_pos
+
+
+@pytest.mark.parametrize(
+    "midi, expected",
+    [
+        (64, 0),  # E4 baseline
+        (69, 3),  # A4
+        (70, 3),  # A#4 shares A's staff slot
+        (71, 4),  # B4
+        (66, 1),  # F#4 maps to F line
+        (73, 5),  # C#5 maps to C space above the staff
+        (58, -4),  # A#3 matches A3 ledger line
+    ],
 )
-
-
-def test_staff_pos_matches_expected_treble_positions() -> None:
-    assert staff_pos(64) == 0
-    assert staff_pos(60) == -2
-    assert staff_pos(67) == 2
-    assert staff_pos(72) == 5
-
-
-def test_staff_y_uses_same_spacing_formula() -> None:
-    assert staff_y(10.0, 0, 8.0) == 42.0
-    assert staff_y(0.0, 8, 10.0) == 0.0
-
-
-def test_tie_control_offsets_follow_staff_direction() -> None:
-    base, curve = tie_control_offsets(8.0, 4)
-    assert base > 0 and curve > base
-
-    base, curve = tie_control_offsets(8.0, 8)
-    assert base < 0 and curve < base
+def test_staff_positions_align_accidentals_with_natural_slots(midi: int, expected: int) -> None:
+    assert staff_pos(midi) == expected

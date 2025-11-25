@@ -6,7 +6,7 @@ from bisect import bisect_left
 from typing import List, Tuple, TYPE_CHECKING
 
 from ...note_values import describe_note_glyph
-from .note_painter import NotePainter
+from .note_painter import GRACE_NOTE_SCALE, NotePainter
 from .types import Event
 
 if TYPE_CHECKING:  # pragma: no cover - only imported for typing
@@ -19,6 +19,11 @@ class HorizontalRenderer:
     def __init__(self, view: "StaffView", note_painter: NotePainter) -> None:
         self._view = view
         self._note_painter = note_painter
+
+    def _note_scale(self, event: Event) -> float:
+        if getattr(event, "is_grace", False):
+            return GRACE_NOTE_SCALE
+        return 1.0
 
     def render(self, events: Tuple[Event, ...], beats: int, beat_type: int) -> None:
         view = self._view
@@ -83,8 +88,9 @@ class HorizontalRenderer:
         left_edge = int(left_fraction * scroll_width)
         right_edge = left_edge + viewport_width
         margin = max(256, viewport_width // 2)
-        draw_left = max(0, left_edge - margin)
-        draw_right = min(scroll_width, right_edge + margin)
+        margin_scale = 3 if force else 1
+        draw_left = max(0, left_edge - margin * margin_scale)
+        draw_right = min(scroll_width, right_edge + margin * margin_scale)
         if not force and view._drawn_range is not None:
             prev_left, prev_right = view._drawn_range
             if draw_left >= prev_left and draw_right <= prev_right:
@@ -153,7 +159,7 @@ class HorizontalRenderer:
         tick_left = max(0, int((draw_left - view.LEFT_PAD) / px_per_tick) - 4)
         tick_right = max(0, int((draw_right - view.LEFT_PAD) / px_per_tick) + 4)
 
-        visible_events: List[Event]
+        visible_events: List[tuple[Event, float]]
         if not view._events:
             visible_events = []
         else:
@@ -171,11 +177,15 @@ class HorizontalRenderer:
                     break
                 if onset + event.duration < tick_left:
                     continue
-                visible_events.append(event)
+                offset = 0.0
+                if idx < len(view._event_spacing_offsets):
+                    offset = view._event_spacing_offsets[idx]
+                visible_events.append((event, offset))
 
-        width_note, height_note = 12, 9
         pulses_per_quarter = view._cached[1] if view._cached else 480
-        for event in visible_events:
+        for event_index, (event, offset_px) in enumerate(visible_events):
+            scale = self._note_scale(event)
+            width_note, height_note = 12 * scale, 9 * scale
             onset = event.onset
             pos = self._note_painter.staff_pos(event.midi)
             y = self._note_painter.y_for_pos(y_top, pos, view.staff_spacing)
@@ -189,9 +199,17 @@ class HorizontalRenderer:
                 segment_onset = onset + offset
                 if segment_onset + max(1, segment_duration) < tick_left:
                     continue
-                x0 = view.LEFT_PAD + int(segment_onset * view.px_per_tick)
+                x0 = view.LEFT_PAD + int(segment_onset * view.px_per_tick + offset_px)
                 x_center = x0 + width_note / 2
                 segment_data.append((segment_duration, segment_index, x_center))
+
+                available_space = None
+                if event_index < len(visible_events) - 1:
+                    next_event, next_offset = visible_events[event_index + 1]
+                    next_x0 = (
+                        view.LEFT_PAD + next_event.onset * view.px_per_tick + next_offset
+                    )
+                    available_space = next_x0 - (x0 + width_note)
 
                 if segment_onset <= tick_right:
                     ledger_tags = (new_tag, "virtualized", "ledger_line")
@@ -238,6 +256,7 @@ class HorizontalRenderer:
                             glyph,
                             pos,
                             stem_tags,
+                            scale=scale,
                         )
                         dot_tags = (new_tag, "virtualized", "note_dot")
                         self._note_painter.draw_dots(
@@ -246,15 +265,13 @@ class HorizontalRenderer:
                             width_note,
                             glyph,
                             dot_tags,
+                            available_space=available_space,
                         )
 
                     if segment_index == 0:
                         octave = event.midi // 12 - 1
-                        octave_y = (
-                            y - view.staff_spacing * 1.6
-                            if pos >= 8
-                            else y + view.staff_spacing * 1.6
-                        )
+                        octave_offset = view.staff_spacing * 1.6 * scale
+                        octave_y = y - octave_offset if pos >= 8 else y + octave_offset
                         view.canvas.create_text(
                             x_center,
                             octave_y,

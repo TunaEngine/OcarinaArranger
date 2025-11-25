@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.resources as resources
 import tkinter as tk
-from shared.ttk import ttk
+from shared.ttk import is_bootstrap_enabled, ttk
 from typing import TYPE_CHECKING
 
 from ..fingering import FingeringView
@@ -127,14 +127,27 @@ def _build_modern_preview_side(
         lambda event, s=side: app._handle_preview_volume_button(s, event),
         add="+",
     )
+    slider_style: object | None
+    try:
+        slider_style = ttk.Style()
+    except tk.TclError:
+        slider_style = None
+
+    slider_kwargs: dict[str, object] = {
+        "from_": 0,
+        "to": 100,
+        "orient": "horizontal",
+        "variable": app._preview_volume_vars[side],
+        "length": 120,
+    }
+
+    slider_bootstyle = _prepare_scale_bootstyle(slider_style)
+    if slider_bootstyle:
+        slider_kwargs["bootstyle"] = slider_bootstyle
+
     volume_slider = ttk.Scale(
         volume_frame,
-        from_=0,
-        to=100,
-        orient="horizontal",
-        variable=app._preview_volume_vars[side],
-        bootstyle="info",
-        length=120,
+        **slider_kwargs,
     )
     volume_slider.grid(row=0, column=1, sticky="w", padx=(8, 0))
     volume_slider.bind(
@@ -338,6 +351,42 @@ def _build_modern_preview_side(
             pass
 
     build_preview_progress_overlay(app, tab, side)
+
+
+def _prepare_scale_bootstyle(style: object | None) -> str | None:
+    """Return a bootstyle for a scale widget when the theme supports it.
+
+    ttkbootstrap can raise ``TclError`` when a requested bootstyle layout is
+    missing. This helper verifies the layout exists (or clones the base
+    horizontal scale layout) before returning a bootstyle string so widget
+    construction stays resilient across native ttk and ttkbootstrap themes.
+    """
+
+    if style is None or not is_bootstrap_enabled():
+        return None
+
+    try:
+        existing_layout = style.layout("info.Horizontal.TScale")
+    except tk.TclError:
+        existing_layout = None
+
+    if existing_layout:
+        return "info"
+
+    try:
+        base_layout = style.layout("Horizontal.TScale")
+    except tk.TclError:
+        return None
+
+    if not base_layout:
+        return None
+
+    try:
+        style.layout("info.Horizontal.TScale", base_layout)
+    except tk.TclError:
+        return None
+
+    return "info"
 
 
 def _load_arranged_icon(app: "App", name: str) -> tk.PhotoImage | None:

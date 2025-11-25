@@ -15,6 +15,13 @@ from ..header import (
 from ..layouts import PdfLayout
 from ..types import NoteEvent
 from ..writer import PageBuilder
+from ...staff.rendering.note_painter import GRACE_NOTE_SCALE
+from ...staff.rendering.spacing import (
+    default_note_scale,
+    dotted_spacing_offsets,
+    dot_gap_for_available_space,
+    ornament_spacing_offsets,
+)
 from ...note_values import NoteGlyphDescription, describe_note_glyph
 from ...staff.rendering.geometry import staff_pos, staff_y, tie_control_offsets
 from shared.tempo import TempoChange, scaled_tempo_marker_pairs
@@ -29,8 +36,14 @@ from ._tempo import (
 
 
 SHARP_SEMITONES = {1, 3, 6, 8, 10}
+ACCIDENTAL_BASELINE_OFFSET_RATIO = 0.32
 BASE_TARGET_PX_PER_TICK = 0.12
 TARGET_PX_PER_TICK = BASE_TARGET_PX_PER_TICK
+TIME_ZOOM_INCREASE = 1.1
+
+
+def _note_scale(event: NoteEvent) -> float:
+    return default_note_scale(event)
 
 
 def _choose_measures_per_system(
@@ -52,6 +65,18 @@ def _choose_measures_per_system(
     lower_diff = abs(px_per_tick(lower) - target)
     upper_diff = abs(px_per_tick(upper) - target)
     return lower if lower_diff <= upper_diff else upper
+
+
+def _target_px_per_tick(
+    is_a6: bool, staff_spacing: float, events: Sequence[NoteEvent]
+) -> float:
+    base_note_width = staff_spacing * 1.5
+    base_target = (
+        BASE_TARGET_PX_PER_TICK * (0.5 if is_a6 else 1.0)
+        * (TIME_ZOOM_INCREASE if is_a6 else 1.0)
+    )
+    _ = base_note_width  # reserved for future spacing tweaks
+    return base_target
 
 
 def build_staff_pages(
@@ -80,8 +105,8 @@ def build_staff_pages(
     first_page_header = _header_for_page(0)
     header_height = compute_header_height(layout, first_page_header)
     header_gap = compute_header_gap(layout, first_page_header)
-    heading_padding = layout.line_height * (1.2 if layout.page_size == "A6" else 2.0)
-    heading_extra = 12.0 if layout.page_size == "A6" else 20.0
+    heading_padding = layout.line_height * (0.8 if layout.page_size == "A6" else 2.0)
+    heading_extra = 8.0 if layout.page_size == "A6" else 20.0
     heading_top = layout.margin_top + header_height + header_gap + heading_padding
     systems_top = heading_top + heading_extra
 
@@ -106,18 +131,19 @@ def build_staff_pages(
     staff_scale = 0.45 if is_a6 else 0.5
     staff_spacing = 8.0 * staff_scale
     staff_height = staff_spacing * 4
-    system_padding = staff_spacing * (2.75 if is_a6 else 4.0)
-    system_spacing = staff_spacing * (3.0 if is_a6 else 4.5)
+    system_padding = staff_spacing * (2.0 if is_a6 else 4.0)
+    system_spacing = staff_spacing * (3.2 if is_a6 else 4.5)
     content_top = systems_top
     available_height = max(80.0, layout.height - layout.margin_bottom - content_top)
     system_total_height = staff_height + 2 * system_padding
-    systems_per_page = max(
+    base_systems_per_page = max(
         1, int((available_height + system_spacing) // (system_total_height + system_spacing))
     )
+    systems_per_page = max(1, base_systems_per_page - (1 if is_a6 and base_systems_per_page > 1 else 0))
     quarter_ticks = max(1, pulses_per_quarter or 1)
     measure_ticks = ticks_per_measure(quarter_ticks, beats, beat_type)
     staff_width = max(1.0, width - 80.0)
-    target_px_per_tick = BASE_TARGET_PX_PER_TICK * (0.5 if is_a6 else 1.0)
+    target_px_per_tick = _target_px_per_tick(is_a6, staff_spacing, events)
     measures_per_system = _choose_measures_per_system(
         staff_width, measure_ticks, target_px_per_tick
     )
@@ -208,8 +234,8 @@ def _draw_staff_page(
     )
 
     staff_height = staff_spacing * 4
-    staff_left = left + (32 if layout.page_size == "A6" else 40)
-    staff_right = left + width - (16 if layout.page_size == "A6" else 20)
+    staff_left = left + (8 if layout.page_size == "A6" else 40)
+    staff_right = left + width - (2 if layout.page_size == "A6" else 20)
     system_height = staff_height + 2 * system_padding
 
     for system_index in range(systems_per_page):
@@ -221,10 +247,11 @@ def _draw_staff_page(
         system_box_top = systems_top + system_index * (system_height + system_spacing)
         staff_top = system_box_top + system_padding
         staff_bottom = staff_top + staff_height
+        box_padding = staff_spacing * (1.25 if layout.page_size == "A6" else 6.0)
         page.draw_rect(
-            staff_left - 24,
+            staff_left - box_padding,
             system_box_top,
-            (staff_right - staff_left) + 48,
+            (staff_right - staff_left) + box_padding * 2,
             system_height,
             fill_gray=0.97,
             stroke_gray=0.75,
@@ -235,19 +262,37 @@ def _draw_staff_page(
             y = staff_top + index * staff_spacing
             page.draw_line(staff_left, y, staff_right, y, gray=0.2, line_width=1.0)
 
-        staff_width = max(1.0, staff_right - staff_left - 20)
+        staff_width = max(1.0, staff_right - staff_left - (2 if layout.page_size == "A6" else 20))
         scale_x = staff_width / max(1.0, float(system_span))
-        system_left_x = staff_left + 10
+        system_left_x = staff_left + (4 if layout.page_size == "A6" else 10)
         system_right_x = system_left_x + system_span * scale_x
+
+        system_end = system_start + system_span
+
+        system_events = [
+            event
+            for event in events
+            if event[0] < system_end and (event[0] + max(1, event[1])) > system_start
+        ]
+        system_events.sort(key=lambda event: event.onset)
+
+        last_onset_in_span = max((event.onset for event in system_events), default=None)
+        last_measure_tick = system_start + system_span
+        if last_onset_in_span is not None:
+            last_measure_tick = max(
+                system_start,
+                (last_onset_in_span // ticks_per_measure) * ticks_per_measure,
+            )
 
         tick = max(0, (system_start // ticks_per_measure) * ticks_per_measure)
         measure_font = max(6.0, layout.font_size - 3)
-        while tick <= system_start + system_span:
+        while tick <= last_measure_tick:
             local = tick - system_start
             if local >= 0:
                 x = system_left_x + local * scale_x
-                line_top = system_box_top + 6
-                page.draw_line(x, line_top, x, staff_bottom + 18, gray=0.75, line_width=0.5)
+                line_top = system_box_top
+                line_bottom = system_box_top + system_height
+                page.draw_line(x, line_top, x, line_bottom, gray=0.75, line_width=0.5)
                 measure_number = tick // max(1, ticks_per_measure) + 1
                 if measure_number > 1:
                     page.draw_text(
@@ -258,8 +303,6 @@ def _draw_staff_page(
                         fill_gray=0.55,
                     )
             tick += ticks_per_measure
-
-        system_end = system_start + system_span
 
         system_markers = [
             (tick, label)
@@ -277,20 +320,41 @@ def _draw_staff_page(
                 left = max(system_left_x, min(max_left, anchor_x))
                 draw_tempo_marker(page, left, marker_y, label, font_size=tempo_font)
 
-        system_events = [
-            event
-            for event in events
-            if event[0] < system_end and (event[0] + max(1, event[1])) > system_start
-        ]
+        base_note_width = staff_spacing * 1.5
+        ornament_offsets = ornament_spacing_offsets(
+            system_events, base_note_width=base_note_width, grace_extra_gap_ratio=0.2
+        )
+        dotted_offsets = dotted_spacing_offsets(
+            system_events,
+            base_note_width=base_note_width,
+            pulses_per_quarter=pulses_per_quarter,
+            px_per_tick=scale_x,
+            base_offsets=ornament_offsets,
+            scale_for_event=default_note_scale,
+        )
+        spacing_offsets = tuple(
+            (ornament or 0.0) + (dotted or 0.0)
+            for ornament, dotted in zip(ornament_offsets, dotted_offsets)
+        )
 
         if not system_events:
             continue
 
-        for event in system_events:
+        event_starts: list[float] = []
+        for event, offset_px in zip(system_events, spacing_offsets):
+            local_start = max(0.0, event.onset - system_start)
+            event_starts.append(system_left_x + local_start * scale_x + offset_px)
+
+        base_note_width = staff_spacing * 1.5
+        base_note_height = staff_spacing * 1.125
+        for event_index, (event, offset_px) in enumerate(
+            zip(system_events, spacing_offsets)
+        ):
             pos = staff_pos(event.midi)
             y_center = staff_y(staff_top, pos, staff_spacing)
-            note_width = staff_spacing * 1.5
-            note_height = staff_spacing * 1.125
+            scale = _note_scale(event)
+            note_width = base_note_width * scale
+            note_height = base_note_height * scale
             note_half_width = note_width / 2.0
             drawn_segments: list[tuple[int, float, bool, bool]] = []
             segment_offsets = (0, *event.tie_offsets)
@@ -307,7 +371,14 @@ def _draw_staff_page(
                 if local_onset >= system_span:
                     continue
 
-                x_center = staff_left + 10 + local_onset * scale_x + note_half_width
+                x_center = (
+                    staff_left + 10 + local_onset * scale_x + note_half_width + offset_px
+                )
+                available_space = None
+                if event_index < len(event_starts) - 1:
+                    available_space = event_starts[event_index + 1] - (
+                        x_center + note_half_width
+                    )
                 has_incoming = False
                 if segment_index > 0:
                     prev_start = event.onset + segment_offsets[segment_index - 1]
@@ -342,6 +413,7 @@ def _draw_staff_page(
                         note_width,
                         note_height,
                         glyph,
+                        scale=scale,
                     )
                 else:
                     page.draw_oval(
@@ -355,11 +427,12 @@ def _draw_staff_page(
                     )
 
                 if segment_index == 0 and event.midi % 12 in SHARP_SEMITONES:
+                    font_size = layout.font_size - 2
                     page.draw_text(
                         x_center - staff_spacing * 2.0,
-                        y_center + staff_spacing * 0.25,
+                        y_center + font_size * ACCIDENTAL_BASELINE_OFFSET_RATIO,
                         "#",
-                        size=layout.font_size - 2,
+                        size=font_size,
                     )
 
                 if glyph is not None:
@@ -371,9 +444,16 @@ def _draw_staff_page(
                         glyph,
                         pos,
                         staff_spacing,
+                        scale=scale,
                     )
                     _draw_pdf_dots(
-                        page, x_center, y_center, note_width, glyph
+                        page,
+                        x_center,
+                        y_center,
+                        note_width,
+                        glyph,
+                        scale=scale,
+                        available_space=available_space,
                     )
 
             if len(drawn_segments) > 1:
@@ -425,9 +505,12 @@ def _shade_note_head(
     width: float,
     height: float,
     glyph: NoteGlyphDescription,
+    *,
+    scale: float = 1.0,
 ) -> None:
     half_width = width / 2.0
     half_height = height / 2.0
+    line_width = max(0.5, 0.8 * scale)
     if glyph.base in {"whole", "half"}:
         page.draw_oval(
             x_center,
@@ -436,7 +519,7 @@ def _shade_note_head(
             half_height,
             fill_gray=1.0,
             stroke_gray=0.05,
-            line_width=0.8,
+            line_width=line_width,
         )
     elif glyph.base != "":
         page.draw_oval(
@@ -446,7 +529,7 @@ def _shade_note_head(
             half_height,
             fill_gray=0.1,
             stroke_gray=0.05,
-            line_width=0.8,
+            line_width=line_width,
         )
 
 
@@ -458,11 +541,13 @@ def _draw_pdf_stem_and_flags(
     glyph: NoteGlyphDescription,
     pos: int,
     spacing: float,
+    *,
+    scale: float = 1.0,
 ) -> None:
     if glyph.base == "whole":
         return
 
-    stem_length = spacing * 3.5
+    stem_length = spacing * 3.5 * max(scale, 0.1)
     stem_up = pos < 6
     stem_x = (
         x_center + note_width / 2.0 if stem_up else x_center - note_width / 2.0
@@ -474,7 +559,7 @@ def _draw_pdf_stem_and_flags(
         stem_x,
         stem_end_y,
         gray=0.0,
-        line_width=1.0,
+        line_width=max(0.6, 1.0 * scale),
     )
 
     flag_map = {
@@ -488,7 +573,7 @@ def _draw_pdf_stem_and_flags(
         return
 
     flag_length = note_width * 1.2
-    flag_height = spacing * 0.9
+    flag_height = spacing * 0.9 * max(scale, 0.1)
     for index in range(flag_count):
         if stem_up:
             start_y = stem_end_y + index * (flag_height * 0.65)
@@ -520,13 +605,20 @@ def _draw_pdf_dots(
     y_center: float,
     note_width: float,
     glyph: NoteGlyphDescription,
+    *,
+    scale: float = 1.0,
+    available_space: float | None = None,
 ) -> None:
     if glyph.dots <= 0:
         return
 
     dot_radius = max(1.0, note_width * 0.18)
     gap = note_width * 0.45
-    x = x_center + note_width + gap
+    if available_space is not None:
+        gap = dot_gap_for_available_space(note_width, available_space)
+    half_width = note_width / 2.0
+    x = x_center + half_width + gap
+    line_width = max(0.4, 0.6 * scale)
     for _ in range(glyph.dots):
         page.draw_circle(
             x,
@@ -534,7 +626,7 @@ def _draw_pdf_dots(
             dot_radius,
             fill_gray=0.0,
             stroke_gray=0.0,
-            line_width=0.6,
+            line_width=line_width,
         )
         x += gap
 
@@ -588,12 +680,12 @@ def _draw_staff_ledger_lines(
     half_width = note_width / 2.0
     left = max(0.0, center - half_width - extra)
     right = center + half_width + extra
-    if pos < 0:
-        start = pos if pos % 2 == 0 else pos - 1
+    if pos < -1:
+        start = pos if pos % 2 == 0 else pos + 1
         for ledger_pos in range(start, 0, 2):
             y = staff_y(staff_top, ledger_pos, spacing)
             page.draw_line(left, y, right, y, gray=0.4, line_width=0.6)
-    elif pos > 8:
+    elif pos > 9:
         for ledger_pos in range(10, pos + 1, 2):
             y = staff_y(staff_top, ledger_pos, spacing)
             page.draw_line(left, y, right, y, gray=0.4, line_width=0.6)

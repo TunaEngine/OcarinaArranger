@@ -100,6 +100,12 @@ class _SynthRenderer(AudioRenderer):
         self._resume_threads: list[threading.Thread] = []
         self._volume = 1.0
 
+    def __del__(self) -> None:  # pragma: no cover - defensive cleanup
+        try:
+            self.shutdown()
+        except Exception:
+            _safe_debug("SynthRenderer.__del__ suppressing shutdown exception")
+
     # ------------------------------------------------------------------
     # AudioRenderer protocol implementation
     # ------------------------------------------------------------------

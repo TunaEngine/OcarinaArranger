@@ -7,7 +7,7 @@ from bisect import bisect_left
 from typing import List, Tuple, TYPE_CHECKING
 
 from ...note_values import describe_note_glyph
-from .note_painter import NotePainter
+from .note_painter import GRACE_NOTE_SCALE, NotePainter
 from .types import Event
 
 if TYPE_CHECKING:  # pragma: no cover - only imported for typing
@@ -20,6 +20,11 @@ class WrappedRenderer:
     def __init__(self, view: "StaffView", note_painter: NotePainter) -> None:
         self._view = view
         self._note_painter = note_painter
+
+    def _note_scale(self, event: Event) -> float:
+        if getattr(event, "is_grace", False):
+            return GRACE_NOTE_SCALE
+        return 1.0
 
     def render(
         self,
@@ -144,8 +149,9 @@ class WrappedRenderer:
                 if prev_event.onset + prev_event.duration <= line_start:
                     break
                 start_index -= 1
-            width_note, height_note = 12, 9
             pulses_per_quarter_value = view._cached[1] if view._cached else pulses_per_quarter
+
+            visible_events: List[tuple[Event, float]] = []
             idx = start_index
             while idx < len(view._events):
                 event = view._events[idx]
@@ -156,6 +162,16 @@ class WrappedRenderer:
                 if onset + duration <= line_start:
                     idx += 1
                     continue
+                offset_px = 0.0
+                if idx < len(view._event_spacing_offsets):
+                    offset_px = view._event_spacing_offsets[idx]
+                visible_events.append((event, offset_px))
+                idx += 1
+
+            for event_index, (event, offset_px) in enumerate(visible_events):
+                scale = self._note_scale(event)
+                width_note, height_note = 12 * scale, 9 * scale
+                onset = event.onset
                 midi = event.midi
                 pos = self._note_painter.staff_pos(midi)
                 y = self._note_painter.y_for_pos(y_top, pos, view.staff_spacing)
@@ -172,7 +188,7 @@ class WrappedRenderer:
                     if segment_onset < line_start:
                         continue
                     x0 = view.LEFT_PAD + int(
-                        round((segment_onset - line_start) * view.px_per_tick)
+                        round((segment_onset - line_start) * view.px_per_tick + offset_px)
                     )
                     x_center = x0 + width_note / 2
                     visible_segments.append(x_center)
@@ -207,6 +223,14 @@ class WrappedRenderer:
                         fill=fill_color,
                     )
 
+                    available_space = None
+                    if event_index + 1 < len(visible_events):
+                        next_event, next_offset = visible_events[event_index + 1]
+                        next_x0 = view.LEFT_PAD + (
+                            (next_event.onset - line_start) * view.px_per_tick + next_offset
+                        )
+                        available_space = next_x0 - (x0 + width_note)
+
                     if glyph is not None:
                         self._note_painter.draw_note_stem_and_flags(
                             x0,
@@ -223,16 +247,14 @@ class WrappedRenderer:
                             width_note,
                             glyph,
                             ("wrapped_dot",),
+                            available_space=available_space,
                             state="normal",
                         )
 
                     if segment_index == 0:
                         octave = midi // 12 - 1
-                        octave_y = (
-                            y - view.staff_spacing * 1.6
-                            if pos >= 8
-                            else y + view.staff_spacing * 1.6
-                        )
+                        octave_offset = view.staff_spacing * 1.6 * scale
+                        octave_y = y - octave_offset if pos >= 8 else y + octave_offset
                         view.canvas.create_text(
                             x_center,
                             octave_y,
@@ -255,7 +277,6 @@ class WrappedRenderer:
                             ("wrapped_tie",),
                             state="normal",
                         )
-                idx += 1
 
         view.cursor.create_cursor_lines(total_height)
         view.cursor.create_loop_lines(total_height)

@@ -31,7 +31,9 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
             (0, 120, 52, 0),
             (480, 120, 84, 0),
             (960, 120, 62, 0),
+            (1440, 120, 59, 0),
             (1920, 120, 64, 0),
+            (2400, 120, 70, 0),
         ]
         staff.render(events, pulses_per_quarter=480, beats=4, beat_type=4)
 
@@ -68,16 +70,32 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
         assert d_pos == -1
         x_center_d = staff.LEFT_PAD + int(d_onset * staff.px_per_tick) + note_width / 2
         d_line_y = staff._y_for_pos(y_top, -2)
-        assert any(
+        assert not any(
             abs(segment_y - d_line_y) < 0.6
             and abs((x1 + x2) / 2 - x_center_d) < 1.6
             for x1, segment_y, x2, _ in ledger_segments
-        ), "expected D4 to use the lower ledger line"
+        ), "D4 should not use the lower ledger line"
         d_y = staff._y_for_pos(y_top, d_pos)
         assert not any(
             abs(segment_y - d_y) < 0.6 and abs((x1 + x2) / 2 - x_center_d) < 1.6
             for x1, segment_y, x2, _ in ledger_segments
         ), "D4 ledger line should not cross the note head"
+        b_onset = 1440
+        x_center_b = staff.LEFT_PAD + int(b_onset * staff.px_per_tick) + note_width / 2
+        b_pos = staff._staff_pos(59)
+        assert b_pos == -3
+        b_ledger_y = staff._y_for_pos(y_top, -2)
+        assert any(
+            abs(segment_y - b_ledger_y) < 0.6
+            and abs((x1 + x2) / 2 - x_center_b) < 1.6
+            for x1, segment_y, x2, _ in ledger_segments
+        ), "expected B3 to use the nearest ledger line"
+        forbidden_b_ledger_y = staff._y_for_pos(y_top, -4)
+        assert not any(
+            abs(segment_y - forbidden_b_ledger_y) < 0.6
+            and abs((x1 + x2) / 2 - x_center_b) < 1.6
+            for x1, segment_y, x2, _ in ledger_segments
+        ), "B3 should not draw an extra lower ledger line"
         high_onset = 480
         x_center_high = staff.LEFT_PAD + int(high_onset * staff.px_per_tick) + note_width / 2
         high_pos = staff._staff_pos(84)
@@ -98,6 +116,16 @@ def test_staff_draws_ledger_lines_and_octave_labels() -> None:
                 x, y = canvas.coords(item)
                 positions.append((x, y))
             return positions
+
+        sharp_onset = 2400
+        sharp_x0 = staff.LEFT_PAD + int(sharp_onset * staff.px_per_tick)
+        sharp_pos = staff._staff_pos(70)
+        sharp_y = staff._y_for_pos(y_top, sharp_pos)
+        sharp_positions = _text_positions("#")
+        assert any(
+            abs(x - (sharp_x0 - 10)) < 1.6 and abs(y - sharp_y) < 0.6
+            for x, y in sharp_positions
+        ), "sharp symbol should align with its note head"
 
         low_pos = staff._staff_pos(52)
         y_low = staff._y_for_pos(y_top, low_pos)

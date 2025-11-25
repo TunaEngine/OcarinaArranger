@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
+from itertools import zip_longest
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from shared.ttk import ttk
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 from ...scrolling import AutoScrollMode, normalize_auto_scroll_mode
 from ...themes import StaffPalette, ThemeSpec, get_current_theme, register_theme_listener
 from shared.tk_style import apply_round_scrollbar_style, get_ttk_style
 from ..cursor import CursorController
 from ..rendering import StaffRenderer
+from ..rendering.spacing import (
+    default_note_scale,
+    dotted_spacing_offsets,
+    ornament_spacing_offsets,
+)
+from ..rendering.geometry import staff_pos
 from ..scrollbars import ScrollbarManager
 from .types import Event
 from ocarina_tools import NoteEvent
@@ -86,6 +93,7 @@ class StaffViewBase(ttk.Frame):
         self._active_virtual_tag_index = 0
         self._layout_mode = "horizontal"
         self._wrap_layout: Optional[dict[str, object]] = None
+        self._event_spacing_offsets: tuple[float, ...] = ()
         self._auto_scroll_mode = AutoScrollMode.FLIP
         self._last_press_serial: Optional[int] = None
         self._wrap_pending_rerender = False
@@ -124,7 +132,7 @@ class StaffViewBase(ttk.Frame):
     def _staff_pos(self, midi: int) -> int:
         """Return the staff position index for a MIDI pitch."""
 
-        return int(round((int(midi) - 64) * 7 / 12))
+        return staff_pos(int(midi))
 
     def _y_for_pos(self, y_top: int, pos: int) -> float:
         """Convert a staff position into a canvas y-coordinate."""
@@ -205,6 +213,23 @@ class StaffViewBase(ttk.Frame):
         self._total_ticks = max(inferred_total, int(total_ticks or 0))
         self._events = sorted_events
         self._event_onsets = tuple(event.onset for event in sorted_events)
+
+        base_note_width = float(self.staff_spacing) * 1.5
+        ornament_offsets = ornament_spacing_offsets(
+            sorted_events, base_note_width=base_note_width, grace_extra_gap_ratio=0.2
+        )
+        dotted_offsets = dotted_spacing_offsets(
+            sorted_events,
+            base_note_width=base_note_width,
+            pulses_per_quarter=pulses_per_quarter,
+            px_per_tick=self.px_per_tick,
+            base_offsets=ornament_offsets,
+            scale_for_event=default_note_scale,
+        )
+        self._event_spacing_offsets = tuple(
+            (ornament or 0.0) + (dotted or 0.0)
+            for ornament, dotted in zip_longest(ornament_offsets, dotted_offsets, fillvalue=0.0)
+        )
 
         ticks_per_beat = int(pulses_per_quarter * (4 / beat_type))
         self._ticks_per_measure = max(1, beats * ticks_per_beat)

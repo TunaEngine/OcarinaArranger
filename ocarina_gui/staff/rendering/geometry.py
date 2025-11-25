@@ -7,11 +7,31 @@ reuse the same positioning logic without duplicating math.
 
 from __future__ import annotations
 
+_PITCH_CLASS_TO_STEPS = {
+    0: 0,  # C / C♯
+    1: 0,
+    2: 1,  # D / D♯
+    3: 1,
+    4: 2,  # E
+    5: 3,  # F / F♯
+    6: 3,
+    7: 4,  # G / G♯
+    8: 4,
+    9: 5,  # A / A♯
+    10: 5,
+    11: 6,  # B
+}
+
+
+_REFERENCE_STEPS = (64 // 12) * 7 + _PITCH_CLASS_TO_STEPS[64 % 12]
+
 
 def staff_pos(midi: int) -> int:
     """Return the staff position index for a MIDI pitch value."""
 
-    return int(round((midi - 64) * 7 / 12))
+    octave_steps = (int(midi) // 12) * 7
+    pitch_class_steps = _PITCH_CLASS_TO_STEPS[int(midi) % 12]
+    return octave_steps + pitch_class_steps - _REFERENCE_STEPS
 
 
 def staff_y(staff_top: float, pos: int, spacing: float) -> float:
